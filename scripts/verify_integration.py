@@ -139,7 +139,15 @@ class Checks:
         # with NO callback overload. A trailing-lambda call is a fabrication that
         # does not compile — must be called from a coroutine. (A build would catch
         # this, but the Kotlin-stdlib floor error can mask it; check it directly.)
-        hits = grep(self.root, re.compile(r"requestPermission\s*\([^)]*\)\s*\{"))
+        rx = re.compile(r"requestPermission\s*\([^)]*\)\s*\{")
+        hits = []
+        for fp in walk_files(self.root):
+            for i, line in enumerate(read(fp).splitlines(), 1):
+                stripped = line.lstrip()
+                if stripped.startswith("//") or stripped.startswith("*"):
+                    continue  # a cautionary comment quoting the bad form is not code
+                if rx.search(line):
+                    hits.append((os.path.relpath(fp, self.root), i))
         self.add("android_requestpermission_not_callback", not hits, "error",
                  "" if not hits else f"requestPermission called with a callback lambda at {hits[:3]} "
                  "— it is a suspend fun; call it from a coroutine (fabricated overload won't compile)")
