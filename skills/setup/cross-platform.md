@@ -36,6 +36,7 @@ Detected by `pubspec.yaml`. Full detail: `sdk-ai-prompts/docs/flutter/integrate.
   OneSignal.initialize('YOUR_ONESIGNAL_APP_ID'); // onesignal:managed v1
   ```
 - Wrapper: a single `OneSignalService` class (async methods). Signatures per api-reference "SDK data surface"; tag values are strings; `login()` before tags/email/sms.
+- Verification file (deletable): guard the whole thing on `kDebugMode` (from `package:flutter/foundation.dart`); register `OneSignal.User.pushSubscription.addObserver((state) {...})` reading `state.current.id`, and read `OneSignal.User.pushSubscription.id` immediately (race guard); `await OneSignal.Notifications.requestPermission(true)` returns `Future<bool>` (like web/RN — NOT iOS's completion block or Android's suspend form). A notification-received listener is not proof of registration — key off the push subscription. The Step-8 self-check (`verify_integration.py --platform flutter`) enforces init in `main()`, the `kDebugMode` guard, and the real push-subscription observer.
 - iOS side: same native Xcode human steps as ios.md (Flutter's `ios/` subproject). Android side: the plugin handles Gradle/manifest; do NOT add `google-services.json`. Flutter 3.29+ recommended (matrix).
 
 ## Cordova (`onesignal-cordova-plugin`)

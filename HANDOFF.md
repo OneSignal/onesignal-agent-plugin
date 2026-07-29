@@ -111,6 +111,16 @@ once it's compile-verifiable.**
    observer/permission API from source first (§8.4 has the pointers), add checks
    (init present, exact pin, verification guard), then templates. Packages:
    `onesignal_flutter`, `onesignal-cordova-plugin`, `@onesignal/capacitor-plugin`.
+   - **Flutter**: ✅ checks added (`flutter_init_present` [in `main()`],
+     `flutter_verification_debug_guarded` [`kDebugMode`],
+     `flutter_verification_uses_push_observer` [`pushSubscription.addObserver`/`.id`]),
+     registered in `by_platform`, positive/negative tested, yardstick synced,
+     `cross-platform.md` updated. API validated against source (§8.6). **Template
+     DEFERRED**: no Dart/Flutter toolchain on this machine, and a Flutter
+     verification file needs the framework (dialog UI + `kDebugMode`) to analyze,
+     not just standalone Dart — same "template only when compile-verifiable" gate
+     that held iOS. Installing Flutter (~1GB+) is a user decision (§6).
+   - **Cordova / Capacitor**: not started. Same recipe.
 3. **Extend `verify_integration.py`** platform maps for the above (add entries to
    the `by_platform` dict in `Checks.run`).
 4. **Unity** — GUI-bound, low agent-automatability; checks only, low priority.
@@ -297,3 +307,13 @@ All confirmed against the SDK source this session.
 - `https://onesignal.github.io/sdk-releases/releases.json` — version source of
   truth. Web ships a build number behind fixed CDN major `v16`; Expo plugin's
   `stable` is null (use `current` / `expo install` alignment).
+
+### §8.6 Flutter (OneSignal-Flutter-SDK, lib/src) — checks added, template deferred
+Validated against source this session (`lib/onesignal_flutter.dart`, `src/pushsubscription.dart`, `src/notifications.dart`, `src/subscription.dart`, `src/debug.dart`):
+- `OneSignal.initialize(String appId): Future<void>` — call in `main()` before `runApp()`.
+- `OneSignal.Notifications.requestPermission(bool fallbackToSettings): Future<bool>` — so `await requestPermission(true)`. **Like web/RN (Future), NOT iOS's block, NOT Android's suspend.**
+- `OneSignal.User.pushSubscription.id: String?` (getter); `.token: String?`; `.optedIn: bool`.
+- Observer is a **function typedef**, not a class: `typedef void OnPushSubscriptionChangeObserver(OSPushSubscriptionChangedState state)`; register with `OneSignal.User.pushSubscription.addObserver((state) { state.current.id })`.
+- `OSPushSubscriptionChangedState { current, previous: OSPushSubscriptionState }`; `OSPushSubscriptionState { id: String?, token: String?, optedIn: bool }`.
+- `OneSignal.Debug.setLogLevel(OSLogLevel.verbose)`; `enum OSLogLevel { none, fatal, error, warn, info, debug, verbose }`.
+- Verification guard: `kDebugMode` (from `package:flutter/foundation.dart`).

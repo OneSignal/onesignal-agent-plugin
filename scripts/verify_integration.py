@@ -281,6 +281,51 @@ class Checks:
                 return
         self.add("expo_plugin_first", False, "warn", "onesignal-expo-plugin not found in app.json expo.plugins")
 
+    # ---- flutter (onesignal_flutter) ----
+    def _flutter_verification_files(self):
+        return [fp for fp in walk_files(self.root)
+                if "verif" in os.path.basename(fp).lower() and fp.endswith(".dart")]
+
+    def flutter_init_present(self):
+        init_hits = grep(self.root, re.compile(r"OneSignal\.initialize\s*\("))
+        if not init_hits:
+            self.add("flutter_init_present", False, "error", "no OneSignal.initialize(appId) call found")
+            return
+        # init belongs in main() before runApp(), not in a widget build()
+        in_main = False
+        for fp in walk_files(self.root):
+            if fp.endswith(".dart"):
+                txt = read(fp)
+                if "OneSignal.initialize" in txt and re.search(r"void\s+main\s*\(|runApp\s*\(", txt):
+                    in_main = True
+        self.add("flutter_init_present", in_main, "warn",
+                 "" if in_main else "OneSignal.initialize is not in main()/near runApp() "
+                 "(init once at app entry before runApp)")
+
+    def flutter_verification_debug_guarded(self):
+        vfiles = self._flutter_verification_files()
+        if not vfiles:
+            self.add("flutter_verification_debug_guarded", False, "warn", "no Dart verification file found (deletable proof step)")
+            return
+        guarded = any("kDebugMode" in read(fp) for fp in vfiles)
+        self.add("flutter_verification_debug_guarded", guarded, "error",
+                 "" if guarded else "verification file not guarded by kDebugMode — would ship to release")
+
+    def flutter_verification_uses_push_observer(self):
+        # Mirror the iOS/RN intent: the verification must key off the real push
+        # subscription surface (pushSubscription.addObserver / .id, validated
+        # against onesignal_flutter source), not a notification-received listener
+        # (addForegroundWillDisplayListener fires on delivery, not registration).
+        vfiles = self._flutter_verification_files()
+        if not vfiles:
+            self.add("flutter_verification_uses_push_observer", True, "warn", "no Dart verification file to check")
+            return
+        blob = "\n".join(read(fp) for fp in vfiles)
+        uses_real = "pushSubscription.addObserver" in blob or "pushSubscription.id" in blob
+        self.add("flutter_verification_uses_push_observer", uses_real, "error",
+                 "" if uses_real else "verification does not read OneSignal.User.pushSubscription "
+                 "(.addObserver/.id) — a notification-received listener is not proof of registration")
+
     # ---- web ----
     def web_worker_is_importscripts(self):
         workers = [fp for fp in walk_files(self.root) if os.path.basename(fp) == "OneSignalSDKWorker.js"]
@@ -324,6 +369,8 @@ class Checks:
                      self.rn_package_present, self.rn_init_present, self.rn_verification_dev_guarded],
             "react-native": [self.rn_package_present, self.rn_init_present, self.rn_verification_dev_guarded],
             "web": [self.web_worker_is_importscripts, self.web_init_present, self.web_page_sdk_v16],
+            "flutter": [self.flutter_init_present, self.flutter_verification_debug_guarded,
+                        self.flutter_verification_uses_push_observer],
         }
         for c in universal + by_platform.get(self.platform, []):
             c()
