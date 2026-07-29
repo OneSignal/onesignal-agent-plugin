@@ -71,7 +71,7 @@ The upstream file also offers Context-Provider and custom-hook patterns — use 
 
 ## Deletable verification file
 
-Use the verified JS/TS observer from `sdk-ai-prompts/docs/react-native-expo/integrate.md`. Non-negotiable properties (SKILL.md Step 6):
+Use the verified JS/TS observer from `sdk-ai-prompts/docs/react-native-expo/integrate.md`. The APIs below are validated against the `react-native-onesignal` source: `OneSignal.User.pushSubscription.getIdAsync(): Promise<string|null>`, `.addEventListener('change', ...)`, and `OneSignal.Notifications.requestPermission(fallbackToSettings): Promise<boolean>` (so `requestPermission(true)` is correct). The Step-8 structural self-check (`verify_integration.py --platform expo`) enforces the config plugin is registered (and first), the packages and init are present, and the verification file is `__DEV__`-guarded. Non-negotiable properties (SKILL.md Step 6):
 - `isRegistered` = truthy AND not `startsWith('local-')`.
 - Register `OneSignal.User.pushSubscription.addEventListener('change', ...)` AND immediately resolve `OneSignal.User.pushSubscription.getIdAsync()` (race guard).
 - `dialogShown` once-guard; `Alert.alert` "Your OneSignal SDK integration is complete!" with a single **"Got it"** button.

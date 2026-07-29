@@ -24,7 +24,8 @@ import sys
 EXCLUDE = {"node_modules", "build", ".gradle", "Pods", ".git", "dist", "DerivedData",
            "__pycache__", ".dart_tool", "out"}
 CODE_EXTS = {".kt", ".java", ".swift", ".m", ".ts", ".tsx", ".js", ".jsx", ".dart",
-             ".gradle", ".kts", ".html", ".xml", ".rb", ".ruby", ".plist"}
+             ".gradle", ".kts", ".html", ".xml", ".rb", ".ruby", ".plist", ".json"}
+# .json is needed for package.json / app.json (Expo/RN config, npm version ranges).
 
 # A OneSignal dependency line carrying a range/dynamic version instead of a pin.
 RANGE_PATTERNS = [
@@ -32,7 +33,7 @@ RANGE_PATTERNS = [
     re.compile(r"onesignal[^\n]*:\s*[\d.]+\s*\+"),                     # gradle x.y.+
     re.compile(r"upToNextMajorVersion|upToNextMinorVersion"),          # SPM range
     re.compile(r"\.package\([^)]*from\s*:"),                           # SPM from:
-    re.compile(r"onesignal[\"'][^\n]*[\"']\s*:\s*[\"'][~^]"),          # npm ^/~
+    re.compile(r"[\"'][^\"'\n]*onesignal[^\"'\n]*[\"']\s*:\s*[\"'][~^]"),  # npm ^/~ in package.json
     re.compile(r"onesignal_flutter:\s*[\"']?[\^~]"),                   # pubspec ^/~
     re.compile(r"pod\s+['\"]OneSignal[^'\"]*['\"]\s*,\s*['\"]\s*[~>]"),   # cocoapods ~>
 ]
@@ -227,6 +228,59 @@ class Checks:
                       + (" and relies on NotificationCenter (a OneSignal registration event it never posts — dead)" if uses_notifcenter else ""))
         self.add("ios_verification_uses_push_observer", ok, "error", detail)
 
+    # ---- expo / react-native (shared package: react-native-onesignal) ----
+    def rn_package_present(self):
+        pkgs = [fp for fp in walk_files(self.root) if os.path.basename(fp) == "package.json"]
+        present = any("react-native-onesignal" in read(fp) for fp in pkgs)
+        self.add("rn_package_present", present, "error",
+                 "" if present else "react-native-onesignal not found in any package.json")
+
+    def rn_init_present(self):
+        hits = grep(self.root, re.compile(r"OneSignal\.initialize\s*\("))
+        self.add("rn_init_present", bool(hits), "error",
+                 "" if hits else "no OneSignal.initialize(appId) call found")
+
+    def rn_verification_dev_guarded(self):
+        vfiles = [fp for fp in walk_files(self.root)
+                  if "verif" in os.path.basename(fp).lower() and os.path.splitext(fp)[1] in (".ts", ".tsx", ".js", ".jsx")]
+        if not vfiles:
+            self.add("rn_verification_dev_guarded", False, "warn", "no JS/TS verification file found (deletable proof step)")
+            return
+        guarded = any("__DEV__" in read(fp) for fp in vfiles)
+        self.add("rn_verification_dev_guarded", guarded, "error",
+                 "" if guarded else "verification file not guarded by __DEV__ — would ship to production")
+
+    def _expo_app_config(self):
+        return [fp for fp in walk_files(self.root)
+                if os.path.basename(fp) in ("app.json", "app.config.js", "app.config.ts")]
+
+    def expo_plugin_registered(self):
+        cfgs = self._expo_app_config()
+        present = any("onesignal-expo-plugin" in read(fp) for fp in cfgs)
+        self.add("expo_plugin_registered", present, "error",
+                 "" if present else "onesignal-expo-plugin not registered in app.json/app.config plugins")
+
+    def expo_plugin_first(self):
+        # The config plugin must be first in the plugins array (upstream + matrix).
+        # Only checkable deterministically for JSON app.json; skip for app.config.*.
+        appjson = [fp for fp in self._expo_app_config() if os.path.basename(fp) == "app.json"]
+        if not appjson:
+            self.add("expo_plugin_first", True, "warn", "app.config.* (not JSON) — plugin-order not statically checkable")
+            return
+        import json as _json
+        for fp in appjson:
+            try:
+                plugins = (_json.loads(read(fp)).get("expo") or {}).get("plugins") or []
+            except Exception:
+                continue
+            names = [(p[0] if isinstance(p, list) and p else p) for p in plugins]
+            if "onesignal-expo-plugin" in names:
+                first = names[0] == "onesignal-expo-plugin"
+                self.add("expo_plugin_first", first, "warn",
+                         "" if first else "onesignal-expo-plugin is not the FIRST entry in expo.plugins")
+                return
+        self.add("expo_plugin_first", False, "warn", "onesignal-expo-plugin not found in app.json expo.plugins")
+
     # ---- web ----
     def web_worker_is_importscripts(self):
         workers = [fp for fp in walk_files(self.root) if os.path.basename(fp) == "OneSignalSDKWorker.js"]
@@ -266,6 +320,9 @@ class Checks:
                         self.android_requestpermission_not_callback, self.android_buildconfig_feature_enabled],
             "ios": [self.ios_init_in_launch, self.ios_verification_debug_guarded,
                     self.ios_verification_uses_push_observer],
+            "expo": [self.expo_plugin_registered, self.expo_plugin_first,
+                     self.rn_package_present, self.rn_init_present, self.rn_verification_dev_guarded],
+            "react-native": [self.rn_package_present, self.rn_init_present, self.rn_verification_dev_guarded],
             "web": [self.web_worker_is_importscripts, self.web_init_present, self.web_page_sdk_v16],
         }
         for c in universal + by_platform.get(self.platform, []):
