@@ -61,23 +61,11 @@ Add `aps-environment` to the `.entitlements` file (`development`, or `production
 
 ## Centralized wrapper (Swift)
 
-Signatures verified against api-reference "SDK data surface". `login()` before tags/email/sms.
-```swift
-import OneSignalFramework
-final class OneSignalManager { // onesignal:managed v1
-    static let shared = OneSignalManager(); private init() {}
-    func login(_ externalId: String) { OneSignal.login(externalId) }
-    func logout() { OneSignal.logout() }
-    func setEmail(_ email: String) { OneSignal.User.addEmail(email) }
-    func setSmsNumber(_ number: String) { OneSignal.User.addSms(number) }
-    func setTag(key: String, value: String) { OneSignal.User.addTag(key: key, value: value) }
-}
-```
-No direct OneSignal calls outside this wrapper except the verification observer.
+Use the template [assets/ios/OneSignalManager.swift.tmpl](assets/ios/OneSignalManager.swift.tmpl) as-is (no substitution needed). Signatures are verified against api-reference "SDK data surface"; `login()` before tags/email/sms. No direct OneSignal calls outside this wrapper except the verification observer.
 
 ## Deletable verification (SwiftUI + UIKit)
 
-Full verified implementations (`OSPushSubscriptionObserver`) are in `sdk-ai-prompts/docs/ios/integrate.md`. Reproduce faithfully. **Use the real observer API, validated against the iOS SDK source** — do NOT wire verification to a `NotificationCenter` event (an eval fabrication: agents listened for a OneSignal registration notification the SDK never posts; it compiles and is functionally dead). The correct surface:
+Use the verified template [assets/ios/OneSignalSetupVerification.swift.tmpl](assets/ios/OneSignalSetupVerification.swift.tmpl) — substitute `__APP_ID__` (the real App ID from Step 2) and write it as-is. Do NOT hand-write this file. It is UIKit-based and works for both UIKit and SwiftUI apps (it presents from the active window's root view controller); call `OneSignalSetupVerification.install()` once from your launch context right after `OneSignal.initialize(...)`. Every API in it is validated against the iOS SDK source and the file is **compile-verified** against the real iOS SDK + a faithful OneSignal stub by `scripts/compile_check_ios.sh` (which also proves the check rejects the fabricated call shapes below). **Use the real observer API** — do NOT wire verification to a `NotificationCenter` event (an eval fabrication: agents listened for a OneSignal registration notification the SDK never posts; it compiles and is functionally dead). The correct surface:
 - conform to `OSPushSubscriptionObserver` and implement `func onPushSubscriptionDidChange(state: OSPushSubscriptionChangedState)`; read `state.current.id` (type `String?`).
 - register with `OneSignal.User.pushSubscription.addObserver(self)`; also read `OneSignal.User.pushSubscription.id` immediately (race guard).
 - `requestPermission` on iOS DOES take a completion block: `OneSignal.Notifications.requestPermission({ accepted in ... }, fallbackToSettings: true)` (unlike Android's suspend form).

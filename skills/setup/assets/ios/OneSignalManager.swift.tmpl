@@ -1,0 +1,16 @@
+import OneSignalFramework
+
+// onesignal:managed v1
+// Centralized wrapper — route all OneSignal calls through this type. The only
+// permitted OneSignal calls outside this file are OneSignal.initialize(...) at
+// launch and the deletable verification observer.
+final class OneSignalManager {
+    static let shared = OneSignalManager()
+    private init() {}
+
+    func login(_ externalId: String) { OneSignal.login(externalId) }
+    func logout() { OneSignal.logout() }
+    func setEmail(_ email: String) { OneSignal.User.addEmail(email) }
+    func setSmsNumber(_ number: String) { OneSignal.User.addSms(number) }
+    func setTag(key: String, value: String) { OneSignal.User.addTag(key: key, value: value) }
+}
