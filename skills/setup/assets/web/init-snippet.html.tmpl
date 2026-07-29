@@ -1,0 +1,13 @@
+<!-- onesignal:managed v1 -->
+<!-- Place in the page <head> (or the framework's root layout). __APP_ID__ is the
+     public OneSignal App ID — safe to commit. Never put a REST/org key here. -->
+<script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+<script>
+  window.OneSignalDeferred = window.OneSignalDeferred || [];
+  OneSignalDeferred.push(async function (OneSignal) {
+    await OneSignal.init({
+      appId: "__APP_ID__",
+      // allowLocalhostAsSecureOrigin: true, // ONLY for a separate localhost testing app
+    });
+  });
+</script>

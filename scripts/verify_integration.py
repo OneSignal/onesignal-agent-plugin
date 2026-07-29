@@ -198,6 +198,20 @@ class Checks:
                 return
         self.add("web_worker_is_importscripts", False, "warn", "worker present but not the expected importScripts shape")
 
+    def web_init_present(self):
+        hits = grep(self.root, re.compile(r"OneSignalDeferred|OneSignal\.init\b|new OneSignal|react-onesignal|onesignal-vue|onesignal-ngx"))
+        self.add("web_init_present", bool(hits), "error",
+                 "" if hits else "no OneSignal init found (OneSignalDeferred/OneSignal.init or a framework wrapper)")
+
+    def web_page_sdk_v16(self):
+        # the page SDK must load from the fixed CDN v16 major; a pinned patch or a
+        # non-CDN path is a drift/staleness hazard.
+        loaded = grep(self.root, re.compile(r"cdn\.onesignal\.com/sdks/web/v16/OneSignalSDK\.page\.js"))
+        wrapper = grep(self.root, re.compile(r"react-onesignal|onesignal-vue|onesignal-ngx"))
+        ok = bool(loaded) or bool(wrapper)  # a framework wrapper loads the SDK itself
+        self.add("web_page_sdk_v16", ok, "warn",
+                 "" if ok else "no v16 CDN page script (or framework wrapper) found")
+
     def run(self):
         universal = [self.no_version_range, self.managed_marker_present, self.no_placeholder_app_id,
                      self.app_id_present, self.no_deprecated_addoutcome, self.no_committed_secrets]
@@ -205,7 +219,7 @@ class Checks:
             "android": [self.android_init_in_application, self.android_manifest_registers_app,
                         self.android_no_stray_google_services, self.android_verification_debug_guarded,
                         self.android_requestpermission_not_callback, self.android_buildconfig_feature_enabled],
-            "web": [self.web_worker_is_importscripts],
+            "web": [self.web_worker_is_importscripts, self.web_init_present, self.web_page_sdk_v16],
         }
         for c in universal + by_platform.get(self.platform, []):
             c()
