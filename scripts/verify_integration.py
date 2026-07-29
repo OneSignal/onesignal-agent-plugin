@@ -34,6 +34,7 @@ RANGE_PATTERNS = [
     re.compile(r"\.package\([^)]*from\s*:"),                           # SPM from:
     re.compile(r"onesignal[\"'][^\n]*[\"']\s*:\s*[\"'][~^]"),          # npm ^/~
     re.compile(r"onesignal_flutter:\s*[\"']?[\^~]"),                   # pubspec ^/~
+    re.compile(r"pod\s+['\"]OneSignal[^'\"]*['\"]\s*,\s*['\"]\s*[~>]"),   # cocoapods ~>
 ]
 
 
@@ -182,6 +183,50 @@ class Checks:
         self.add("android_verification_debug_guarded", guarded, "error",
                  "" if guarded else "verification file not guarded by BuildConfig.DEBUG — would ship to production")
 
+    # ---- ios ----
+    def ios_init_in_launch(self):
+        init_hits = grep(self.root, re.compile(r"OneSignal\.initialize\s*\("))
+        if not init_hits:
+            self.add("ios_init_in_launch", False, "error", "no OneSignal.initialize(...) found")
+            return
+        # the init must run at app launch, not from a SwiftUI View body
+        launch = False
+        for fp in walk_files(self.root):
+            if fp.endswith(".swift"):
+                txt = read(fp)
+                if "OneSignal.initialize" in txt and re.search(r"didFinishLaunchingWithOptions|@main|:\s*App\b", txt):
+                    launch = True
+        self.add("ios_init_in_launch", launch, "warn",
+                 "" if launch else "OneSignal.initialize is not in an AppDelegate/@main App launch context "
+                 "(if it's in a View, cold-start push/deep links break)")
+
+    def ios_verification_debug_guarded(self):
+        vfiles = [fp for fp in walk_files(self.root) if "verification" in os.path.basename(fp).lower() and fp.endswith(".swift")]
+        if not vfiles:
+            self.add("ios_verification_debug_guarded", False, "warn", "no Swift verification file found (deletable proof step)")
+            return
+        guarded = any("#if DEBUG" in read(fp) for fp in vfiles)
+        self.add("ios_verification_debug_guarded", guarded, "error",
+                 "" if guarded else "verification file not guarded by #if DEBUG — would ship to release")
+
+    def ios_verification_uses_push_observer(self):
+        # FINDINGS: agents wired verification to a NotificationCenter event OneSignal
+        # never posts (compiles, functionally dead). The real mechanism is
+        # OSPushSubscriptionObserver.onPushSubscriptionDidChange. Flag the dead form.
+        vfiles = [fp for fp in walk_files(self.root) if "verification" in os.path.basename(fp).lower() and fp.endswith(".swift")]
+        if not vfiles:
+            self.add("ios_verification_uses_push_observer", True, "warn", "no Swift verification file to check")
+            return
+        blob = "\n".join(read(fp) for fp in vfiles)
+        uses_real = "OSPushSubscriptionObserver" in blob or "onPushSubscriptionDidChange" in blob
+        uses_notifcenter = re.search(r"NotificationCenter|NSNotificationCenter", blob) is not None
+        ok = uses_real and not uses_notifcenter
+        detail = ""
+        if not ok:
+            detail = ("verification does not use OSPushSubscriptionObserver.onPushSubscriptionDidChange"
+                      + (" and relies on NotificationCenter (a OneSignal registration event it never posts — dead)" if uses_notifcenter else ""))
+        self.add("ios_verification_uses_push_observer", ok, "error", detail)
+
     # ---- web ----
     def web_worker_is_importscripts(self):
         workers = [fp for fp in walk_files(self.root) if os.path.basename(fp) == "OneSignalSDKWorker.js"]
@@ -219,6 +264,8 @@ class Checks:
             "android": [self.android_init_in_application, self.android_manifest_registers_app,
                         self.android_no_stray_google_services, self.android_verification_debug_guarded,
                         self.android_requestpermission_not_callback, self.android_buildconfig_feature_enabled],
+            "ios": [self.ios_init_in_launch, self.ios_verification_debug_guarded,
+                    self.ios_verification_uses_push_observer],
             "web": [self.web_worker_is_importscripts, self.web_init_present, self.web_page_sdk_v16],
         }
         for c in universal + by_platform.get(self.platform, []):

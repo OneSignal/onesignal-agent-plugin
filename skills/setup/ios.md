@@ -77,7 +77,12 @@ No direct OneSignal calls outside this wrapper except the verification observer.
 
 ## Deletable verification (SwiftUI + UIKit)
 
-Full verified implementations (`OSPushSubscriptionObserver`) are in `sdk-ai-prompts/docs/ios/integrate.md`. Reproduce faithfully. Non-negotiable properties (SKILL.md Step 6):
+Full verified implementations (`OSPushSubscriptionObserver`) are in `sdk-ai-prompts/docs/ios/integrate.md`. Reproduce faithfully. **Use the real observer API, validated against the iOS SDK source** — do NOT wire verification to a `NotificationCenter` event (an eval fabrication: agents listened for a OneSignal registration notification the SDK never posts; it compiles and is functionally dead). The correct surface:
+- conform to `OSPushSubscriptionObserver` and implement `func onPushSubscriptionDidChange(state: OSPushSubscriptionChangedState)`; read `state.current.id` (type `String?`).
+- register with `OneSignal.User.pushSubscription.addObserver(self)`; also read `OneSignal.User.pushSubscription.id` immediately (race guard).
+- `requestPermission` on iOS DOES take a completion block: `OneSignal.Notifications.requestPermission({ accepted in ... }, fallbackToSettings: true)` (unlike Android's suspend form).
+
+The Step-8 structural self-check (`verify_integration.py --platform ios`) enforces `#if DEBUG`, the real push observer (not NotificationCenter), and init in a launch context. Non-negotiable properties (SKILL.md Step 6):
 - Guard on `#if DEBUG` so it never ships.
 - Register the observer AND call `evaluate(OneSignal.User.pushSubscription.id)` immediately (race guard).
 - `isRegistered` = non-empty AND not `hasPrefix("local-")`.
