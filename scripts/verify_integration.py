@@ -326,6 +326,76 @@ class Checks:
                  "" if uses_real else "verification does not read OneSignal.User.pushSubscription "
                  "(.addObserver/.id) — a notification-received listener is not proof of registration")
 
+    # ---- cordova (onesignal-cordova-plugin) ----
+    def _js_verification_files(self):
+        return [fp for fp in walk_files(self.root)
+                if "verif" in os.path.basename(fp).lower()
+                and os.path.splitext(fp)[1] in (".ts", ".tsx", ".js", ".jsx")]
+
+    def cordova_package_present(self):
+        present = bool(grep(self.root, re.compile(r"onesignal-cordova-plugin")))
+        self.add("cordova_package_present", present, "error",
+                 "" if present else "onesignal-cordova-plugin not found in package.json/config.xml/plugin.xml")
+
+    def cordova_init_present(self):
+        init_hits = grep(self.root, re.compile(r"OneSignal\.initialize\s*\("))
+        if not init_hits:
+            self.add("cordova_init_present", False, "error", "no OneSignal.initialize(appId) call found")
+            return
+        # init must run after 'deviceready' (the plugin bridge isn't ready before it)
+        in_ready = bool(grep(self.root, re.compile(r"deviceready")))
+        self.add("cordova_init_present", in_ready, "warn",
+                 "" if in_ready else "no 'deviceready' handler found near init — Cordova init must run after deviceready")
+
+    def cordova_verification_uses_push_observer(self):
+        vfiles = self._js_verification_files()
+        if not vfiles:
+            self.add("cordova_verification_uses_push_observer", True, "warn", "no JS/TS verification file to check")
+            return
+        blob = "\n".join(read(fp) for fp in vfiles)
+        # validated surface: getIdAsync() (.id getter is deprecated) + pushSubscription
+        # addEventListener('change', ...). A notification-received listener is not proof.
+        uses_real = "getIdAsync" in blob or "pushSubscription" in blob
+        self.add("cordova_verification_uses_push_observer", uses_real, "error",
+                 "" if uses_real else "verification does not read pushSubscription (getIdAsync/addEventListener 'change') "
+                 "— a notification-received listener is not proof of registration")
+
+    # ---- capacitor / ionic (@onesignal/capacitor-plugin) ----
+    def capacitor_package_present(self):
+        present = bool(grep(self.root, re.compile(r"@onesignal/capacitor-plugin")))
+        self.add("capacitor_package_present", present, "error",
+                 "" if present else "@onesignal/capacitor-plugin not found in package.json")
+
+    def capacitor_init_present(self):
+        hits = grep(self.root, re.compile(r"OneSignal\.initialize\s*\("))
+        self.add("capacitor_init_present", bool(hits), "error",
+                 "" if hits else "no OneSignal.initialize(appId) call found")
+
+    def capacitor_handle_notifications_flag(self):
+        # matrix + cross-platform.md: set ios.handleApplicationNotifications=false so
+        # OneSignal and Capacitor don't both claim the iOS notification callbacks.
+        cfgs = [fp for fp in walk_files(self.root)
+                if os.path.basename(fp) in ("capacitor.config.ts", "capacitor.config.js", "capacitor.config.json")]
+        if not cfgs:
+            self.add("capacitor_handle_notifications_flag", False, "warn", "no capacitor.config.* found")
+            return
+        blob = "\n".join(read(fp) for fp in cfgs)
+        ok = re.search(r"handleApplicationNotifications\s*[:=]\s*false", blob) is not None
+        self.add("capacitor_handle_notifications_flag", ok, "warn",
+                 "" if ok else "capacitor.config missing ios.handleApplicationNotifications=false "
+                 "(OneSignal and Capacitor will both claim iOS notification callbacks)")
+
+    def capacitor_verification_uses_push_observer(self):
+        vfiles = self._js_verification_files()
+        if not vfiles:
+            self.add("capacitor_verification_uses_push_observer", True, "warn", "no JS/TS verification file to check")
+            return
+        blob = "\n".join(read(fp) for fp in vfiles)
+        uses_real = "getIdAsync" in blob or "pushSubscription" in blob
+        self.add("capacitor_verification_uses_push_observer", uses_real, "error",
+                 "" if uses_real else "verification does not read pushSubscription (getIdAsync/addEventListener 'change') "
+                 "— a notification-received listener is not proof of registration")
+
     # ---- web ----
     def web_worker_is_importscripts(self):
         workers = [fp for fp in walk_files(self.root) if os.path.basename(fp) == "OneSignalSDKWorker.js"]
@@ -371,6 +441,11 @@ class Checks:
             "web": [self.web_worker_is_importscripts, self.web_init_present, self.web_page_sdk_v16],
             "flutter": [self.flutter_init_present, self.flutter_verification_debug_guarded,
                         self.flutter_verification_uses_push_observer],
+            "cordova": [self.cordova_package_present, self.cordova_init_present,
+                        self.cordova_verification_uses_push_observer],
+            "capacitor": [self.capacitor_package_present, self.capacitor_init_present,
+                          self.capacitor_handle_notifications_flag,
+                          self.capacitor_verification_uses_push_observer],
         }
         for c in universal + by_platform.get(self.platform, []):
             c()

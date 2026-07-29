@@ -120,7 +120,16 @@ once it's compile-verifiable.**
      verification file needs the framework (dialog UI + `kDebugMode`) to analyze,
      not just standalone Dart — same "template only when compile-verifiable" gate
      that held iOS. Installing Flutter (~1GB+) is a user decision (§6).
-   - **Cordova / Capacitor**: not started. Same recipe.
+   - **Cordova / Capacitor**: ✅ checks added (cordova: package present, init near
+     `deviceready`, verification reads pushSubscription; capacitor: package present,
+     init present, `ios.handleApplicationNotifications=false`, verification reads
+     pushSubscription), registered in `by_platform`, positive/negative tested,
+     yardstick synced, `cross-platform.md` updated. API validated against source
+     (§8.7). No debug-guard check — no universal convention for plain Cordova/
+     Capacitor JS (unlike RN `__DEV__` / Flutter `kDebugMode` / iOS `#if DEBUG` /
+     Android `BuildConfig.DEBUG`); did not invent one. Both are JS → a compile-gate
+     eval is cheap with the toolchain already here (tsc / `npx cap sync`, see §3.5).
+     Templates not built (no eval case yet; low fabrication risk vs native).
 3. **Extend `verify_integration.py`** platform maps for the above (add entries to
    the `by_platform` dict in `Checks.run`).
 4. **Unity** — GUI-bound, low agent-automatability; checks only, low priority.
@@ -352,3 +361,9 @@ Validated against source this session (`lib/onesignal_flutter.dart`, `src/pushsu
 - `OSPushSubscriptionChangedState { current, previous: OSPushSubscriptionState }`; `OSPushSubscriptionState { id: String?, token: String?, optedIn: bool }`.
 - `OneSignal.Debug.setLogLevel(OSLogLevel.verbose)`; `enum OSLogLevel { none, fatal, error, warn, info, debug, verbose }`.
 - Verification guard: `kDebugMode` (from `package:flutter/foundation.dart`).
+
+### §8.7 Cordova + Capacitor — checks added (both JS, same observer surface as web/RN)
+Validated against source this session.
+- **Cordova** (`OneSignal-Cordova-SDK`, `www/`): `OneSignal.initialize(appId): void` (call after `deviceready`); `Notifications.requestPermission(fallbackToSettings?): Promise<boolean>`; `User.pushSubscription.getIdAsync(): Promise<string|null>` (`.id` getter **deprecated**); `pushSubscription.addEventListener('change', (e) => e.current.id)`. Package: `onesignal-cordova-plugin`.
+- **Capacitor** (`OneSignal-Capacitor-SDK`, `src/`): `OneSignal.initialize(appId): Promise<void>` (async, unlike cordova's void); `Notifications.requestPermission(fallbackToSettings?): Promise<boolean>`; `pushSubscription.getIdAsync(): Promise<string|null>`; `pushSubscription.addEventListener('change', ...)`. Package: `@onesignal/capacitor-plugin`. Config: set `ios.handleApplicationNotifications=false` in `capacitor.config.*`.
+- Both use the JS `addEventListener('change')` observer surface — same as web/RN, NOT iOS/Android/Flutter's `addObserver`.
