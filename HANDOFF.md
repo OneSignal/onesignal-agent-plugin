@@ -125,6 +125,41 @@ once it's compile-verifiable.**
    the `by_platform` dict in `Checks.run`).
 4. **Unity** — GUI-bound, low agent-automatability; checks only, low priority.
 
+### §3.5 Compile-gating in the eval (assessed this session)
+
+Goal: every shipped template is gated by a *real* build/analyze in an eval case,
+not just my out-of-band `compile_check_ios.sh`. Findings after reading the eval
+harness:
+
+- **Harness cost = ~zero.** `src/graders/command.ts` already runs arbitrary
+  `sh -c <cmd>` in the workspace with a `timeoutMs`. Android's `gradle-build` and
+  expo's `expo-prebuild` graders are just `command` entries in `case.yaml`. A new
+  toolchain-gated grader is a one-line `command:` block — no TS changes. Fixtures
+  live in `general-eval/fixtures/{android-bare,expo-bare,ios-bare,web-bare,...}`;
+  a case is `cases/<id>/{case.yaml,prompt.md}` with `fixture:` + `graders:`.
+- **Flutter (low–medium, blocked on toolchain install).** Add `fixtures/flutter-bare`
+  (`flutter create` skeleton), `cases/flutter-sdk-plugin/`, and a grader
+  `command: flutter pub get && flutter analyze`. `flutter analyze` resolves the
+  REAL `onesignal_flutter` and fails on a wrong call shape / arity — a genuine
+  compile-equivalent, *better* than the iOS stub (real package, not a stub). Only
+  blocker: install Flutter SDK (~1GB) on the eval host. `flutter build apk` is the
+  heavier variant (reuses the android arm's JDK/Android SDK).
+- **iOS (medium, NO new toolchain — Xcode already present).** Don't stand up full
+  `xcodebuild` linking the XCFramework (needs a real pbxproj, SPM/pod resolution,
+  the keychain wall in `ios.md`, a simulator, network — heavy + flaky headless).
+  Instead generalize `scripts/compile_check_ios.sh` into a `command` grader that
+  typechecks the *agent's workspace* `*.swift` against the §8.1 OneSignal stub +
+  real UIKit (`xcrun --sdk iphonesimulator swiftc -typecheck`). No network, no
+  project, no simulator. This catches an agent that fabricates the call shape in
+  its OUTPUT at eval time — the Android-class bug — which the current ios case
+  (file-contains + judge + advisory structural) does not. Highest value/effort
+  ratio here.
+- **Recommended order:** (1) iOS stub-typecheck command grader — no install, high
+  value; (2) Flutter `flutter analyze` grader once someone OKs the SDK install;
+  (3) skip full native `xcodebuild` unless Move 2 (deterministic iOS native) is
+  greenlit. Cordova/Capacitor are JS — their analog is `npx cap sync` / a tsc/lint
+  command grader, cheap, toolchain already here.
+
 ---
 
 ## §4. Strategic moves (from the analysis) — prioritized by leverage
