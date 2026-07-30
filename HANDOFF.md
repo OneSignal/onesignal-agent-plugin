@@ -245,6 +245,53 @@ nothing. Scripts are harness-agnostic python3.
   fork as the "customer-facing version" discussion, now with price data.
 - Effort: high.
 
+#### Move 4 clarified (this session): NOT a new MCP — integrate the existing OneSignal product MCP.
+"MCP" here means the **existing OneSignal product MCP**, not a new server wrapping
+our scripts. Two dead ends ruled out this session: (1) a new MCP wrapping our
+deterministic scripts is redundant for our own users (they already have
+skills+scripts) and the set of hosts it uniquely reaches is ~empty once Cursor/
+Codex/Claude Code all consume skills; (2) an `npx` wizard still needs its own
+model (the ownership fork) — parked. A draft `mcp/server.py` was written and
+deleted.
+
+**State of play:** the OneSignal MCP is ALREADY integrated in the plugin's
+guidance — `verify`/`status`/`setup` prefer it for API reads/sends when connected
+(tool surface in `references/api-reference.md:62`). The ONE gap is **credentials**,
+which is exactly where the product-side work is: an MCP **upload/provision** tool
+(the analog of `POST /api/v1/apps/{app_id}/credentials`). Decision: our plugin
+should **prefer the MCP credential tool → fall back to direct API → dashboard**,
+mirroring the existing read/send routing.
+
+**Change surface (flip once the MCP tool exists — do NOT edit before, our skill
+forbids inventing an MCP tool):**
+- `skills/credentials/SKILL.md:59` — currently "MCP … does not expose credential
+  upload … Do not invent an MCP tool for it." → becomes "prefer MCP tool `<name>`;
+  on absent/404 fall back to the direct API write; on 409 → dashboard."
+- `skills/setup/SKILL.md:94` — drop "cannot … upload credentials" from the MCP's
+  can't-do list.
+- `references/api-reference.md:62` — add the credential tool to the MCP surface.
+
+**Contract our flow needs FROM the MCP upload tool (so it slots into the existing
+credentials validation loop unchanged):**
+1. **Secrets by file/base64, never chat.** Take a file path (or base64 the agent
+   makes from a path). Keys stay server-side — that's the MCP's whole advantage
+   and it preserves safety-contract §Never.
+2. **APNs params:** `apns_p8` (b64), `apns_key_id`, `apns_team_id`, `apns_bundle_id`
+   (all required). **FCM param:** `fcm_v1_service_account_json` (b64). Same names/
+   shape as the REST endpoint so guidance doesn't fork.
+3. **Surface the raw API status+body.** The credentials skill's validation loop
+   maps specific causes verbatim — 409 "already configured" (write-once →
+   replacement is dashboard/org-key only), 404 (feature-flag off → dashboard
+   fallback), 401 (wrong app key), APNs 10–15 min propagation retry, Firebase
+   wrong-project. The tool must pass these through, not swallow/paraphrase them.
+4. **Write-once semantics preserved** (per-platform, all-or-nothing on multi-
+   channel). Don't silently replace.
+5. **Validation = the upload response** (2xx = stored+validated server-side, NOT
+   proof of delivery — still hand to `verify` for a real send).
+If the tool honors 1–5, the plugin integration is a small routing edit at the
+three spots above. **Open item: final tool name + exact param names** — hand them
+over and the skill edits are mechanical.
+
 ---
 
 ## §5. Hard-won rules — keep these
