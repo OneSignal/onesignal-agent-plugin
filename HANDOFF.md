@@ -129,7 +129,9 @@ once it's compile-verifiable.**
      Capacitor JS (unlike RN `__DEV__` / Flutter `kDebugMode` / iOS `#if DEBUG` /
      Android `BuildConfig.DEBUG`); did not invent one. Both are JS → a compile-gate
      eval is cheap with the toolchain already here (tsc / `npx cap sync`, see §3.5).
-     Templates not built (no eval case yet; low fabrication risk vs native).
+     Templates not built (low fabrication risk vs native). **Eval cases now exist**
+     (`capacitor-sdk-plugin`, `cordova-sdk-plugin`) with structural + (capacitor only)
+     ts-typecheck graders — see §3.5. Never run against an agent yet (costs a trial).
 3. **Extend `verify_integration.py`** platform maps for the above (add entries to
    the `by_platform` dict in `Checks.run`).
 4. **Unity** — GUI-bound, low agent-automatability; checks only, low priority.
@@ -168,11 +170,24 @@ harness:
   frontend-only flag) and NO bash arrays (`sh`/bash-3.2). The parallel plugin-repo
   gate for the shipped templates is `scripts/compile_check_ios.sh` — still needs a
   CI home (plugin repo has no package.json/workflows yet).
-- **Recommended order:** (1) iOS stub-typecheck command grader — no install, high
-  value; (2) Flutter `flutter analyze` grader once someone OKs the SDK install;
-  (3) skip full native `xcodebuild` unless Move 2 (deterministic iOS native) is
-  greenlit. Cordova/Capacitor are JS — their analog is `npx cap sync` / a tsc/lint
-  command grader, cheap, toolchain already here.
+- **Capacitor (DONE this session).** New `capacitor-sdk-plugin` case +
+  `capacitor-bare` fixture; wires the `structural` grader (platform: capacitor) and
+  a new ADVISORY `ts-typecheck` grader (`general-eval/src/graders/ts-typecheck.ts`,
+  `tools/ts_typecheck.sh` + `tools/onesignal_js_stub.d.ts`) that typechecks the
+  agent's TS against a OneSignal JS stub OFFLINE. Verified: tsc catches fabricated
+  call shapes on the typed `@onesignal/capacitor-plugin` import; correct integration
+  passes; an unresolved framework import degrades to an advisory skip (fails only on
+  OneSignal-referencing errors).
+- **Cordova (DONE this session, structural-only — deliberately no tsc).** New
+  `cordova-sdk-plugin` case + `cordova-bare` fixture wiring the `structural` grader
+  (platform: cordova) + deterministic checks. Empirically confirmed a tsc gate is
+  WORTHLESS for cordova: `window.plugins.OneSignal` is an untyped global (`any`), so
+  tsc passes every fabrication — a tsc grader there would be a rubber stamp. Did not
+  ship one.
+- **Remaining:** Flutter `flutter analyze` grader once someone OKs the SDK install
+  (only real blocker); full native `xcodebuild` skip unless Move 2 is greenlit;
+  give `compile_check_ios.sh` a CI home in the plugin repo (no runner yet). New
+  reusable graders: `swift-typecheck`, `ts-typecheck` (both advisory, offline).
 
 ---
 
