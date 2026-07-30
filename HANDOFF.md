@@ -153,16 +153,21 @@ harness:
   compile-equivalent, *better* than the iOS stub (real package, not a stub). Only
   blocker: install Flutter SDK (~1GB) on the eval host. `flutter build apk` is the
   heavier variant (reuses the android arm's JDK/Android SDK).
-- **iOS (medium, NO new toolchain — Xcode already present).** Don't stand up full
-  `xcodebuild` linking the XCFramework (needs a real pbxproj, SPM/pod resolution,
-  the keychain wall in `ios.md`, a simulator, network — heavy + flaky headless).
-  Instead generalize `scripts/compile_check_ios.sh` into a `command` grader that
-  typechecks the *agent's workspace* `*.swift` against the §8.1 OneSignal stub +
-  real UIKit (`xcrun --sdk iphonesimulator swiftc -typecheck`). No network, no
-  project, no simulator. This catches an agent that fabricates the call shape in
-  its OUTPUT at eval time — the Android-class bug — which the current ios case
-  (file-contains + judge + advisory structural) does not. Highest value/effort
-  ratio here.
+- **iOS (DONE this session).** Shipped as an ADVISORY `swift-typecheck` grader on
+  the ios case (`general-eval/src/graders/swift-typecheck.ts` + registered in
+  `run.ts`; `tools/ios_swift_typecheck.sh` + `tools/onesignal_ios_stub.swift`).
+  Typechecks the *agent's workspace* `*.swift` against a OneSignal stub + real
+  iphonesimulator SDK — offline, no XCFramework/SPM/keychain. Catches the
+  fabricated-call-shape bug fast, and runs even when the agent (compliantly)
+  hands the SPM add to the human (so the heavy `xcodebuild` grader — which DOES
+  already exist on the ios case but has never been run green — can't). Advisory
+  because the stub is a subset of the real API (a broader-API false fail must not
+  gate); the grader only fails on errors referencing OneSignal symbols. Verified:
+  bare fixture + a template-built integration pass; both fabrication shapes fail.
+  Notes: driver takes the file list via `@response-file` (NOT `-filelist`, a
+  frontend-only flag) and NO bash arrays (`sh`/bash-3.2). The parallel plugin-repo
+  gate for the shipped templates is `scripts/compile_check_ios.sh` — still needs a
+  CI home (plugin repo has no package.json/workflows yet).
 - **Recommended order:** (1) iOS stub-typecheck command grader — no install, high
   value; (2) Flutter `flutter analyze` grader once someone OKs the SDK install;
   (3) skip full native `xcodebuild` unless Move 2 (deterministic iOS native) is
