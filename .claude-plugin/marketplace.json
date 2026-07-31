@@ -1,0 +1,11 @@
+{
+  "name": "onesignal-local",
+  "owner": { "name": "OneSignal" },
+  "plugins": [
+    {
+      "name": "onesignal",
+      "source": "./",
+      "description": "OneSignal onboarding & activation skills"
+    }
+  ]
+}

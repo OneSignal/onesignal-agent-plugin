@@ -1,0 +1,38 @@
+{
+  "name": "onesignal",
+  "version": "0.2.0",
+  "description": "OneSignal onboarding & activation skills: install and initialize the SDK, provision your app and push credentials, discover instrumentable data in your codebase, wire identity/tags/events, verify real delivery, and set up conversion tracking.",
+  "author": {
+    "name": "OneSignal",
+    "url": "https://onesignal.com"
+  },
+  "homepage": "https://documentation.onesignal.com",
+  "license": "MIT",
+  "keywords": [
+    "onesignal",
+    "push-notifications",
+    "sdk-setup",
+    "onboarding",
+    "messaging",
+    "instrumentation"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "OneSignal",
+    "shortDescription": "Set up, verify, and instrument OneSignal",
+    "longDescription": "Install and initialize the OneSignal SDK, configure push credentials, instrument identity and events, verify delivery, and set up conversion tracking.",
+    "developerName": "OneSignal",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://documentation.onesignal.com",
+    "defaultPrompt": [
+      "Set up OneSignal in this app.",
+      "Verify that OneSignal push delivery works.",
+      "Show me the next OneSignal onboarding step."
+    ]
+  }
+}

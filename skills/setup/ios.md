@@ -1,0 +1,87 @@
+# iOS native integration (OneSignal iOS SDK 5.x)
+
+Reference for the `setup` skill. Follow [SKILL.md](SKILL.md) Steps 0–8; this file is the iOS install detail. Mirrors `sdk-ai-prompts/docs/ios/integrate.md`. Do not contradict [../../references/platform-matrix.md](../../references/platform-matrix.md).
+
+## What the agent does vs. the human (matrix)
+
+- **Agent (text-editable):** add the SPM package or Podfile line; `OneSignal.initialize(appId, withLaunchOptions:)` in `AppDelegate` / SwiftUI `init()`; `Info.plist` `UIBackgroundModes = remote-notification`; the two `project.pbxproj` build settings; entitlements text; wrapper + deletable verification file.
+- **Human (Xcode GUI + Apple portal — you CANNOT reliably do these):**
+  - Apple Developer portal (paid account): enable the **Push Notifications** capability on the App ID, generate an **APNs `.p8`** key + capture Key ID + Team ID → handed to the **credentials** skill.
+  - Xcode GUI: signing, the Push Notifications + Background Modes capability toggles, and — if needed — **Notification Service Extension target creation** (File ▸ New ▸ Target). NSE is NOT reliably text-editable; guide the human.
+  - Test on a **physical device, or a simulator on an Apple-silicon Mac** (Xcode 14+ simulators there receive real sandbox APNs pushes; Intel-Mac simulators do not receive remote push).
+
+## NSE is OPTIONAL for a minimal install
+
+A Notification Service Extension is only needed for rich media, confirmed delivery, or badges. OneSignal's own AI prompt skips it for minimal install — so do NOT create an NSE unless the user asks for those features. Keep the integration minimal (safety contract §8).
+
+## Dependency
+
+Detect the existing manager: `Podfile`/`Podfile.lock` → CocoaPods; `Package.swift`/`Package.resolved` or an SPM project → SPM. Match it; don't introduce a second package manager. Read the exact Stable version from https://onesignal.github.io/sdk-releases/releases.json (iOS entry, `channels.stable.version`; SKILL.md Step 4 — do not guess, do not use a version range).
+
+**Swift Package Manager** (smaller XCFramework download — matrix): add package `https://github.com/OneSignal/OneSignal-XCFramework`, and add the **`OneSignalFramework`** library product to the app target (add `OneSignalInAppMessages` / `OneSignalLocation` only if those features are wanted). SPM add is partly GUI — if you cannot edit the pbxproj package references safely, give the human the exact File ▸ Add Packages steps.
+
+**CLI builds + SPM keychain wall:** `xcodebuild`-driven SPM resolution can pop a macOS **login-keychain password prompt** (and re-prompt on Deny), which stalls headless/agent runs. Pass `-scmProvider system` to `xcodebuild` so package fetching uses system git credentials instead of Xcode's keychain-backed SCM.
+
+**CocoaPods** (`Podfile`) — exact pin, no range (example — `5.5.1` was Stable at authoring; read the current value from releases.json):
+```ruby
+pod 'OneSignal/OneSignal', '5.5.1' # onesignal:managed v1 — exact Stable from releases.json
+```
+then `pod install`.
+
+## Initialize at launch
+
+`AppDelegate` (UIKit):
+```swift
+import OneSignalFramework
+// in application(_:didFinishLaunchingWithOptions:)
+OneSignal.Debug.setLogLevel(.LL_VERBOSE) // remove for production
+OneSignal.initialize("YOUR_ONESIGNAL_APP_ID", withLaunchOptions: launchOptions) // onesignal:managed v1
+```
+SwiftUI `@main` app with no AppDelegate: call the same two lines from the `App`'s `init()` (pass `withLaunchOptions: nil`). Detect which lifecycle the project uses and match it.
+
+## Background Modes — three coordinated edits (verified in upstream ios/integrate.md)
+
+1. Ensure an `Info.plist` exists with:
+   ```xml
+   <key>UIBackgroundModes</key>
+   <array><string>remote-notification</string></array>
+   ```
+2. Add to the target's Debug AND Release `XCBuildConfiguration` in `project.pbxproj`:
+   ```
+   INFOPLIST_FILE = "YourApp/Info.plist";
+   INFOPLIST_KEY_UIBackgroundModes = "remote-notification";
+   ```
+3. For Xcode 16+ file-system-synchronized projects (`PBXFileSystemSynchronizedRootGroup`), add a `PBXFileSystemSynchronizedBuildFileExceptionSet` excluding `Info.plist` from the resource copy phase to avoid "Multiple commands produce Info.plist". Skip step 3 for classic `PBXGroup`/`PBXFileReference` projects. The exact pbxproj snippets are in the upstream ios/integrate.md — reproduce them; pbxproj edits are fragile, so preview them precisely in the diff (safety contract §5) and if the format doesn't match, hand the capability toggle to the human via Xcode's Signing & Capabilities tab instead.
+
+Add `aps-environment` to the `.entitlements` file (`development`, or `production` for release). Deployment target iOS 12.0+; do not change it if already set.
+
+## Centralized wrapper (Swift)
+
+Signatures verified against api-reference "SDK data surface". `login()` before tags/email/sms.
+```swift
+import OneSignalFramework
+final class OneSignalManager { // onesignal:managed v1
+    static let shared = OneSignalManager(); private init() {}
+    func login(_ externalId: String) { OneSignal.login(externalId) }
+    func logout() { OneSignal.logout() }
+    func setEmail(_ email: String) { OneSignal.User.addEmail(email) }
+    func setSmsNumber(_ number: String) { OneSignal.User.addSms(number) }
+    func setTag(key: String, value: String) { OneSignal.User.addTag(key: key, value: value) }
+}
+```
+No direct OneSignal calls outside this wrapper except the verification observer.
+
+## Deletable verification (SwiftUI + UIKit)
+
+Full verified implementations (`OSPushSubscriptionObserver`) are in `sdk-ai-prompts/docs/ios/integrate.md`. Reproduce faithfully. Non-negotiable properties (SKILL.md Step 6):
+- Guard on `#if DEBUG` so it never ships.
+- Register the observer AND call `evaluate(OneSignal.User.pushSubscription.id)` immediately (race guard).
+- `isRegistered` = non-empty AND not `hasPrefix("local-")`.
+- `hasShown` guard; native alert "Your OneSignal SDK integration is complete!" with a single **"Got it"** button.
+- On tap → `OneSignal.Notifications.requestPermission(..., fallbackToSettings: true)` (the ONLY permission prompt) → optional body prompt → unauthenticated `POST https://api.onesignal.com/notifications` with `include_subscription_ids` (no Authorization header; on 401 fall back to a dashboard/REST-key send).
+- Top-of-file comment naming the file + call site to delete.
+
+## Handoffs
+
+- Hand off to **credentials** — iOS push needs the APNs `.p8` (+ Key ID/Team ID) on the OneSignal app, and the human must toggle capabilities + create the NSE in Xcode if rich features are wanted.
+- Then **verify** on a physical device (or an Apple-silicon-Mac simulator).
