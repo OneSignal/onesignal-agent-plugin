@@ -15,20 +15,38 @@ The upstream Android prompt tells you to add `google-services.json` + the Google
 
 ## Dependency (exact pin — NEVER a Gradle version range)
 
-Detect Groovy vs. Kotlin DSL by file name. Read the exact Stable version from https://onesignal.github.io/sdk-releases/releases.json (the Android entry's `channels.stable.version`; SKILL.md Step 4 — do not use the human-readable page, do not guess). **Do not emit a range like `[5.6.1, 5.9.99]`** — eval runs showed ranges causing real Android build failures, and the upstream prompt forbids them.
+Do not compose the dependency line by hand — that is how ranges (`[5.6.1, 5.9.99]`) slip in, which caused real Android build failures in every mobile eval trial. Detect Groovy vs. Kotlin DSL by file name, then **run the resolver and paste its line verbatim:**
 
-`build.gradle.kts` (example — `5.9.1` was Stable at authoring; read the current value from releases.json):
+```bash
+# Kotlin DSL (build.gradle.kts):
+${CLAUDE_PLUGIN_ROOT}/scripts/resolve_sdk_version.py android --format line
+# Groovy DSL (build.gradle):
+${CLAUDE_PLUGIN_ROOT}/scripts/resolve_sdk_version.py android --format line --line-format gradle-groovy
+```
+
+The script emits an exact pin and cannot emit a range. Drop the output inside the module's `dependencies { }` block unchanged. Example of the shape it returns (the version will be the current Stable, not necessarily this one):
 ```kotlin
 dependencies {
-    implementation("com.onesignal:OneSignal:5.9.1") // onesignal:managed v1 — exact Stable from releases.json
+    implementation("com.onesignal:OneSignal:5.9.1") // onesignal:managed v1
 }
 ```
-`build.gradle` (Groovy):
-```groovy
-dependencies {
-    implementation 'com.onesignal:OneSignal:5.9.1' // onesignal:managed v1 — exact Stable from releases.json
-}
+
+### Kotlin floor (check it deterministically — don't guess, don't half-bump)
+
+The OneSignal SDK transitively pulls in a **newer `kotlin-stdlib` than its own POM admits** — 5.9.1's POM declares 1.9.25, but its OpenTelemetry submodule (`com.onesignal:otel`) drags the resolved graph up to `kotlin-stdlib 2.2.20`. Gradle's highest-wins resolution then pins the whole app there, so the app must be compiled by a Kotlin toolchain that can **read 2.2 metadata**. A host on Kotlin 1.9 fails; a host bumped to an intermediate 2.0 **still fails** (the 2.0 compiler reads metadata only up to 2.1) — an eval trial did exactly this, mutating the customer's build for nothing.
+
+The exact floor is NOT fetchable from Maven metadata (it lives deep in OpenTelemetry's graph), so read it from the resolved project and let the script decide:
+
+```bash
+./gradlew -q :app:dependencies --configuration debugRuntimeClasspath \
+  | ${CLAUDE_PLUGIN_ROOT}/scripts/android_kotlin_check.py . --deps -
 ```
+
+It reads the host's declared Kotlin version and the resolved `kotlin-stdlib`, then returns `compatible` (build it) or `bump_or_blocker` with the exact `required_floor`. On `bump_or_blocker`, **do not silently change the toolchain** (safety contract §7) — surface the decision the script spells out:
+- **(A)** bump the host Kotlin Gradle plugin to at least the `required_floor` (e.g. `2.2.x`) as an explicit, separately-approved change — never to an intermediate version below the floor; or
+- **(B)** if they can't move off their Kotlin version, it's a hard compatibility blocker — offer an older OneSignal SDK line they confirm resolves a stdlib their compiler can read.
+
+If the toolchain lacks the Android SDK/JDK to run `:app:dependencies`, say so and present the same A/B decision using the host Kotlin version alone (the script's host-only mode reports it); do not assert the build will pass.
 
 ## Initialize in `Application.onCreate()` (only reliable place)
 
@@ -53,6 +71,11 @@ If an `android:name` Application class already exists, add the init call to its 
 
 Signatures verified against api-reference "SDK data surface". Tag values are strings only. `login()` before tags/email/sms (ordering rule).
 
+Start from the bundled templates rather than retyping — they carry the verified signatures and the `onesignal:managed` marker:
+- Wrapper: [assets/android/OneSignalManager.kt.tmpl](assets/android/OneSignalManager.kt.tmpl) — substitute `__PACKAGE__`.
+- Application subclass: [assets/android/Application.kt.tmpl](assets/android/Application.kt.tmpl) — substitute `__PACKAGE__`, `__APP_CLASS__`, and `__APP_ID__` (the real App ID from Step 2).
+
+The wrapper's shape:
 ```kotlin
 object OneSignalManager { // onesignal:managed v1
     private var initialized = false
@@ -73,7 +96,7 @@ A Hilt `@Singleton` variant and a Java variant are in the upstream android/integ
 
 ## Deletable verification file (`OneSignalSetupVerification.kt`)
 
-Full verified implementation is in `sdk-ai-prompts/docs/android/integrate.md` (Kotlin and Java). Reproduce it faithfully — with the two corrections below, which a live run proved against the upstream text. Non-negotiable properties (SKILL.md Step 6):
+Use the verified template [assets/android/OneSignalSetupVerification.kt.tmpl](assets/android/OneSignalSetupVerification.kt.tmpl) — substitute `__PACKAGE__` and `__APP_ID__` and write it as-is. Do NOT hand-write this file: eval trials fabricated `OneSignal.Notifications.requestPermission(true) { ... }` as a callback (it is a `suspend fun` with no callback overload — does not compile) and/or dropped the `BuildConfig.DEBUG` guard (ships to release). The template calls `requestPermission` correctly from a coroutine and carries the guard; every API in it is verified against the SDK source. **`BuildConfig.DEBUG` needs the app module's buildConfig feature** — on AGP 8+ it is off by default, so ensure `android { buildFeatures { buildConfig = true } }` is present in the app's `build.gradle.kts` (add it if missing, or the guard won't compile). The exact dialog strings and behavioral contract are also in [assets/android/verification-dialog-strings.md](assets/android/verification-dialog-strings.md). Non-negotiable properties the template already satisfies (SKILL.md Step 6):
 - `if (!BuildConfig.DEBUG) return` guard.
 - Register `IPushSubscriptionObserver` AND evaluate `OneSignal.User.pushSubscription.id` immediately (race guard — the ID can be assigned before the observer attaches).
 - `isRegistered` = non-empty AND not `startsWith("local-")`.

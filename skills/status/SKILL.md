@@ -13,7 +13,7 @@ Read the foundation docs before probing — they carry the verified API facts an
 - Safety contract (read-only clauses §11–§13 are binding here): [../../references/safety-contract.md](../../references/safety-contract.md)
 - Activation ladder definition: [../../references/platform-matrix.md](../../references/platform-matrix.md)
 
-Per-rung probe recipes (exact curl + OneSignal-MCP calls, response fields, empty-case handling) live in [signals-reference.md](signals-reference.md). Read it before issuing any probe.
+Per-rung probe recipes (exact curl + OneSignal-MCP calls, response fields, empty-case handling) live in [signals-reference.md](signals-reference.md). Read it before issuing any probe. For the probes it covers, prefer the deterministic client `${CLAUDE_PLUGIN_ROOT}/scripts/onesignal_api.py` (`web-probe`, `subscribers`, `notification-stats`, `app`) — it encodes the web-probe cache-bust and the `failed`≠errors delivery-stat semantics. Prefer the OneSignal MCP over both if connected.
 
 ## Binding safety rules (this is a read-only skill)
 

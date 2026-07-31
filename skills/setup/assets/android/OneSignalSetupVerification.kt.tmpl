@@ -1,0 +1,111 @@
+// onesignal:managed v1
+// DELETABLE VERIFICATION FILE — delete this file and its call site in
+// MainActivity.onCreate() once push delivery is confirmed.
+//
+// Every OneSignal API below is verified against the SDK source. In particular:
+//   OneSignal.Notifications.requestPermission is a `suspend fun ... : Boolean`.
+//   It has NO callback overload. Calling it as `requestPermission(true) { ... }`
+//   is a fabrication that does not compile — call it from a coroutine as below.
+//
+// Placeholders: __PACKAGE__ (this file's package / module namespace),
+//               __APP_ID__ (the public OneSignal App ID).
+//
+// The `BuildConfig.DEBUG` guard requires the app module's buildConfig feature.
+// On AGP 8+ it is OFF by default — ensure the app's build.gradle.kts has:
+//     android { buildFeatures { buildConfig = true } }
+// (add it if missing; without it `BuildConfig` will not resolve).
+package __PACKAGE__
+
+import android.app.Activity
+import android.app.AlertDialog
+import android.widget.EditText
+import com.onesignal.OneSignal
+import com.onesignal.user.subscriptions.IPushSubscriptionObserver
+import com.onesignal.user.subscriptions.PushSubscriptionChangedState
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
+
+object OneSignalSetupVerification {
+    private val dialogShown = AtomicBoolean(false)
+
+    fun installIfDebug(activity: Activity) {
+        if (!BuildConfig.DEBUG) return // never runs in release
+
+        val observer = object : IPushSubscriptionObserver {
+            override fun onPushSubscriptionChange(state: PushSubscriptionChangedState) {
+                checkRegistration(activity, state.current.id)
+            }
+        }
+        OneSignal.User.pushSubscription.addObserver(observer)
+
+        // Race guard: the ID may already be assigned before the observer attaches.
+        checkRegistration(activity, OneSignal.User.pushSubscription.id)
+    }
+
+    private fun isRegistered(id: String): Boolean = id.isNotEmpty() && !id.startsWith("local-")
+
+    private fun checkRegistration(activity: Activity, subscriptionId: String) {
+        if (!isRegistered(subscriptionId)) return
+        if (!dialogShown.compareAndSet(false, true)) return // show once
+
+        activity.runOnUiThread {
+            AlertDialog.Builder(activity)
+                .setTitle("Your OneSignal SDK integration is complete!")
+                .setMessage("Tap 'Got it' to enable push notifications and send yourself a test message.")
+                .setPositiveButton("Got it") { _, _ ->
+                    // requestPermission is a suspend fun — call it from a coroutine.
+                    CoroutineScope(Dispatchers.Main).launch {
+                        val accepted = OneSignal.Notifications.requestPermission(true)
+                        if (accepted) promptForTestMessage(activity, subscriptionId)
+                    }
+                }
+                .setCancelable(false)
+                .show()
+        }
+    }
+
+    private fun promptForTestMessage(activity: Activity, subscriptionId: String) {
+        val input = EditText(activity).apply { hint = "Enter message body" }
+        AlertDialog.Builder(activity)
+            .setTitle("Send Test Push")
+            .setView(input)
+            .setPositiveButton("Send") { _, _ ->
+                val message = input.text.toString().ifEmpty { "Test from OneSignal!" }
+                sendTestNotification(subscriptionId, message)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    // Unauthenticated self-send (relies on the app's permit_unauth_notif_create
+    // flag). On 401 it is not enabled for this app — fall back to a REST-key
+    // send or a dashboard test (see references/api-reference.md).
+    private fun sendTestNotification(subscriptionId: String, message: String) {
+        Thread {
+            try {
+                val conn = (URL("https://api.onesignal.com/notifications").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    setRequestProperty("Content-Type", "application/json")
+                    doOutput = true
+                }
+                val payload = JSONObject().apply {
+                    put("app_id", "__APP_ID__")
+                    put("include_subscription_ids", JSONArray().put(subscriptionId))
+                    put("contents", JSONObject().put("en", message))
+                }
+                conn.outputStream.use { it.write(payload.toString().toByteArray()) }
+                if (conn.responseCode !in 200..299) {
+                    android.util.Log.w("OneSignalVerify", "Test send HTTP ${conn.responseCode}; use a REST key or the dashboard to send.")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("OneSignalVerify", "Test send error", e)
+            }
+        }.start()
+    }
+}

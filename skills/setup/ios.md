@@ -16,17 +16,21 @@ A Notification Service Extension is only needed for rich media, confirmed delive
 
 ## Dependency
 
-Detect the existing manager: `Podfile`/`Podfile.lock` → CocoaPods; `Package.swift`/`Package.resolved` or an SPM project → SPM. Match it; don't introduce a second package manager. Read the exact Stable version from https://onesignal.github.io/sdk-releases/releases.json (iOS entry, `channels.stable.version`; SKILL.md Step 4 — do not guess, do not use a version range).
+Detect the existing manager: `Podfile`/`Podfile.lock` → CocoaPods; `Package.swift`/`Package.resolved` or an SPM project → SPM. Match it; don't introduce a second package manager. Resolve the exact version with the script — do not read the feed by hand and do not use a range (on SPM that means an **exact-version** rule, never `upToNextMajorVersion` / `from:`):
 
-**Swift Package Manager** (smaller XCFramework download — matrix): add package `https://github.com/OneSignal/OneSignal-XCFramework`, and add the **`OneSignalFramework`** library product to the app target (add `OneSignalInAppMessages` / `OneSignalLocation` only if those features are wanted). SPM add is partly GUI — if you cannot edit the pbxproj package references safely, give the human the exact File ▸ Add Packages steps.
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/resolve_sdk_version.py ios --format json   # for the version
+${CLAUDE_PLUGIN_ROOT}/scripts/resolve_sdk_version.py ios --format line --line-format podfile   # Podfile line
+```
+
+**Swift Package Manager** (smaller XCFramework download — matrix): add package `https://github.com/OneSignal/OneSignal-XCFramework` with an **Exact Version** rule set to the resolver's `version`, and add the **`OneSignalFramework`** library product to the app target (add `OneSignalInAppMessages` / `OneSignalLocation` only if those features are wanted). SPM add is partly GUI — if you cannot edit the pbxproj package references safely, give the human the exact File ▸ Add Packages steps.
 
 **CLI builds + SPM keychain wall:** `xcodebuild`-driven SPM resolution can pop a macOS **login-keychain password prompt** (and re-prompt on Deny), which stalls headless/agent runs. Pass `-scmProvider system` to `xcodebuild` so package fetching uses system git credentials instead of Xcode's keychain-backed SCM.
 
-**CocoaPods** (`Podfile`) — exact pin, no range (example — `5.5.1` was Stable at authoring; read the current value from releases.json):
+**CocoaPods** (`Podfile`) — paste the resolver's `--line-format podfile` output verbatim (it is an exact pin), then `pod install`. Shape:
 ```ruby
-pod 'OneSignal/OneSignal', '5.5.1' # onesignal:managed v1 — exact Stable from releases.json
+pod 'OneSignal/OneSignal', '5.5.1' # onesignal:managed v1
 ```
-then `pod install`.
 
 ## Initialize at launch
 
