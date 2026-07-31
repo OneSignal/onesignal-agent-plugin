@@ -1,5 +1,5 @@
 {
-  "name": "onesignal-local",
+  "name": "onesignal",
   "owner": { "name": "OneSignal" },
   "plugins": [
     {
