@@ -98,9 +98,16 @@ The ingestion endpoint requires the App ID as a query parameter, but
 `setup.preflight` fires before Step 2 has one. So:
 
 - Milestones before the App ID is known are **written locally and held**.
-- Once Step 2 resolves it, run `bash scripts/checkpoint.sh flush` — pending events are
-  sent together in one request.
+- Once Step 2 resolves it, run `bash scripts/checkpoint.sh flush` — each pending event is
+  sent as its own request, carrying the now-known App ID and its original milestone,
+  status, failure class and skill.
 - Everything after that sends as it happens.
+
+The buffer is cleared **only when every pending event was accepted**. If egress is blocked
+the events stay in `pending.jsonl` for a later flush, so a sandboxed run that later gains
+network access loses nothing. A partial flush reports `<n> of <total> sent` and keeps the
+whole buffer; the accepted events will be re-sent on the next attempt, so treat duplicate
+delivery as possible and de-duplicate on `run_id` + milestone when analysing.
 
 **Never substitute a placeholder or demo App ID to make an early send work.** Setup Step 2
 already forbids hardcoded fallback App IDs, and attributing a real user's onboarding to a
@@ -121,6 +128,15 @@ OneSignal test app would corrupt the data it is meant to produce.
 
 Everything lands in `.onesignal/` at the repo root: `run_id`, `checkpoints.jsonl` (every
 payload, sent or not), `transport.log` (what happened to each attempt), `pending.jsonl`.
+
+The two logs answer different questions, and the distinction is what makes them assertable:
+**`checkpoints.jsonl` holds exactly one row per milestone reported**, and `transport.log`
+holds one row per delivery attempt. A buffered event that is later flushed therefore
+appears once in `checkpoints.jsonl` and twice in `transport.log` (`buffered`, then `sent`).
+
+One caveat when correlating with GCP: the wire timestamp is stamped at send time by
+`otlp_encode.py`, so a flushed milestone is recorded in GCP at the moment of the flush, not
+when it actually occurred. The local `ts` in `checkpoints.jsonl` is the accurate one.
 
 Because skills declare a file allow-list before writing (safety contract §4, §10),
 **`.onesignal/` must appear in that declared list and be added to `.gitignore`.** It is

@@ -22,27 +22,33 @@
 # Payload (exactly this, nothing more):
 #   {
 #     "schema": 2,
-#     "source":         "agent-skill-android",   <- discriminator, see below
-#     "run_id":         "<random hex, stable for one install run>",
-#     "skill_version":  "0.4.0",
-#     "milestone":      "dependency_added",
-#     "status":         "ok" | "fail",
-#     "failure_class":  "manifest_merger" | ... | null,
+#     "source":         "onesignal-agent-plugin",   <- discriminator, see below
+#     "run_id":         "<random hex, stable for one funnel run>",
+#     "skill_version":  "0.3.0-checkpoints",
+#     "milestone":      "credentials_gate",
+#     "status":         "ok" | "ok_after_fix" | "fail",
+#     "failure_class":  "kotlin_stdlib_floor" | ... | null,
 #     "runtime":        "claude-code" | "codex" | ... | "unknown",
 #     "os":             "darwin" | "linux" | ...,
-#     "ts":             "2026-07-27T12:00:00Z"
+#     "ts":             "2026-07-27T12:00:00Z",
+#     "app_id":         "<uuid>",
+#     "platform":       "android" | "web" | ...,
+#     "skill":          "setup"
 #   }
 #
-# "source" exists so these events can be separated from real SDK traffic when the
-# target is a shared log ingestion endpoint. In GCP Logs Explorer:
-#     jsonPayload.source="agent-skill-android"
+# This JSON is the internal representation. It is encoded into an OTLP LogsData
+# protobuf by otlp_encode.py before sending — the endpoint accepts nothing else.
+# Note that `ts` is carried locally only: the encoder stamps the wire record with
+# send time, so a flushed event's wire timestamp is when it was flushed, not when
+# the milestone occurred.
+#
+# "source" exists so these events can be separated from real SDK traffic on the
+# shared ingestion endpoint. In GCP Logs Explorer:
+#     labels."agent.source"="onesignal-agent-plugin"
 # Override the value with $ONESIGNAL_SKILL_SOURCE if the ingestion service wants a
 # different discriminator.
 #
-# NOTE: this is the harness's own shape. It has NOT yet been reconciled with the
-# OneSignal log-ingestion-service contract. When that schema is known, expect the
-# field names or nesting to change. Set ONESIGNAL_SKILL_DRY_RUN=1 to print the
-# exact request without sending, for diffing against a target schema.
+# Set ONESIGNAL_SKILL_DRY_RUN=1 to print the exact request without sending.
 
 set -uo pipefail
 
@@ -72,12 +78,25 @@ mkdir -p "$STATE_DIR" 2>/dev/null || true
 # cascade into misdiagnosing the endpoint as unconfigured.
 _self="${BASH_SOURCE[0]:-$0}"
 case "$_self" in
-  */*) # ---------------------------------------------------------------------------
+  */*) SCRIPT_DIR="${_self%/*}" ;;
+  *)   SCRIPT_DIR="." ;;
+esac
+if [ -d "$SCRIPT_DIR" ]; then
+  SCRIPT_DIR="$(cd "$SCRIPT_DIR" 2>/dev/null && pwd)" || SCRIPT_DIR="${_self%/*}"
+fi
+
+# ---------------------------------------------------------------------------
 # flush — send events buffered before the App ID was known.
 #
 # Sends each pending payload with the now-known App ID substituted in, then clears the
-# buffer. Only clears on success, so a blocked network leaves the events for a later
-# attempt rather than silently dropping them.
+# buffer. Only clears once every event has actually been accepted, so a blocked network
+# leaves the events for a later attempt rather than silently dropping them.
+#
+# This block must stay OUTSIDE the SCRIPT_DIR case above. It was once nested inside the
+# `*/*)` arm, which made flushing depend on whether the invocation path happened to
+# contain a slash: `bash scripts/checkpoint.sh flush` flushed, while
+# `cd scripts && bash checkpoint.sh flush` recorded a milestone literally named "flush"
+# and appended it to the buffer it was meant to drain.
 # ---------------------------------------------------------------------------
 if [ "$RAW_MILESTONE" = "flush" ]; then
   PENDING="$STATE_DIR/pending.jsonl"
@@ -90,32 +109,58 @@ if [ "$RAW_MILESTONE" = "flush" ]; then
     echo "checkpoint: cannot flush — still no App ID. Write it to $STATE_DIR/app_id first."
     exit 0
   fi
+
+  # Pull one string field out of a buffered payload. A JSON `null` yields "", which is
+  # what an absent failure_class should become.
+  buffered_field() {
+    printf '%s' "$1" | sed -n "s/.*\"$2\":\"\([^\"]*\)\".*/\1/p"
+  }
+
   COUNT=$(grep -c . "$PENDING" 2>/dev/null || echo 0)
   echo "checkpoint: flushing $COUNT buffered event(s) as app_id=$FLUSH_APP_ID"
+
+  # Success cannot be read from the child's exit status: this script always exits 0 by
+  # contract, so `|| FAILED=1` never fired and the buffer was cleared even when every
+  # send was refused. The child reports its transport outcome out-of-band instead.
+  RESULT_FILE="$STATE_DIR/.flush_result"
   FAILED=0
+  SENT=0
   while IFS= read -r line; do
     [ -z "$line" ] && continue
-    M=$(printf '%s' "$line" | sed -n 's/.*"milestone":"\([^"]*\)".*/\1/p')
-    S=$(printf '%s' "$line" | sed -n 's/.*"status":"\([^"]*\)".*/\1/p')
+    M=$(buffered_field "$line" milestone)
+    S=$(buffered_field "$line" status)
+    FC=$(buffered_field "$line" failure_class)
+    SK=$(buffered_field "$line" skill)
+    # Re-qualify as "<skill>.<milestone>". Passing the bare milestone made the child
+    # derive skill="unknown", erasing the agent.skill label for every buffered event.
+    case "$SK" in
+      ""|unknown) QUALIFIED="$M" ;;
+      *)          QUALIFIED="$SK.$M" ;;
+    esac
+    : > "$RESULT_FILE" 2>/dev/null || true
     # Re-send through this same script so every send path stays identical: one encoder,
     # one set of transport diagnostics, one place to get the request shape right.
+    # The event is already in checkpoints.jsonl from when it was buffered, so the child
+    # must not append it a second time.
     ONESIGNAL_SKILL_APP_ID="$FLUSH_APP_ID" \
-      bash "$0" "$M" "$S" 2>/dev/null || FAILED=1
+    ONESIGNAL_SKILL_RESULT_FILE="$RESULT_FILE" \
+    ONESIGNAL_SKILL_SKIP_LOCAL_RECORD=1 \
+      bash "$0" "$QUALIFIED" "$S" "$FC" 2>/dev/null
+    if [ "$(cat "$RESULT_FILE" 2>/dev/null)" = "sent" ]; then
+      SENT=$((SENT + 1))
+    else
+      FAILED=1
+    fi
   done < "$PENDING"
+  rm -f "$RESULT_FILE" 2>/dev/null || true
+
   if [ "$FAILED" -eq 0 ]; then
     : > "$PENDING"
-    echo "checkpoint: buffer cleared"
+    echo "checkpoint: buffer cleared ($SENT sent)"
   else
-    echo "checkpoint: some sends failed — buffer kept for a later flush"
+    echo "checkpoint: $SENT of $COUNT sent — buffer kept for a later flush"
   fi
   exit 0
-fi
-
-SCRIPT_DIR="${_self%/*}" ;;
-  *)   SCRIPT_DIR="." ;;
-esac
-if [ -d "$SCRIPT_DIR" ]; then
-  SCRIPT_DIR="$(cd "$SCRIPT_DIR" 2>/dev/null && pwd)" || SCRIPT_DIR="${_self%/*}"
 fi
 
 # ---------------------------------------------------------------------------
@@ -266,8 +311,11 @@ JSON
 if [ "${ONESIGNAL_SKILL_DRY_RUN:-0}" = "1" ]; then
   echo "POST ${ENDPOINT}?app_id=${APP_ID:-<UNSET>}"
   echo "  [endpoint from $ENDPOINT_SRC]"
+  # Content-Type is the ONLY header sent. Do not print others here either — an
+  # earlier version advertised an X-OneSignal-Skill header that the real request
+  # deliberately omits, which reads as license to add it back. Doing so trips a
+  # Cloudflare WAF rule and returns a 403 HTML block page.
   echo "Content-Type: application/x-protobuf"
-  echo "X-OneSignal-Skill: onesignal-android-install/$SKILL_VERSION"
   echo
   echo "--- checkpoint fields (encoded into OTLP LogsData) ---"
   if command -v python3 >/dev/null 2>&1; then
@@ -287,13 +335,26 @@ if [ "${ONESIGNAL_SKILL_DRY_RUN:-0}" = "1" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Local record. Written unconditionally, before any network attempt, so the
-# user can always see what would be or was sent.
+# Local record. Written before any network attempt, so the user can always see
+# what would be or was sent. Exactly one row per milestone reported: a flush
+# re-send sets ONESIGNAL_SKILL_SKIP_LOCAL_RECORD, because the event was already
+# recorded when it was buffered. transport.log is where attempts accumulate.
 # ---------------------------------------------------------------------------
-printf '%s\n' "$PAYLOAD" >> "$STATE_DIR/checkpoints.jsonl" 2>/dev/null || true
+if [ "${ONESIGNAL_SKILL_SKIP_LOCAL_RECORD:-0}" != "1" ]; then
+  printf '%s\n' "$PAYLOAD" >> "$STATE_DIR/checkpoints.jsonl" 2>/dev/null || true
+fi
 
 TRANSPORT_LOG="$STATE_DIR/transport.log"
-note() { printf '%s\t%s\t%s\t%s\n' "$TS" "$MILESTONE" "$1" "$2" >> "$TRANSPORT_LOG" 2>/dev/null || true; }
+
+# Every transport outcome also goes to $ONESIGNAL_SKILL_RESULT_FILE when set, because a
+# caller cannot learn it from the exit status — this script always exits 0. `flush` is
+# the caller that needs it, to tell an accepted send from a refused one.
+note() {
+  printf '%s\t%s\t%s\t%s\n' "$TS" "$MILESTONE" "$1" "$2" >> "$TRANSPORT_LOG" 2>/dev/null || true
+  if [ -n "${ONESIGNAL_SKILL_RESULT_FILE:-}" ]; then
+    printf '%s' "$1" > "$ONESIGNAL_SKILL_RESULT_FILE" 2>/dev/null || true
+  fi
+}
 
 # Opt-out is recorded, not silent. Previously this branch returned before note()
 # was even defined, so a declined checkpoint left no trace in transport.log —
@@ -451,10 +512,7 @@ fi
 case "$HTTP_CODE" in
   2*)
     note "sent" "HTTP $HTTP_CODE app_id_src=$APP_ID_SRC"
-    echo "checkpoint: $MILESTONE=$STATUS (reported, HTTP $HTTP_CODE)"
-    if [ "$APP_ID_SRC" = "built-in prototype default" ]; then
-      echo "  app_id: $APP_ID [prototype default — not the user's real app]"
-    fi ;;
+    echo "checkpoint: $MILESTONE=$STATUS (reported, HTTP $HTTP_CODE)" ;;
   000)
     note "no_response" "curl rc=0 but no status line"
     echo "checkpoint: $MILESTONE=$STATUS (no HTTP response; logged locally)" ;;
