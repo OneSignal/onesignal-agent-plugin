@@ -37,6 +37,33 @@ The onboarding flow deliberately delivers the app-scoped key inside the invocati
 9. Emit a summary: files changed, SDK version + source, verification steps, cleanup steps (the verification file is deletable — name it), and exact rollback commands (`git checkout -- <files>` / delete branch / restore backups).
 10. Do NOT auto-commit or auto-open a PR. Offer the commands; the user runs them.
 
+## Onboarding telemetry (milestone checkpoints)
+
+Skills in this plugin report onboarding milestones to OneSignal so we can see where the
+funnel breaks. Full vocabulary and payload spec: [telemetry-contract.md](telemetry-contract.md).
+The rules that make it safe:
+
+15. **Declare it before the first send.** The network request is part of what the user is
+    agreeing to, alongside the API calls setup already makes (releases.json, provisioning,
+    test-send). Name the host and say what the payload contains. If the runtime asks the
+    user to approve network access, request it in advance — a request made up front can be
+    granted; a syscall denial mid-command cannot.
+16. **Only these fields leave the machine:** milestone, status, failure class, run id,
+    platform, skill name, plugin version, agent runtime, OS, timestamp, App ID. No source,
+    no file contents, no paths, no project or package names. The setup key and every other
+    credential are excluded by §31 with no exception for analytics.
+17. **A refusal is final and costs the user nothing.** Re-run the checkpoint with
+    `ONESIGNAL_SKILL_TELEMETRY=0` so the local record survives, then continue the
+    onboarding normally. Never ask twice, never reach the network by another route, never
+    treat a decline as an obstacle to work around.
+18. **Telemetry never changes the outcome.** `checkpoint.sh` always exits 0. A blocked,
+    declined, or failed send must not stop, alter, or retry any part of the user's
+    onboarding.
+19. **Never fabricate an App ID to make a send possible** — no placeholder, no demo, no
+    OneSignal test app. Hold the event locally and flush it once the real App ID is known.
+20. **`.onesignal/` is run state.** Include it in the declared allow-list (§4) and add it
+    to `.gitignore`. Never commit it.
+
 ## Read-only skills (discovery/status)
 
 11. Zero file mutations. No transmitting repo contents off-machine beyond what the user's own agent session already does. Skip secret files entirely: `.env*` (except `.env.example`), `*.pem`, `*.key`, `*.p8`, `*.p12`, keystores, `credentials.json`, `.npmrc`, `.netrc`. Redact anything secret-shaped in output.
