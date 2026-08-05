@@ -1,0 +1,351 @@
+#!/usr/bin/env bash
+# Regression tests for scripts/checkpoint.sh transport and buffering.
+#
+# Hermetic: every request goes to a loopback mock that speaks the ingestion service's
+# contract (202 on POST /sdk/log with an app_id query param and an exact
+# application/x-protobuf Content-Type). No real network egress, no real App ID.
+#
+# This is the eval convention for checkpoints. `ONESIGNAL_SKILL_TELEMETRY=0` cannot be
+# the default: it returns before the buffering branch, so pending.jsonl is never written
+# and the flush path — where the bugs were — is unreachable. The opt-out is exercised
+# here as its own case instead.
+#
+#   bash evals/checkpoint-transport-test.sh
+#
+# Exits non-zero if any assertion fails. Requires bash, python3, curl.
+set -uo pipefail
+
+PLUGIN="$(cd "$(dirname "$0")/.." && pwd)"
+CHECKPOINT="$PLUGIN/scripts/checkpoint.sh"
+PORT="${CHECKPOINT_TEST_PORT:-8817}"
+DEAD_PORT="${CHECKPOINT_TEST_DEAD_PORT:-8818}"
+APP_ID="6fdc6a30-0000-4000-8000-eval00000001"
+CANARY="DO_NOT_READ_CANARY_a1b2c3"
+
+TMP="$(mktemp -d)"
+PASS=0
+FAIL=0
+
+cleanup() {
+  [ -n "${MOCK_PID:-}" ] && kill "$MOCK_PID" 2>/dev/null
+  rm -rf "$TMP"
+}
+trap cleanup EXIT
+
+ok()   { PASS=$((PASS + 1)); printf '  ok    %s\n' "$1"; }
+bad()  { FAIL=$((FAIL + 1)); printf '  FAIL  %s\n' "$1"; [ -n "${2:-}" ] && printf '        %s\n' "$2"; }
+want() { # want <description> <expected> <actual>
+  if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected [$2], got [$3]"; fi
+}
+
+# --- mock ingestion endpoint -------------------------------------------------
+cat > "$TMP/mock.py" <<'PY'
+import http.server, json, socketserver, sys, threading, time, urllib.parse
+
+RECORD = sys.argv[2]
+requests = []
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(n)
+        parsed = urllib.parse.urlparse(self.path)
+        query = urllib.parse.parse_qs(parsed.query)
+        requests.append(
+            {
+                "path": parsed.path,
+                "app_id": query.get("app_id", [None])[0],
+                "content_type": self.headers.get("Content-Type"),
+                "headers": sorted(k.lower() for k in self.headers.keys()),
+                "body_hex": body.hex(),
+            }
+        )
+        with open(RECORD, "w") as fh:
+            json.dump(requests, fh)
+        # The real service answers 202, not 200.
+        self.send_response(202)
+        self.end_headers()
+
+    def log_message(self, *args):
+        pass
+
+
+socketserver.TCPServer.allow_reuse_address = True
+server = socketserver.TCPServer(("127.0.0.1", int(sys.argv[1])), Handler)
+threading.Thread(target=server.serve_forever, daemon=True).start()
+with open(sys.argv[3], "w") as fh:
+    fh.write("ready")
+time.sleep(int(sys.argv[4]))
+PY
+
+# --- OTLP decoder used by the assertions ------------------------------------
+cat > "$TMP/decode.py" <<'PY'
+"""Decode the OTLP LogsData requests the mock captured into flat attribute dicts."""
+import json, sys
+
+
+def varint(buf, i):
+    result = shift = 0
+    while True:
+        byte = buf[i]
+        result |= (byte & 0x7F) << shift
+        i += 1
+        shift += 7
+        if not byte & 0x80:
+            return result, i
+
+
+def fields(buf):
+    out = []
+    i = 0
+    while i < len(buf):
+        tag, i = varint(buf, i)
+        num, wire = tag >> 3, tag & 7
+        if wire == 0:
+            value, i = varint(buf, i)
+        elif wire == 1:
+            value, i = buf[i : i + 8], i + 8
+        elif wire == 2:
+            length, i = varint(buf, i)
+            value, i = buf[i : i + length], i + length
+        elif wire == 5:
+            value, i = buf[i : i + 4], i + 4
+        else:
+            raise ValueError(f"unsupported wire type {wire}")
+        out.append((num, value))
+    return out
+
+
+def first(buf, number):
+    for num, value in fields(buf):
+        if num == number:
+            return value
+    return None
+
+
+def every(buf, number):
+    return [value for num, value in fields(buf) if num == number]
+
+
+def key_value(buf):
+    key = first(buf, 1).decode("utf-8")
+    any_value = first(buf, 2)
+    string_value = first(any_value, 1) if any_value else None
+    return key, (string_value.decode("utf-8") if string_value else None)
+
+
+def decode(body):
+    resource_logs = first(body, 1)
+    resource = first(resource_logs, 1)
+    scope_logs = first(resource_logs, 2)
+    log_record = first(scope_logs, 2)
+
+    attrs = {}
+    for raw in every(resource, 1):
+        k, v = key_value(raw)
+        attrs[k] = v
+    for raw in every(log_record, 6):
+        k, v = key_value(raw)
+        attrs[k] = v
+
+    scope = first(scope_logs, 1)
+    attrs["_scope_name"] = first(scope, 1).decode("utf-8")
+    attrs["_severity_text"] = first(log_record, 3).decode("utf-8")
+    attrs["_body"] = first(first(log_record, 5), 1).decode("utf-8")
+    return attrs
+
+
+captured = json.load(open(sys.argv[1]))
+print(json.dumps([decode(bytes.fromhex(r["body_hex"])) for r in captured], indent=1))
+PY
+
+start_mock() {
+  RECORD="$TMP/requests.json"
+  rm -f "$RECORD" "$TMP/ready"
+  python3 "$TMP/mock.py" "$PORT" "$RECORD" "$TMP/ready" 120 &
+  MOCK_PID=$!
+  for _ in $(seq 1 50); do
+    [ -f "$TMP/ready" ] && return 0
+    sleep 0.2
+  done
+  echo "mock failed to start on port $PORT" >&2
+  exit 1
+}
+
+# Fresh project dir with a configured endpoint and the canary present, mimicking a
+# fixture. $1 = port to point the endpoint at.
+new_project() {
+  local dir="$TMP/proj$RANDOM$RANDOM"
+  mkdir -p "$dir/.onesignal"
+  printf 'http://127.0.0.1:%s/sdk/log\n' "$1" > "$dir/.onesignal/endpoint"
+  printf 'android\n' > "$dir/.onesignal/platform"
+  printf 'SUPER_SECRET_CANARY="%s"\n' "$CANARY" > "$dir/.env"
+  printf '%s' "$dir"
+}
+
+decoded() { python3 "$TMP/decode.py" "$TMP/requests.json"; }
+
+field() { # field <request index> <attribute>
+  decoded | python3 -c '
+import json, sys
+records = json.load(sys.stdin)
+index = int(sys.argv[1])
+print(records[index].get(sys.argv[2], "<absent>") if index < len(records) else "<no such request>")
+' "$1" "$2"
+}
+
+count_requests() {
+  [ -f "$TMP/requests.json" ] || { echo 0; return; }
+  python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))))' "$TMP/requests.json"
+}
+
+# count_lines <file> [pattern] — `grep -c` exits 1 on zero matches, so a naive
+# `|| echo 0` fallback prints twice.
+count_lines() {
+  [ -f "$1" ] || { echo 0; return; }
+  grep -c "${2:-.}" "$1" 2>/dev/null || true
+}
+
+start_mock
+
+# ---------------------------------------------------------------------------
+echo
+echo "1. a pre-App-ID milestone buffers, keeping its class and skill locally"
+# ---------------------------------------------------------------------------
+P="$(new_project "$PORT")"
+( cd "$P" && bash "$CHECKPOINT" setup.preflight ok_after_fix prior_install >/dev/null 2>&1 )
+want "pending.jsonl holds 1 event" "1" "$(count_lines "$P/.onesignal/pending.jsonl")"
+want "checkpoints.jsonl holds 1 event" "1" "$(count_lines "$P/.onesignal/checkpoints.jsonl")"
+want "buffered failure_class kept" "prior_install" \
+  "$(python3 -c 'import json,sys; print(json.loads(open(sys.argv[1]).readline())["failure_class"])' "$P/.onesignal/pending.jsonl")"
+want "buffered skill kept" "setup" \
+  "$(python3 -c 'import json,sys; print(json.loads(open(sys.argv[1]).readline())["skill"])' "$P/.onesignal/pending.jsonl")"
+want "nothing sent yet" "0" "$(count_requests)"
+
+# ---------------------------------------------------------------------------
+echo
+echo "2. flush preserves failure_class and skill on the wire"
+# ---------------------------------------------------------------------------
+printf '%s\n' "$APP_ID" > "$P/.onesignal/app_id"
+( cd "$P" && bash "$CHECKPOINT" flush >/dev/null 2>&1 )
+want "one request reached the endpoint" "1" "$(count_requests)"
+want "agent.failure_class survives flush" "prior_install" "$(field 0 agent.failure_class)"
+want "agent.skill survives flush" "setup" "$(field 0 agent.skill)"
+want "agent.milestone is the bare milestone" "preflight" "$(field 0 agent.milestone)"
+want "ok_after_fix maps to WARN severity" "WARN" "$(field 0 _severity_text)"
+want "buffer cleared after a successful flush" "0" \
+  "$(count_lines "$P/.onesignal/pending.jsonl")"
+
+# ---------------------------------------------------------------------------
+echo
+echo "3. flush does not duplicate the local record"
+# ---------------------------------------------------------------------------
+want "checkpoints.jsonl still holds 1 event" "1" \
+  "$(count_lines "$P/.onesignal/checkpoints.jsonl")"
+want "transport.log holds both attempts" "2" \
+  "$(count_lines "$P/.onesignal/transport.log")"
+
+# ---------------------------------------------------------------------------
+echo
+echo "4. request shape matches the ingestion contract"
+# ---------------------------------------------------------------------------
+SHAPE="$(python3 -c '
+import json, sys
+r = json.load(open(sys.argv[1]))[0]
+print(r["path"], r["app_id"], r["content_type"], ",".join(r["headers"]))
+' "$TMP/requests.json")"
+want "path is /sdk/log" "/sdk/log" "$(echo "$SHAPE" | cut -d' ' -f1)"
+want "app_id is a query parameter" "$APP_ID" "$(echo "$SHAPE" | cut -d' ' -f2)"
+want "Content-Type is exactly application/x-protobuf" "application/x-protobuf" \
+  "$(echo "$SHAPE" | cut -d' ' -f3)"
+# A custom header here triggers a Cloudflare WAF 403 before the service is reached.
+want "no custom headers beyond curl's defaults" "accept,content-length,content-type,host,user-agent" \
+  "$(echo "$SHAPE" | cut -d' ' -f4)"
+want "scope_name is the GCP filter key" "onesignal-agent-skill" "$(field 0 _scope_name)"
+
+# ---------------------------------------------------------------------------
+echo
+echo "5. a blocked network keeps the buffer instead of dropping it"
+# ---------------------------------------------------------------------------
+B="$(new_project "$DEAD_PORT")"
+( cd "$B" && bash "$CHECKPOINT" setup.preflight fail dirty_tree >/dev/null 2>&1 )
+printf '%s\n' "$APP_ID" > "$B/.onesignal/app_id"
+FLUSH_OUT="$( cd "$B" && bash "$CHECKPOINT" flush 2>&1 )"
+want "buffer retained when the send fails" "1" \
+  "$(count_lines "$B/.onesignal/pending.jsonl")"
+if printf '%s' "$FLUSH_OUT" | grep -q 'buffer kept for a later flush'; then
+  ok "flush reports the failure"
+else
+  bad "flush reports the failure" "output was: $FLUSH_OUT"
+fi
+if printf '%s' "$FLUSH_OUT" | grep -q 'buffer cleared'; then
+  bad "flush must not claim the buffer was cleared" "output was: $FLUSH_OUT"
+else
+  ok "flush does not claim the buffer was cleared"
+fi
+# A later flush, once egress works, must still send the original class.
+sed -i.bak "s#$DEAD_PORT#$PORT#" "$B/.onesignal/endpoint" && rm -f "$B/.onesignal/endpoint.bak"
+BEFORE="$(count_requests)"
+( cd "$B" && bash "$CHECKPOINT" flush >/dev/null 2>&1 )
+want "retried flush sends the event" "$((BEFORE + 1))" "$(count_requests)"
+want "class survives the retry" "dirty_tree" "$(field "$BEFORE" agent.failure_class)"
+want "fail maps to ERROR severity" "ERROR" "$(field "$BEFORE" _severity_text)"
+
+# ---------------------------------------------------------------------------
+echo
+echo "6. flush works regardless of how the script is invoked"
+# ---------------------------------------------------------------------------
+S="$(new_project "$PORT")"
+cp "$PLUGIN/scripts/checkpoint.sh" "$PLUGIN/scripts/otlp_encode.py" "$S/"
+( cd "$S" && bash "$CHECKPOINT" setup.preflight ok >/dev/null 2>&1 )
+printf '%s\n' "$APP_ID" > "$S/.onesignal/app_id"
+NOSLASH_OUT="$( cd "$S" && bash checkpoint.sh flush 2>&1 )"
+if printf '%s' "$NOSLASH_OUT" | grep -q 'flushing'; then
+  ok "invocation without a path separator still flushes"
+else
+  bad "invocation without a path separator still flushes" "output was: $NOSLASH_OUT"
+fi
+if grep -q '"milestone":"flush"' "$S/.onesignal/checkpoints.jsonl" 2>/dev/null; then
+  bad "flush must not be recorded as a milestone" "found a milestone named flush"
+else
+  ok "flush is not recorded as a milestone"
+fi
+
+# ---------------------------------------------------------------------------
+echo
+echo "7. ONESIGNAL_SKILL_TELEMETRY=0 keeps the local record and sends nothing"
+# ---------------------------------------------------------------------------
+R="$(new_project "$PORT")"
+BEFORE="$(count_requests)"
+( cd "$R" && ONESIGNAL_SKILL_TELEMETRY=0 bash "$CHECKPOINT" setup.preflight ok >/dev/null 2>&1 )
+( cd "$R" && ONESIGNAL_SKILL_TELEMETRY=0 bash "$CHECKPOINT" setup.complete ok >/dev/null 2>&1 )
+want "no request was made" "$BEFORE" "$(count_requests)"
+want "both milestones recorded locally" "2" \
+  "$(count_lines "$R/.onesignal/checkpoints.jsonl")"
+want "refusal is auditable in transport.log" "2" \
+  "$(count_lines "$R/.onesignal/transport.log" telemetry_disabled)"
+
+# ---------------------------------------------------------------------------
+echo
+echo "8. safety invariants"
+# ---------------------------------------------------------------------------
+if grep -rq "$CANARY" "$TMP"/proj*/.onesignal/ 2>/dev/null; then
+  bad "canary must never appear in checkpoint state" "found $CANARY under .onesignal/"
+else
+  ok "canary never appears in checkpoint state"
+fi
+if [ -f "$TMP/requests.json" ] && grep -q "$(printf '%s' "$CANARY" | xxd -p | tr -d '\n')" "$TMP/requests.json" 2>/dev/null; then
+  bad "canary must never reach the endpoint" "found the canary in a request body"
+else
+  ok "canary never reaches the endpoint"
+fi
+E="$(new_project "$DEAD_PORT")"
+( cd "$E" && bash "$CHECKPOINT" setup.preflight ok >/dev/null 2>&1 ); want "exits 0 on a blocked network" "0" "$?"
+( cd "$E" && bash "$CHECKPOINT" >/dev/null 2>&1 );                    want "exits 0 with no arguments" "0" "$?"
+( cd "$E" && bash "$CHECKPOINT" flush >/dev/null 2>&1 );              want "exits 0 on a failed flush" "0" "$?"
+
+echo
+echo "----------------------------------------"
+printf '%d passed, %d failed\n' "$PASS" "$FAIL"
+[ "$FAIL" -eq 0 ] || exit 1
