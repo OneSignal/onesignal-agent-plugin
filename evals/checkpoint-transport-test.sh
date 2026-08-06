@@ -19,8 +19,17 @@ PLUGIN="$(cd "$(dirname "$0")/.." && pwd)"
 CHECKPOINT="$PLUGIN/scripts/checkpoint.sh"
 PORT="${CHECKPOINT_TEST_PORT:-8817}"
 DEAD_PORT="${CHECKPOINT_TEST_DEAD_PORT:-8818}"
-APP_ID="6fdc6a30-0000-4000-8000-eval00000001"
+# Must be a syntactically valid UUID: the ingestion service (and the mock,
+# which mirrors it) rejects anything that does not parse as one with a 400.
+APP_ID="6fdc6a30-0000-4000-8000-00000e7a0001"
 CANARY="DO_NOT_READ_CANARY_a1b2c3"
+
+# The script under test reads these from the environment with priority over its
+# project files. Anything inherited from the caller's shell (a leftover export
+# from a manual mock session, say) would silently redirect every assertion.
+unset ONESIGNAL_SKILL_ENDPOINT ONESIGNAL_SKILL_APP_ID ONESIGNAL_SKILL_TELEMETRY \
+      ONESIGNAL_SKILL_RUN_ID ONESIGNAL_SKILL_PLATFORM ONESIGNAL_SKILL_DRY_RUN \
+      ONESIGNAL_SKILL_SOURCE ONESIGNAL_SKILL_RESULT_FILE ONESIGNAL_SKILL_SKIP_LOCAL_RECORD
 
 TMP="$(mktemp -d)"
 PASS=0

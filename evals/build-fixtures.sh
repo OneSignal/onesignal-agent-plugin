@@ -127,7 +127,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Script id="onesignal-init" strategy="afterInteractive">{`
           window.OneSignalDeferred = window.OneSignalDeferred || [];
           OneSignalDeferred.push(async function(OneSignal) {
-            await OneSignal.init({ appId: "6fdc6a30-0000-4000-8000-eval00000001" });
+            await OneSignal.init({ appId: "6fdc6a30-0000-4000-8000-00000e7a0001" });
           });
         `}</Script>
       </head>
@@ -282,8 +282,11 @@ mk_work() { # $1 scenario id, $2 fixture dir
   local dst="$WORK/$1"
   cp -R "$2" "$dst"
   git -C "$dst" init -q
+  # gpgsign off: fixture commits must not depend on the host's signing key or a
+  # pinentry prompt, which fails in non-interactive shells.
   git -C "$dst" -c user.name=eval -c user.email=eval@example.com add -A
-  git -C "$dst" -c user.name=eval -c user.email=eval@example.com commit -qm "fixture baseline"
+  git -C "$dst" -c user.name=eval -c user.email=eval@example.com -c commit.gpgsign=false \
+    commit -qm "fixture baseline"
 }
 
 mk_work setup_web_happy        "$F1"
