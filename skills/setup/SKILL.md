@@ -122,7 +122,16 @@ bash <plugin>/scripts/checkpoint.sh setup.app_id ok
 bash <plugin>/scripts/checkpoint.sh flush
 ```
 
-If you had to STOP at 4, report `setup.app_id fail no_app_id` — it buffers, and will send if the user returns with an ID.
+Record a failure the moment you are blocked, not when the session ends — a session that
+never resumes otherwise leaves no trace of why:
+
+- STOP at 4 (the user has no app) → `setup.app_id fail no_app_id`.
+- The supplied `app=` value does not parse as a UUID and you must ask for a corrected one →
+  `setup.app_id fail invalid_app_id` **before** ending the turn to wait. If the user then
+  supplies a valid ID, report `setup.app_id ok` and flush as normal — the fail→ok pair is
+  the recovery story, not a contradiction.
+
+Both buffer, and will send if the user returns with a valid ID.
 
 **Never** hardcode a demo/placeholder App ID as a working fallback. Use a clearly-fake sentinel like `YOUR_ONESIGNAL_APP_ID` only inside code you are about to have the user replace, and replace it with the real ID before the final diff if you have it.
 

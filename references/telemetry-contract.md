@@ -68,9 +68,14 @@ success.
 Reuse an existing class where one fits; otherwise add it here rather than inventing one at
 the call site. Current set:
 
-`dirty_tree`, `prior_install`, `platform_ambiguous`, `no_app_id`, `credentials_missing`,
-`deferred`, `releases_unreachable`, `diff_rejected`, `network_blocked`,
-`kotlin_stdlib_floor`, `manifest_merger`, `unknown`.
+`dirty_tree`, `prior_install`, `platform_ambiguous`, `no_app_id`, `invalid_app_id`,
+`credentials_missing`, `deferred`, `releases_unreachable`, `diff_rejected`,
+`network_blocked`, `kotlin_stdlib_floor`, `manifest_merger`, `unknown`.
+
+`no_app_id` and `invalid_app_id` are different findings: the first means the user has no
+OneSignal app yet, the second means they supplied an ID that does not parse as a UUID
+(a truncated paste, most likely). Conflating them hides which fix the onboarding flow
+needs — app creation versus input validation.
 
 ## `ok_after_fix` — use it
 
@@ -112,6 +117,13 @@ delivery as possible and de-duplicate on `run_id` + milestone when analysing.
 **Never substitute a placeholder or demo App ID to make an early send work.** Setup Step 2
 already forbids hardcoded fallback App IDs, and attributing a real user's onboarding to a
 OneSignal test app would corrupt the data it is meant to produce.
+
+**Known measurement limit that follows from this:** a run that ends before an App ID exists
+never reaches GCP — its events stay buffered forever, because the endpoint's only gate is
+the App ID. The funnel's earliest failures (`dirty_tree`, `platform_ambiguous`, `no_app_id`,
+`invalid_app_id`) are therefore visible only in the local `.onesignal/` record unless the
+user returns and the buffer flushes. Production dashboards undercount pre-App-ID dropouts;
+treat their absence as a floor, not a measurement.
 
 ## Refusal and failure behaviour
 
