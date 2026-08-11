@@ -498,6 +498,41 @@ printf '%s\n' "$APP_ID" > "$Z/.onesignal/app_id"
 want "a stale 'sent' cannot clear the buffer" "1" \
   "$(count_lines "$Z/.onesignal/pending.jsonl")"
 
+# ---------------------------------------------------------------------------
+echo
+echo "14. every request carries exactly the contract's field set"
+# ---------------------------------------------------------------------------
+# Positive allow-list over every request this suite produced. The canary check
+# above only proves the agent never read a secret; it says nothing about what
+# checkpoint.sh itself emits. An attribute added to otlp_encode.py — say
+# ("agent.cwd", os.getcwd()) — passes the canary check but fails here.
+# The list mirrors the resource_attrs + record_attrs tables in otlp_encode.py,
+# which implement the payload contract in telemetry-contract.md.
+# agent.failure_class is the one optional key: the encoder omits it when the
+# payload carries null. Everything else must match exactly, on every request.
+GOT="$(decoded | python3 -c '
+import json, sys
+ALLOWED = {
+    "agent.milestone", "agent.status", "agent.run_id", "agent.schema",
+    "agent.source", "agent.skill", "agent.skill.version", "agent.runtime",
+    "agent.platform", "os.name", "ossdk.app_id", "ossdk.sdk_base",
+    "service.name",
+}
+reqs = json.load(sys.stdin)
+if not reqs:
+    print("<no requests>")
+    sys.exit()
+problems = set()
+for r in reqs:
+    keys = {k for k in r if not k.startswith("_")}
+    keys.discard("agent.failure_class")
+    if keys != ALLOWED:
+        extra, missing = keys - ALLOWED, ALLOWED - keys
+        problems.add("+" + ",".join(sorted(extra)) + " -" + ",".join(sorted(missing)))
+print("ok" if not problems else " ".join(sorted(problems)))
+')"
+want "wire attribute set equals the allow-list, on every request" "ok" "$GOT"
+
 echo
 echo "----------------------------------------"
 printf '%d passed, %d failed\n' "$PASS" "$FAIL"
