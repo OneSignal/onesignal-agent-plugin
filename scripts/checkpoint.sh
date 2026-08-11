@@ -57,6 +57,7 @@ SKILL_VERSION="$PLUGIN_VERSION"
 SOURCE_TAG="${ONESIGNAL_SKILL_SOURCE:-onesignal-agent-plugin}"
 DEFAULT_ENDPOINT="https://example.invalid/skill-checkpoints"
 TIMEOUT="${ONESIGNAL_SKILL_TIMEOUT:-5}"
+UUID_RE='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
 
 RAW_MILESTONE="${1:-unknown}"
 STATUS="${2:-unknown}"
@@ -107,6 +108,13 @@ if [ "$RAW_MILESTONE" = "flush" ]; then
   FLUSH_APP_ID="${ONESIGNAL_SKILL_APP_ID:-$(grep -vE '^[[:space:]]*(#|$)' "$STATE_DIR/app_id" 2>/dev/null | head -1 | tr -d '[:space:]')}"
   if [ -z "$FLUSH_APP_ID" ]; then
     echo "checkpoint: cannot flush — still no App ID. Write it to $STATE_DIR/app_id first."
+    exit 0
+  fi
+  # A malformed App ID must not fan out: each child would treat it as absent and
+  # re-append its event to the very buffer this loop is draining, duplicating
+  # every row per flush attempt.
+  if ! printf '%s' "$FLUSH_APP_ID" | grep -qE "$UUID_RE"; then
+    echo "checkpoint: cannot flush — App ID '$FLUSH_APP_ID' is not a UUID. Fix $STATE_DIR/app_id first."
     exit 0
   fi
 
@@ -163,6 +171,35 @@ if [ "$RAW_MILESTONE" = "flush" ]; then
     echo "checkpoint: $SENT of $COUNT sent — buffer kept for a later flush"
   fi
   exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Validate at the door. Everything below serializes these values; garbage here
+# used to reach the wire and corrupt the funnel it exists to measure.
+#
+# status: an unknown value ("failed", "OK") maps to SEVERITY_INFO in the
+# encoder, shipping a failure as a success. Refuse and instruct instead —
+# nothing is recorded, so the corrected re-run produces exactly one row.
+#
+# failure_class: classes come from telemetry-contract.md and are snake_case by
+# construction. Free text here is an egress risk — a value like a file path
+# would put project structure on the wire (contract §16). Reject the value,
+# report "unknown", and say so loudly; never ship the raw text.
+# ---------------------------------------------------------------------------
+case "$STATUS" in
+  ok|ok_after_fix|fail) : ;;
+  *)
+    echo "checkpoint: INVALID STATUS '$STATUS' — nothing recorded, nothing sent."
+    echo "  Valid statuses: ok | ok_after_fix | fail. Re-run:"
+    echo "    bash scripts/checkpoint.sh $RAW_MILESTONE <ok|ok_after_fix|fail> [failure_class]"
+    exit 0 ;;
+esac
+
+if [ -n "$FAILURE_CLASS" ] && ! printf '%s' "$FAILURE_CLASS" | grep -qE '^[a-z][a-z0-9_]{0,39}$'; then
+  echo "checkpoint: failure_class '$FAILURE_CLASS' is not a valid class — reporting 'unknown' instead."
+  echo "  Classes are lowercase snake_case from references/telemetry-contract.md."
+  echo "  Free text (paths, error messages) must never reach the wire."
+  FAILURE_CLASS="unknown"
 fi
 
 # ---------------------------------------------------------------------------
@@ -233,6 +270,17 @@ elif APP_ID="$(first_line "$APP_ID_SKILL_CONF")" && [ -n "$APP_ID" ]; then
 else
   APP_ID=""
   APP_ID_SRC="none"
+fi
+
+# A malformed App ID must not reach the request URL: characters like &, # or a
+# space would silently mutate the query string. After this check the value is a
+# UUID, whose charset needs no URL encoding. Treat an invalid value as absent —
+# the event buffers instead of riding a corrupt request.
+if [ -n "$APP_ID" ] && ! printf '%s' "$APP_ID" | grep -qE "$UUID_RE"; then
+  echo "checkpoint: App ID from $APP_ID_SRC is not a UUID — ignoring it; the event will buffer."
+  echo "  Fix the value ($APP_ID_PROJECT_CONF or the env var), then run: bash scripts/checkpoint.sh flush"
+  APP_ID=""
+  APP_ID_SRC="invalid_ignored"
 fi
 
 # ---------------------------------------------------------------------------

@@ -384,10 +384,37 @@ for line in open(sys.argv[1]):
     n += 1
 print(n)
 ' "$J/.onesignal/checkpoints.jsonl" 2>/dev/null || echo parse_error)"
-want "quoted failure_class round-trips" 'foo"bar\baz' \
+want "hostile failure_class is sanitized to unknown" "unknown" \
   "$(python3 -c 'import json,sys; print(json.loads(open(sys.argv[1]).readline())["failure_class"])' "$J/.onesignal/checkpoints.jsonl" 2>/dev/null)"
 want "quoted source round-trips" 'src"quote' \
   "$(python3 -c 'import json,sys; rows=[json.loads(l) for l in open(sys.argv[1])]; print(rows[1]["source"])' "$J/.onesignal/checkpoints.jsonl" 2>/dev/null)"
+
+# ---------------------------------------------------------------------------
+echo
+echo "10. inputs are validated at the door"
+# ---------------------------------------------------------------------------
+V="$(new_project "$PORT")"
+printf '%s\n' "$APP_ID" > "$V/.onesignal/app_id"
+IDX="$(count_requests)"
+( cd "$V" && bash "$CHECKPOINT" setup.install_applied fail 'src/App.tsx conflict' >/dev/null 2>&1 )
+want "free-text failure_class never reaches the wire" "unknown" "$(field "$IDX" agent.failure_class)"
+
+BEFORE="$(count_requests)"
+( cd "$V" && bash "$CHECKPOINT" setup.complete okay >/dev/null 2>&1 ); want "invalid status exits 0" "0" "$?"
+want "invalid status sends nothing" "$BEFORE" "$(count_requests)"
+want "invalid status records nothing (a corrected re-run makes one row)" "1" \
+  "$(count_lines "$V/.onesignal/checkpoints.jsonl")"
+
+W="$(new_project "$PORT")"
+printf 'not-a-uuid\n' > "$W/.onesignal/app_id"
+BEFORE="$(count_requests)"
+( cd "$W" && bash "$CHECKPOINT" setup.preflight ok >/dev/null 2>&1 )
+want "invalid app_id sends nothing" "$BEFORE" "$(count_requests)"
+want "invalid app_id buffers the event instead" "1" \
+  "$(count_lines "$W/.onesignal/pending.jsonl")"
+( cd "$W" && bash "$CHECKPOINT" flush >/dev/null 2>&1 ); want "flush with invalid app_id exits 0" "0" "$?"
+want "flush with invalid app_id keeps the buffer" "1" \
+  "$(count_lines "$W/.onesignal/pending.jsonl")"
 
 echo
 echo "----------------------------------------"
