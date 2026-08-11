@@ -30,7 +30,7 @@ CANARY="DO_NOT_READ_CANARY_a1b2c3"
 unset ONESIGNAL_SKILL_ENDPOINT ONESIGNAL_SKILL_APP_ID ONESIGNAL_SKILL_TELEMETRY \
       ONESIGNAL_SKILL_RUN_ID ONESIGNAL_SKILL_PLATFORM ONESIGNAL_SKILL_DRY_RUN \
       ONESIGNAL_SKILL_SOURCE ONESIGNAL_SKILL_RESULT_FILE ONESIGNAL_SKILL_SKIP_LOCAL_RECORD \
-      ONESIGNAL_SKILL_TS ONESIGNAL_SKILL_TIMEOUT
+      ONESIGNAL_SKILL_TS ONESIGNAL_SKILL_TIMEOUT ONESIGNAL_SKILL_RUNTIME ONESIGNAL_SKILL_OS
 
 TMP="$(mktemp -d)"
 PASS=0
@@ -500,7 +500,27 @@ want "a stale 'sent' cannot clear the buffer" "1" \
 
 # ---------------------------------------------------------------------------
 echo
-echo "14. every request carries exactly the contract's field set"
+echo "14. flush carries recorded fields, not flush-time state"
+# ---------------------------------------------------------------------------
+# Buffer an event as platform=web / runtime=cursor, then move the project's
+# state to android and drop the run_id file before flushing. The wire must
+# show the values recorded at event time.
+F2="$(new_project "$PORT")"
+printf 'web\n' > "$F2/.onesignal/platform"
+( cd "$F2" && ONESIGNAL_SKILL_RUNTIME=cursor bash "$CHECKPOINT" setup.preflight ok >/dev/null 2>&1 )
+BRUN="$(cat "$F2/.onesignal/run_id")"
+printf 'android\n' > "$F2/.onesignal/platform"
+rm -f "$F2/.onesignal/run_id"
+IDX="$(count_requests)"
+printf '%s\n' "$APP_ID" > "$F2/.onesignal/app_id"
+( cd "$F2" && bash "$CHECKPOINT" flush >/dev/null 2>&1 )
+want "flush carries the buffered platform" "web" "$(field "$IDX" agent.platform)"
+want "flush carries the buffered runtime" "cursor" "$(field "$IDX" agent.runtime)"
+want "flush carries the buffered run_id, not a fresh one" "$BRUN" "$(field "$IDX" agent.run_id)"
+
+# ---------------------------------------------------------------------------
+echo
+echo "15. every request carries exactly the contract's field set"
 # ---------------------------------------------------------------------------
 # Positive allow-list over every request this suite produced. The canary check
 # above only proves the agent never read a secret; it says nothing about what

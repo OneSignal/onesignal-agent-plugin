@@ -110,8 +110,9 @@ The ingestion endpoint requires the App ID as a query parameter, but
 
 - Milestones before the App ID is known are **written locally and held**.
 - Once Step 2 resolves it, run `bash scripts/checkpoint.sh flush` — each pending event is
-  sent as its own request, carrying the now-known App ID and its original milestone,
-  status, failure class and skill.
+  sent as its own request, carrying the now-known App ID and every field as recorded:
+  milestone, status, failure class, skill, timestamp, platform, source, run_id, runtime
+  and os. Nothing is re-derived at flush time.
 - Everything after that sends as it happens. A **transport failure** on one of those sends
   (blocked network, timeout, killed connection, no HTTP response) puts the event back into
   `pending.jsonl` for a later flush. Deterministic failures do not re-buffer: an encoder

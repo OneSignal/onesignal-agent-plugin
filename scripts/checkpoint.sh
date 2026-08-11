@@ -140,6 +140,17 @@ if [ "$RAW_MILESTONE" = "flush" ]; then
     FC=$(buffered_field "$line" failure_class)
     SK=$(buffered_field "$line" skill)
     BTS=$(buffered_field "$line" ts)
+    # Carry EVERY recorded field through, like ts. The child used to re-derive
+    # platform, source, run_id, runtime and os from flush-time state, so a
+    # buffered event could land platform=unknown (or under a fresh run_id) if
+    # the state files had moved on. An empty extraction — a row from an older
+    # buffer — leaves the variable empty, and the child's ${VAR:-fallback}
+    # expansions re-derive exactly as before.
+    BPLATFORM=$(buffered_field "$line" platform)
+    BSOURCE=$(buffered_field "$line" source)
+    BRUN_ID=$(buffered_field "$line" run_id)
+    BRUNTIME=$(buffered_field "$line" runtime)
+    BOS=$(buffered_field "$line" os)
     # Re-qualify as "<skill>.<milestone>". Passing the bare milestone made the child
     # derive skill="unknown", erasing the agent.skill label for every buffered event.
     case "$SK" in
@@ -164,6 +175,11 @@ if [ "$RAW_MILESTONE" = "flush" ]; then
     ONESIGNAL_SKILL_RESULT_FILE="$RESULT_FILE" \
     ONESIGNAL_SKILL_SKIP_LOCAL_RECORD=1 \
     ONESIGNAL_SKILL_TS="$BTS" \
+    ONESIGNAL_SKILL_PLATFORM="$BPLATFORM" \
+    ONESIGNAL_SKILL_SOURCE="$BSOURCE" \
+    ONESIGNAL_SKILL_RUN_ID="$BRUN_ID" \
+    ONESIGNAL_SKILL_RUNTIME="$BRUNTIME" \
+    ONESIGNAL_SKILL_OS="$BOS" \
       bash "$0" "$QUALIFIED" "$S" "$FC" 2>/dev/null
     if [ "$(cat "$RESULT_FILE" 2>/dev/null)" = "sent" ]; then
       SENT=$((SENT + 1))
@@ -347,8 +363,10 @@ detect_runtime() {
   echo "unknown"
 }
 
-RUNTIME="$(detect_runtime)"
-OS_NAME="$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')"
+# The env overrides exist for the flush path: a re-send must carry the values
+# recorded when the event happened, not re-detect them at flush time.
+RUNTIME="${ONESIGNAL_SKILL_RUNTIME:-$(detect_runtime)}"
+OS_NAME="${ONESIGNAL_SKILL_OS:-$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')}"
 OS_NAME="${OS_NAME:-unknown}"
 TS="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)"
 
