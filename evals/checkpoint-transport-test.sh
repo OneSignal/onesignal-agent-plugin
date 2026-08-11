@@ -520,7 +520,29 @@ want "flush carries the buffered run_id, not a fresh one" "$BRUN" "$(field "$IDX
 
 # ---------------------------------------------------------------------------
 echo
-echo "15. every request carries exactly the contract's field set"
+echo "15. an unwritable state dir is reported, not papered over"
+# ---------------------------------------------------------------------------
+# The buffer append used to be best-effort while "held for flush" printed
+# unconditionally — the payload was gone but everything reported it held.
+G="$(new_project "$PORT")"
+chmod 555 "$G/.onesignal"
+OUT="$(cd "$G" && bash "$CHECKPOINT" setup.preflight ok 2>&1)"
+want "exits 0 when the state dir is unwritable" "0" "$?"
+case "$OUT" in
+  *"NOT buffered"*) ok "a lost event is reported as NOT buffered" ;;
+  *) bad "a lost event is reported as NOT buffered" "output was: $OUT" ;;
+esac
+case "$OUT" in
+  *"could not write the local record"*) ok "the failed local record is reported too" ;;
+  *) bad "the failed local record is reported too" "output was: $OUT" ;;
+esac
+want "no pending row was silently claimed" "0" \
+  "$(count_lines "$G/.onesignal/pending.jsonl")"
+chmod 755 "$G/.onesignal"
+
+# ---------------------------------------------------------------------------
+echo
+echo "16. every request carries exactly the contract's field set"
 # ---------------------------------------------------------------------------
 # Positive allow-list over every request this suite produced. The canary check
 # above only proves the agent never read a secret; it says nothing about what

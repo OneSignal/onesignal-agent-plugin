@@ -447,7 +447,9 @@ fi
 # recorded when it was buffered. transport.log is where attempts accumulate.
 # ---------------------------------------------------------------------------
 if [ "${ONESIGNAL_SKILL_SKIP_LOCAL_RECORD:-0}" != "1" ]; then
-  printf '%s\n' "$PAYLOAD" >> "$STATE_DIR/checkpoints.jsonl" 2>/dev/null || true
+  if ! printf '%s\n' "$PAYLOAD" >> "$STATE_DIR/checkpoints.jsonl" 2>/dev/null; then
+    echo "checkpoint: WARNING — could not write the local record to $STATE_DIR/checkpoints.jsonl"
+  fi
 fi
 
 TRANSPORT_LOG="$STATE_DIR/transport.log"
@@ -477,6 +479,9 @@ rebuffer() {
   fi
   if printf '%s\n' "$PAYLOAD" >> "$STATE_DIR/pending.jsonl" 2>/dev/null; then
     echo "  Held in $STATE_DIR/pending.jsonl — run 'bash scripts/checkpoint.sh flush' when the network allows."
+  else
+    note "buffer_write_failed" "cannot append to $STATE_DIR/pending.jsonl"
+    echo "  NOT held — cannot write $STATE_DIR/pending.jsonl; this event will not send later."
   fi
 }
 
@@ -529,12 +534,20 @@ fi
 # BUFFER, don't fake. Early milestones (setup.preflight) fire before Step 2 has an
 # App ID, and the endpoint requires one as a query parameter. Hold the event and send
 # it on the next `flush` rather than substituting a placeholder (safety contract §19).
+# "Buffered" is only claimed when the append actually succeeded. On an
+# unwritable .onesignal the payload is gone — saying "held for flush" would
+# promise a delivery that can never happen.
 if [ -z "$APP_ID" ]; then
-  printf '%s\n' "$PAYLOAD" >> "$STATE_DIR/pending.jsonl" 2>/dev/null || true
-  note "buffered" "no app_id yet — held for flush"
-  echo "checkpoint: $MILESTONE=$STATUS (buffered — no App ID yet)"
-  echo "  Held in $STATE_DIR/pending.jsonl. Once the App ID is known:"
-  echo "    echo '<uuid>' > $APP_ID_PROJECT_CONF && bash scripts/checkpoint.sh flush"
+  if printf '%s\n' "$PAYLOAD" >> "$STATE_DIR/pending.jsonl" 2>/dev/null; then
+    note "buffered" "no app_id yet — held for flush"
+    echo "checkpoint: $MILESTONE=$STATUS (buffered — no App ID yet)"
+    echo "  Held in $STATE_DIR/pending.jsonl. Once the App ID is known:"
+    echo "    echo '<uuid>' > $APP_ID_PROJECT_CONF && bash scripts/checkpoint.sh flush"
+  else
+    note "buffer_write_failed" "cannot append to $STATE_DIR/pending.jsonl"
+    echo "checkpoint: $MILESTONE=$STATUS (NOT buffered — cannot write $STATE_DIR/pending.jsonl)"
+    echo "  The event was NOT held and will not send later. Check permissions on $STATE_DIR."
+  fi
   exit 0
 fi
 
