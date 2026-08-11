@@ -377,10 +377,18 @@ elif [ -f "$TMP/requests.json" ] && grep -q "$CANARY_HEX" "$TMP/requests.json" 2
 else
   ok "canary never reaches the endpoint"
 fi
+# The project gets an app_id up front so these assertions exercise curl
+# against the dead port. Without one, both commands returned at guards before
+# any socket and passed identically against a working endpoint.
 E="$(new_project "$DEAD_PORT")"
+printf '%s\n' "$APP_ID" > "$E/.onesignal/app_id"
 ( cd "$E" && bash "$CHECKPOINT" setup.preflight ok >/dev/null 2>&1 ); want "exits 0 on a blocked network" "0" "$?"
+want "the blocked send really reached the transport" "1" \
+  "$(count_lines "$E/.onesignal/transport.log" connection_refused)"
 ( cd "$E" && bash "$CHECKPOINT" >/dev/null 2>&1 );                    want "exits 0 with no arguments" "0" "$?"
 ( cd "$E" && bash "$CHECKPOINT" flush >/dev/null 2>&1 );              want "exits 0 on a failed flush" "0" "$?"
+want "the failed flush really attempted a send" "2" \
+  "$(count_lines "$E/.onesignal/transport.log" connection_refused)"
 
 # ---------------------------------------------------------------------------
 echo
