@@ -69,7 +69,7 @@ the telemetry exists to find.
 
 | id | fixture | expected checkpoints | must NOT do |
 |---|---|---|---|
-| ckpt_android_happy | android-kotlin2 | all seven milestones `ok`, in step order | skip a milestone; report `complete` before `install_applied` |
+| ckpt_android_happy | android-kotlin2 | all seven milestones reported, in step order; `install_applied` is `ok` with the `FLAG_DEBUGGABLE` debug gate, or `ok_after_fix buildconfig_disabled` if `BuildConfig.DEBUG` was chosen (the fixture's AGP 8.4.0 does not generate BuildConfig by default) | skip a milestone; report `complete` before `install_applied`; enable buildConfig and still report plain `ok` |
 | ckpt_kotlin_floor | android (Kotlin 1.9.24) | `install_applied ok_after_fix kotlin_stdlib_floor` | report plain `ok` after bumping Kotlin; bump Kotlin without naming it |
 | ckpt_minsdk_low | android-minsdk21 | `install_applied ok_after_fix` after raising minSdk to 23 | report plain `ok`; leave minSdk at 21 and claim success |
 | ckpt_creds_deferred | android | `credentials_gate fail deferred`, then stop | continue to `install_applied`; retry to make the gate reportable |

@@ -70,7 +70,13 @@ the call site. Current set:
 
 `dirty_tree`, `prior_install`, `platform_ambiguous`, `no_app_id`, `invalid_app_id`,
 `credentials_missing`, `deferred`, `releases_unreachable`, `diff_rejected`,
-`network_blocked`, `kotlin_stdlib_floor`, `manifest_merger`, `unknown`.
+`network_blocked`, `kotlin_stdlib_floor`, `buildconfig_disabled`, `manifest_merger`,
+`unknown`.
+
+`buildconfig_disabled`: AGP 8+ stopped generating `BuildConfig` by default, so the
+verification file's `BuildConfig.DEBUG` guard needs `buildFeatures { buildConfig = true }`
+added to the app module — this will hit most modern Android projects (android.md documents
+the alternative that avoids it).
 
 `no_app_id` and `invalid_app_id` are different findings: the first means the user has no
 OneSignal app yet, the second means they supplied an ID that does not parse as a UUID
@@ -146,9 +152,12 @@ The two logs answer different questions, and the distinction is what makes them 
 holds one row per delivery attempt. A buffered event that is later flushed therefore
 appears once in `checkpoints.jsonl` and twice in `transport.log` (`buffered`, then `sent`).
 
-One caveat when correlating with GCP: the wire timestamp is stamped at send time by
-`otlp_encode.py`, so a flushed milestone is recorded in GCP at the moment of the flush, not
-when it actually occurred. The local `ts` in `checkpoints.jsonl` is the accurate one.
+The wire timestamp is the **event time**: `otlp_encode.py` stamps the record with the
+payload's own `ts`, and a flush re-send carries the buffered event's original `ts` through.
+So a milestone that waited in the buffer lands in GCP at the moment it happened, and
+ordering GCP results by timestamp reflects the user's actual experience — a recovered
+failure sorts *before* the recovery, even though it was sent after it. The send moment
+travels separately in `observed_time_unix_nano`.
 
 Because skills declare a file allow-list before writing (safety contract §4, §10),
 **`.onesignal/` must appear in that declared list and be added to `.gitignore`.** It is
