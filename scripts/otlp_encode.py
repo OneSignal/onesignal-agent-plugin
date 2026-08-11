@@ -48,8 +48,14 @@ TIMESTAMP CAVEAT — READ THIS
     timestamp in GCP. `observed_time_unix_nano` gets true nanoseconds, matching
     what the device SDK sends. If the service is ever fixed, change
     `TIME_FIELD_IS_SECONDS` to False.
+
+    `time_unix_nano` carries the EVENT time, taken from the checkpoint's own
+    `ts` field. Buffered events are flushed minutes after they happen; stamping
+    them with the send clock made a recovered failure appear in GCP *after* the
+    recovery that followed it. `observed_time_unix_nano` is the send clock.
 """
 
+import datetime
 import json
 import os
 import struct
@@ -121,6 +127,23 @@ def attributes(field: int, pairs) -> bytes:
     return out
 
 
+def _event_epoch(ts, fallback: float) -> float:
+    """Epoch seconds of the event itself, parsed from the checkpoint's ts.
+
+    checkpoint.sh writes ts as `date -u +%Y-%m-%dT%H:%M:%SZ`; anything else
+    (missing field, `unknown` because date failed) falls back to the send clock.
+    strptime instead of fromisoformat because the trailing Z is only accepted
+    by fromisoformat on Python >= 3.11, and this runs on machines we don't control.
+    """
+    if isinstance(ts, str):
+        try:
+            parsed = datetime.datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
+            return parsed.replace(tzinfo=datetime.timezone.utc).timestamp()
+        except ValueError:
+            pass
+    return fallback
+
+
 def build_logs_data(checkpoint: dict) -> bytes:
     """Assemble a complete LogsData containing exactly one LogRecord."""
 
@@ -183,7 +206,8 @@ def build_logs_data(checkpoint: dict) -> bytes:
         message += f" ({failure_class})"
 
     now = time.time()
-    time_value = int(now) if TIME_FIELD_IS_SECONDS else int(now * 1_000_000_000)
+    event_time = _event_epoch(checkpoint.get("ts"), now)
+    time_value = int(event_time) if TIME_FIELD_IS_SECONDS else int(event_time * 1_000_000_000)
 
     log_record = (
         _fixed64(1, time_value)

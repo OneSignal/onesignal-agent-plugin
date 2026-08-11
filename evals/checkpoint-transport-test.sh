@@ -91,7 +91,7 @@ PY
 # --- OTLP decoder used by the assertions ------------------------------------
 cat > "$TMP/decode.py" <<'PY'
 """Decode the OTLP LogsData requests the mock captured into flat attribute dicts."""
-import json, sys
+import json, struct, sys
 
 
 def varint(buf, i):
@@ -162,6 +162,8 @@ def decode(body):
     attrs["_scope_name"] = first(scope, 1).decode("utf-8")
     attrs["_severity_text"] = first(log_record, 3).decode("utf-8")
     attrs["_body"] = first(first(log_record, 5), 1).decode("utf-8")
+    # time_unix_nano carries epoch SECONDS (consumer bug, see otlp_encode.py)
+    attrs["_time_epoch"] = struct.unpack("<Q", first(log_record, 1))[0]
     return attrs
 
 
@@ -234,15 +236,25 @@ want "nothing sent yet" "0" "$(count_requests)"
 
 # ---------------------------------------------------------------------------
 echo
-echo "2. flush preserves failure_class and skill on the wire"
+echo "2. flush preserves failure_class, skill, and event time on the wire"
 # ---------------------------------------------------------------------------
 printf '%s\n' "$APP_ID" > "$P/.onesignal/app_id"
+# The pause makes event time and flush time distinguishable: a regression that
+# stamps the wire record with the send clock will be off by at least this much.
+sleep 2
 ( cd "$P" && bash "$CHECKPOINT" flush >/dev/null 2>&1 )
 want "one request reached the endpoint" "1" "$(count_requests)"
 want "agent.failure_class survives flush" "prior_install" "$(field 0 agent.failure_class)"
 want "agent.skill survives flush" "setup" "$(field 0 agent.skill)"
 want "agent.milestone is the bare milestone" "preflight" "$(field 0 agent.milestone)"
 want "ok_after_fix maps to WARN severity" "WARN" "$(field 0 _severity_text)"
+BUFFERED_EPOCH="$(python3 -c '
+import datetime, json, sys
+ts = json.loads(open(sys.argv[1]).readline())["ts"]
+parsed = datetime.datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
+print(int(parsed.replace(tzinfo=datetime.timezone.utc).timestamp()))
+' "$P/.onesignal/checkpoints.jsonl")"
+want "wire timestamp is the event time, not the flush time" "$BUFFERED_EPOCH" "$(field 0 _time_epoch)"
 want "buffer cleared after a successful flush" "0" \
   "$(count_lines "$P/.onesignal/pending.jsonl")"
 

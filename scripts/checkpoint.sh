@@ -38,9 +38,9 @@
 #
 # This JSON is the internal representation. It is encoded into an OTLP LogsData
 # protobuf by otlp_encode.py before sending — the endpoint accepts nothing else.
-# Note that `ts` is carried locally only: the encoder stamps the wire record with
-# send time, so a flushed event's wire timestamp is when it was flushed, not when
-# the milestone occurred.
+# `ts` is the EVENT time and is what the encoder stamps onto the wire record, so
+# a buffered event flushed minutes later still lands in GCP at the moment it
+# happened. The send moment is carried separately in observed_time_unix_nano.
 #
 # "source" exists so these events can be separated from real SDK traffic on the
 # shared ingestion endpoint. In GCP Logs Explorer:
@@ -131,6 +131,7 @@ if [ "$RAW_MILESTONE" = "flush" ]; then
     S=$(buffered_field "$line" status)
     FC=$(buffered_field "$line" failure_class)
     SK=$(buffered_field "$line" skill)
+    BTS=$(buffered_field "$line" ts)
     # Re-qualify as "<skill>.<milestone>". Passing the bare milestone made the child
     # derive skill="unknown", erasing the agent.skill label for every buffered event.
     case "$SK" in
@@ -145,6 +146,7 @@ if [ "$RAW_MILESTONE" = "flush" ]; then
     ONESIGNAL_SKILL_APP_ID="$FLUSH_APP_ID" \
     ONESIGNAL_SKILL_RESULT_FILE="$RESULT_FILE" \
     ONESIGNAL_SKILL_SKIP_LOCAL_RECORD=1 \
+    ONESIGNAL_SKILL_TS="$BTS" \
       bash "$0" "$QUALIFIED" "$S" "$FC" 2>/dev/null
     if [ "$(cat "$RESULT_FILE" 2>/dev/null)" = "sent" ]; then
       SENT=$((SENT + 1))
@@ -293,6 +295,13 @@ OS_NAME="$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')"
 OS_NAME="${OS_NAME:-unknown}"
 TS="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)"
 
+# The payload's ts is the EVENT time, which the encoder stamps onto the wire
+# record. A flush re-send passes the buffered event's original ts in via
+# ONESIGNAL_SKILL_TS so a milestone that waited in the buffer keeps the moment
+# it happened, not the moment it was flushed. $TS (now) still stamps
+# transport.log, which records attempts.
+PAYLOAD_TS="${ONESIGNAL_SKILL_TS:-$TS}"
+
 if [ -n "$FAILURE_CLASS" ]; then
   FC_JSON="\"$FAILURE_CLASS\""
 else
@@ -300,7 +309,7 @@ else
 fi
 
 PAYLOAD=$(cat <<JSON
-{"schema":2,"source":"$SOURCE_TAG","run_id":"$RUN_ID","skill_version":"$SKILL_VERSION","milestone":"$MILESTONE","status":"$STATUS","failure_class":$FC_JSON,"runtime":"$RUNTIME","os":"$OS_NAME","ts":"$TS","app_id":"$APP_ID","platform":"$PLATFORM","skill":"$SKILL_NAME"}
+{"schema":2,"source":"$SOURCE_TAG","run_id":"$RUN_ID","skill_version":"$SKILL_VERSION","milestone":"$MILESTONE","status":"$STATUS","failure_class":$FC_JSON,"runtime":"$RUNTIME","os":"$OS_NAME","ts":"$PAYLOAD_TS","app_id":"$APP_ID","platform":"$PLATFORM","skill":"$SKILL_NAME"}
 JSON
 )
 
