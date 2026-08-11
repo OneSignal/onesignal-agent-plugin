@@ -366,6 +366,29 @@ E="$(new_project "$DEAD_PORT")"
 ( cd "$E" && bash "$CHECKPOINT" >/dev/null 2>&1 );                    want "exits 0 with no arguments" "0" "$?"
 ( cd "$E" && bash "$CHECKPOINT" flush >/dev/null 2>&1 );              want "exits 0 on a failed flush" "0" "$?"
 
+# ---------------------------------------------------------------------------
+echo
+echo "9. hostile field values cannot corrupt the local record"
+# ---------------------------------------------------------------------------
+# A double quote in an interpolated field used to yield invalid JSON: a
+# permanently broken row and encode_failed on the wire path.
+J="$(new_project "$PORT")"
+( cd "$J" && bash "$CHECKPOINT" setup.preflight fail 'foo"bar\baz' >/dev/null 2>&1 )
+( cd "$J" && ONESIGNAL_SKILL_SOURCE='src"quote' bash "$CHECKPOINT" setup.app_id ok >/dev/null 2>&1 )
+want "hostile rows still parse as JSON" "2" \
+  "$(python3 -c '
+import json, sys
+n = 0
+for line in open(sys.argv[1]):
+    json.loads(line)
+    n += 1
+print(n)
+' "$J/.onesignal/checkpoints.jsonl" 2>/dev/null || echo parse_error)"
+want "quoted failure_class round-trips" 'foo"bar\baz' \
+  "$(python3 -c 'import json,sys; print(json.loads(open(sys.argv[1]).readline())["failure_class"])' "$J/.onesignal/checkpoints.jsonl" 2>/dev/null)"
+want "quoted source round-trips" 'src"quote' \
+  "$(python3 -c 'import json,sys; rows=[json.loads(l) for l in open(sys.argv[1])]; print(rows[1]["source"])' "$J/.onesignal/checkpoints.jsonl" 2>/dev/null)"
+
 echo
 echo "----------------------------------------"
 printf '%d passed, %d failed\n' "$PASS" "$FAIL"

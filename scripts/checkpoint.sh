@@ -302,14 +302,36 @@ TS="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)"
 # transport.log, which records attempts.
 PAYLOAD_TS="${ONESIGNAL_SKILL_TS:-$TS}"
 
+# JSON string escaping for every interpolated field. A double quote in any
+# field used to produce invalid JSON, a nonzero encoder exit, and a permanently
+# broken row in checkpoints.jsonl/pending.jsonl. JSON strings need exactly
+# three things handled: backslash, double quote, and control characters —
+# the first two are escaped, control characters are dropped (no field
+# legitimately contains them). Pure shell, so the local record stays valid
+# even on machines without python3.
+json_escape() {
+  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\000-\037'
+}
+
+E_SOURCE=$(json_escape "$SOURCE_TAG")
+E_RUN_ID=$(json_escape "$RUN_ID")
+E_MILESTONE=$(json_escape "$MILESTONE")
+E_STATUS=$(json_escape "$STATUS")
+E_RUNTIME=$(json_escape "$RUNTIME")
+E_OS=$(json_escape "$OS_NAME")
+E_TS=$(json_escape "$PAYLOAD_TS")
+E_APP_ID=$(json_escape "$APP_ID")
+E_PLATFORM=$(json_escape "$PLATFORM")
+E_SKILL=$(json_escape "$SKILL_NAME")
+
 if [ -n "$FAILURE_CLASS" ]; then
-  FC_JSON="\"$FAILURE_CLASS\""
+  FC_JSON="\"$(json_escape "$FAILURE_CLASS")\""
 else
   FC_JSON="null"
 fi
 
 PAYLOAD=$(cat <<JSON
-{"schema":2,"source":"$SOURCE_TAG","run_id":"$RUN_ID","skill_version":"$SKILL_VERSION","milestone":"$MILESTONE","status":"$STATUS","failure_class":$FC_JSON,"runtime":"$RUNTIME","os":"$OS_NAME","ts":"$PAYLOAD_TS","app_id":"$APP_ID","platform":"$PLATFORM","skill":"$SKILL_NAME"}
+{"schema":2,"source":"$E_SOURCE","run_id":"$E_RUN_ID","skill_version":"$SKILL_VERSION","milestone":"$E_MILESTONE","status":"$E_STATUS","failure_class":$FC_JSON,"runtime":"$E_RUNTIME","os":"$E_OS","ts":"$E_TS","app_id":"$E_APP_ID","platform":"$E_PLATFORM","skill":"$E_SKILL"}
 JSON
 )
 
