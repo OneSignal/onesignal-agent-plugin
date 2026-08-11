@@ -146,7 +146,16 @@ if [ "$RAW_MILESTONE" = "flush" ]; then
       ""|unknown) QUALIFIED="$M" ;;
       *)          QUALIFIED="$SK.$M" ;;
     esac
-    : > "$RESULT_FILE" 2>/dev/null || true
+    # Fail closed. Seed the result file with a non-"sent" sentinel BEFORE the
+    # child runs, and skip the send entirely if that write fails: when this
+    # file cannot be written the child's outcome cannot be reported either, and
+    # a stale "sent" left from a previous iteration would clear the buffer with
+    # nothing delivered. The same sentinel covers a child that dies before
+    # reporting — anything short of an explicit "sent" keeps the buffer.
+    if ! printf 'unsent' > "$RESULT_FILE" 2>/dev/null; then
+      FAILED=1
+      continue
+    fi
     # Re-send through this same script so every send path stays identical: one encoder,
     # one set of transport diagnostics, one place to get the request shape right.
     # The event is already in checkpoints.jsonl from when it was buffered, so the child

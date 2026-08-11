@@ -467,6 +467,22 @@ printf 'http://127.0.0.1:%s/sdk/log\n' "$PORT" > "$Y/.onesignal/endpoint"
 ( cd "$Y" && bash "$CHECKPOINT" flush >/dev/null 2>&1 )
 want "flush off the portal delivers the event" "sdk_dependency" "$(field "$IDX" agent.milestone)"
 
+# ---------------------------------------------------------------------------
+echo
+echo "13. flush fails closed when the result file is unwritable"
+# ---------------------------------------------------------------------------
+# The result file is the only success channel (the child always exits 0). A
+# stale "sent" in an unwritable file used to clear the buffer with nothing
+# delivered.
+Z="$(new_project "$DEAD_PORT")"
+( cd "$Z" && bash "$CHECKPOINT" setup.preflight ok >/dev/null 2>&1 )
+printf 'sent' > "$Z/.onesignal/.flush_result"
+chmod 444 "$Z/.onesignal/.flush_result"
+printf '%s\n' "$APP_ID" > "$Z/.onesignal/app_id"
+( cd "$Z" && bash "$CHECKPOINT" flush >/dev/null 2>&1 ); want "flush exits 0 on an unwritable result file" "0" "$?"
+want "a stale 'sent' cannot clear the buffer" "1" \
+  "$(count_lines "$Z/.onesignal/pending.jsonl")"
+
 echo
 echo "----------------------------------------"
 printf '%d passed, %d failed\n' "$PASS" "$FAIL"
