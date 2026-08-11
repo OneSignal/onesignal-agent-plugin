@@ -366,7 +366,13 @@ if grep -rq "$CANARY" "$TMP"/proj*/.onesignal/ 2>/dev/null; then
 else
   ok "canary never appears in checkpoint state"
 fi
-if [ -f "$TMP/requests.json" ] && grep -q "$(printf '%s' "$CANARY" | xxd -p | tr -d '\n')" "$TMP/requests.json" 2>/dev/null; then
+# The hex needle is built with python3, a declared dep — xxd is not. With xxd
+# missing, the substitution yielded an empty pattern and `grep -q ""` matched
+# every line, so the check fired on every run instead of only on a leak.
+CANARY_HEX="$(printf '%s' "$CANARY" | python3 -c 'import sys; print(sys.stdin.buffer.read().hex())')"
+if [ -z "$CANARY_HEX" ]; then
+  bad "canary hex needle must never be empty" "python3 hex conversion produced nothing"
+elif [ -f "$TMP/requests.json" ] && grep -q "$CANARY_HEX" "$TMP/requests.json" 2>/dev/null; then
   bad "canary must never reach the endpoint" "found the canary in a request body"
 else
   ok "canary never reaches the endpoint"
