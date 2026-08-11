@@ -70,7 +70,7 @@ The production entry point is **`/onesignal:setup app=<APP_ID> token=<key>`**. I
 
 ## Step 0 — Preflight (safety contract §1–4, do this before anything else)
 
-1. Run `git status --porcelain`. Dirty tree → STOP and ask: stash / proceed on top / abort. No `.git` present → tell the user there is no VCS safety net; you will write `<file>.onesignal.bak` siblings before edits, and proceed only if they accept.
+1. Run `git status --porcelain`. Dirty tree → STOP and ask: stash / proceed on top / abort. **Report the dropout before ending the turn to ask** — a session that never resumes otherwise leaves no trace of why: `bash <plugin>/scripts/checkpoint.sh setup.preflight fail dirty_tree` (it buffers; no App ID exists yet). If the user answers and you proceed, report the normal Step 1 checkpoint as usual — the fail→ok pair is the recovery story, not a contradiction. No `.git` present → tell the user there is no VCS safety net; you will write `<file>.onesignal.bak` siblings before edits, and proceed only if they accept.
 2. **Detect a prior OneSignal install FIRST** (idempotency): grep for the dependency line (`onesignal` / `OneSignal` / `react-native-onesignal` / `onesignal_flutter` / `onesignal-cordova-plugin` / `@onesignal/capacitor-plugin`), an existing `OneSignal.init`/`initialize`/`initWithContext` call, an `OneSignalSDKWorker.js`, or our marker `onesignal:managed`. Found → propose **update/repair**, never a duplicate install. If a **different App ID** is already wired in, ask which is correct; never silently overwrite.
 3. Propose a new `onesignal-integration` branch (default). The user may opt to write to the current branch instead.
 4. You will declare the full file allow-list in Step 5 before writing. Include `.onesignal/` (checkpoint run state) and `.gitignore`.
@@ -93,7 +93,7 @@ Read project manifests (never execute them). Detect per-package in monorepos. Ma
 
 **Monorepo / workspaces:** if `package.json` has `workspaces`, a `pnpm-workspace.yaml`, `lerna.json`, `nx.json`, or `turbo.json`, enumerate each package and detect per-package. A repo can hold BOTH a web app and a mobile app. Do NOT assume one platform for the whole repo.
 
-**Ambiguous or multiple candidates → ASK.** Do not guess. Present the detected candidates and let the user pick which package(s) to integrate. React Native could be bare or Expo — if unclear, ask. If detection finds nothing recognizable, ask the user to name their platform/framework rather than proceeding.
+**Ambiguous or multiple candidates → ASK.** Do not guess. Present the detected candidates and let the user pick which package(s) to integrate. React Native could be bare or Expo — if unclear, ask. If detection finds nothing recognizable, ask the user to name their platform/framework rather than proceeding. **Report the dropout before ending the turn to ask**: `bash <plugin>/scripts/checkpoint.sh setup.preflight fail platform_ambiguous`. When the user answers and detection resolves, report the normal checkpoint below — the fail→ok pair records the friction.
 
 **Checkpoint.** Once the platform is known, write it and report preflight — it will buffer until Step 2:
 
@@ -102,7 +102,7 @@ mkdir -p .onesignal && echo "<platform>" > .onesignal/platform
 bash <plugin>/scripts/checkpoint.sh setup.preflight ok
 ```
 
-Use `fail platform_ambiguous` if detection could not resolve, `fail dirty_tree` if Step 0 stopped, `ok_after_fix prior_install` if you found an existing install and switched to update/repair.
+Use `ok_after_fix prior_install` if you found an existing install and switched to update/repair. (`fail dirty_tree` and `fail platform_ambiguous` are reported earlier, at the moment each STOP or ASK happens — see Step 0 and the paragraph above. They cannot wait for this block: both failures end the turn before the platform is known.)
 
 Detect the language from file extensions, not by asking, EXCEPT where the upstream flow asks (RN/Expo: ask JS vs TS). Detect the package manager from the lockfile (`package-lock.json`→npm, `yarn.lock`→yarn, `pnpm-lock.yaml`→pnpm, `bun.lock`→bun; `Podfile.lock`→CocoaPods, `Package.resolved`→SPM) — use it; never introduce a different one.
 
