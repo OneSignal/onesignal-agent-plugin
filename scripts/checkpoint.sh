@@ -435,6 +435,24 @@ note() {
   fi
 }
 
+# Hold this event for a later flush after a TRANSPORT failure. Buffering used to
+# be gated only on a missing App ID, so once Step 2 wrote it (5 of 7 milestones),
+# a blocked network dropped every event with exit 0 while the contract promised
+# a later flush "loses nothing". Scope: transport failures only — an encoder
+# error or an HTTP 4xx is deterministic, so re-sending the identical payload
+# would fail identically, forever, on every future flush.
+#
+# A flush child must NOT re-append: the parent keeps the whole buffer when any
+# send fails, so appending here would duplicate the row on every attempt.
+rebuffer() {
+  if [ "${ONESIGNAL_SKILL_SKIP_LOCAL_RECORD:-0}" = "1" ]; then
+    return 0
+  fi
+  if printf '%s\n' "$PAYLOAD" >> "$STATE_DIR/pending.jsonl" 2>/dev/null; then
+    echo "  Held in $STATE_DIR/pending.jsonl — run 'bash scripts/checkpoint.sh flush' when the network allows."
+  fi
+}
+
 # Opt-out is recorded, not silent. Previously this branch returned before note()
 # was even defined, so a declined checkpoint left no trace in transport.log —
 # indistinguishable from the agent skipping the checkpoint altogether. Anyone
@@ -585,6 +603,7 @@ if [ "$CURL_RC" -ne 0 ]; then
       echo "  container, its 127.0.0.1 is not your machine's. Use a public host or a"
       echo "  tunnel to test egress meaningfully." ;;
   esac
+  rebuffer
   exit 0
 fi
 
@@ -594,7 +613,8 @@ case "$HTTP_CODE" in
     echo "checkpoint: $MILESTONE=$STATUS (reported, HTTP $HTTP_CODE)" ;;
   000)
     note "no_response" "curl rc=0 but no status line"
-    echo "checkpoint: $MILESTONE=$STATUS (no HTTP response; logged locally)" ;;
+    echo "checkpoint: $MILESTONE=$STATUS (no HTTP response; logged locally)"
+    rebuffer ;;
   4*|5*)
     note "http_error" "HTTP $HTTP_CODE"
     echo "checkpoint: $MILESTONE=$STATUS (reached a server, HTTP $HTTP_CODE; logged locally)"

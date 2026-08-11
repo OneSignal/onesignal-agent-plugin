@@ -416,6 +416,27 @@ want "invalid app_id buffers the event instead" "1" \
 want "flush with invalid app_id keeps the buffer" "1" \
   "$(count_lines "$W/.onesignal/pending.jsonl")"
 
+# ---------------------------------------------------------------------------
+echo
+echo "11. a transport failure after the App ID exists re-buffers the event"
+# ---------------------------------------------------------------------------
+# Buffering used to be gated only on a missing App ID; a blocked network after
+# Step 2 dropped every event with exit 0.
+X="$(new_project "$DEAD_PORT")"
+printf '%s\n' "$APP_ID" > "$X/.onesignal/app_id"
+( cd "$X" && bash "$CHECKPOINT" setup.install_applied ok >/dev/null 2>&1 )
+want "failed send lands in pending.jsonl" "1" \
+  "$(count_lines "$X/.onesignal/pending.jsonl")"
+( cd "$X" && bash "$CHECKPOINT" flush >/dev/null 2>&1 )
+want "failed flush does not duplicate the re-buffered row" "1" \
+  "$(count_lines "$X/.onesignal/pending.jsonl")"
+IDX="$(count_requests)"
+printf 'http://127.0.0.1:%s/sdk/log\n' "$PORT" > "$X/.onesignal/endpoint"
+( cd "$X" && bash "$CHECKPOINT" flush >/dev/null 2>&1 )
+want "recovered flush delivers the held event" "install_applied" "$(field "$IDX" agent.milestone)"
+want "buffer cleared after the recovery" "0" \
+  "$(count_lines "$X/.onesignal/pending.jsonl")"
+
 echo
 echo "----------------------------------------"
 printf '%d passed, %d failed\n' "$PASS" "$FAIL"

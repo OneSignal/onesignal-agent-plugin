@@ -112,13 +112,19 @@ The ingestion endpoint requires the App ID as a query parameter, but
 - Once Step 2 resolves it, run `bash scripts/checkpoint.sh flush` — each pending event is
   sent as its own request, carrying the now-known App ID and its original milestone,
   status, failure class and skill.
-- Everything after that sends as it happens.
+- Everything after that sends as it happens. A **transport failure** on one of those sends
+  (blocked network, timeout, killed connection, no HTTP response) puts the event back into
+  `pending.jsonl` for a later flush. Deterministic failures do not re-buffer: an encoder
+  error or an HTTP 4xx would fail identically on every retry, forever.
+- Run `flush` one final time at `setup.complete`, so events re-buffered mid-run get a
+  second attempt before the session ends.
 
 The buffer is cleared **only when every pending event was accepted**. If egress is blocked
-the events stay in `pending.jsonl` for a later flush, so a sandboxed run that later gains
-network access loses nothing. A partial flush reports `<n> of <total> sent` and keeps the
-whole buffer; the accepted events will be re-sent on the next attempt, so treat duplicate
-delivery as possible and de-duplicate on `run_id` + milestone when analysing.
+the events stay in `pending.jsonl` for a later flush, so a run that later gains network
+access loses nothing — this holds both before the App ID exists and after it. A partial
+flush reports `<n> of <total> sent` and keeps the whole buffer; the accepted events will
+be re-sent on the next attempt, so treat duplicate delivery as possible and de-duplicate
+on `run_id` + milestone when analysing.
 
 **Never substitute a placeholder or demo App ID to make an early send work.** Setup Step 2
 already forbids hardcoded fallback App IDs, and attributing a real user's onboarding to a

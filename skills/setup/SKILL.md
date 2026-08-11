@@ -212,7 +212,10 @@ Decide what is still missing:
 
 Emit a copy-ready summary: files changed; SDK version + that it came from the releases.json endpoint; the dashboard/console steps the human still owns (from the platform's "Human must do" column in the matrix); verification steps (run debug build → see dialog → grant permission → send self a push → receive it); the exact filename + call site to delete for cleanup; and rollback commands (`git checkout -- <files>` / delete the `onesignal-integration` branch / restore `.onesignal.bak` files). **Do NOT auto-commit or open a PR** — offer the commands; the user runs them.
 
-**Final checkpoint:** `setup.complete ok` before handing off. This is setup's own completion rate — the denominator for everything downstream in the funnel.
+**Final checkpoint:** `setup.complete ok` before handing off, then one final
+`bash <plugin>/scripts/checkpoint.sh flush`. A transport failure mid-run re-buffers the
+event, and this flush is its second chance to send before the session ends. This is
+setup's own completion rate — the denominator for everything downstream in the funnel.
 
 Before finishing, **scan your own diff for secret-shaped strings** (REST API keys, org keys, `.p8`/service-account contents). If any secret is present in a committed/client file, abort and remove it — keys live in env vars only (safety contract §"Never").
 
