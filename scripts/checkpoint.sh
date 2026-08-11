@@ -608,9 +608,27 @@ if [ "$CURL_RC" -ne 0 ]; then
 fi
 
 case "$HTTP_CODE" in
+  # "Sent" means the ingestion service accepted it, and the service answers 202
+  # (INGESTION_CONTRACT.md) — 200 is tolerated as its likeliest drift. A blanket
+  # 2* match counted captive portals and proxy interstitials as delivered: a
+  # portal answers 200 with an HTML sign-in page having ingested nothing, and in
+  # exactly the networks where sends fail. HTML from a 2xx is therefore treated
+  # as not delivered and re-buffered, like any other transport failure.
+  200|202)
+    if head -c 200 "$RESP_FILE" 2>/dev/null | grep -qiE '<!DOCTYPE|<html'; then
+      note "http_2xx_html" "HTTP $HTTP_CODE with an HTML body — an interstitial answered, not the service"
+      echo "checkpoint: $MILESTONE=$STATUS (HTTP $HTTP_CODE but the body is HTML; logged locally)"
+      echo "  A captive portal or proxy interstitial accepted this request; the ingestion"
+      echo "  service never saw it. Not counted as sent."
+      rebuffer
+    else
+      note "sent" "HTTP $HTTP_CODE app_id_src=$APP_ID_SRC"
+      echo "checkpoint: $MILESTONE=$STATUS (reported, HTTP $HTTP_CODE)"
+    fi ;;
   2*)
-    note "sent" "HTTP $HTTP_CODE app_id_src=$APP_ID_SRC"
-    echo "checkpoint: $MILESTONE=$STATUS (reported, HTTP $HTTP_CODE)" ;;
+    note "http_2xx_unexpected" "HTTP $HTTP_CODE — the service answers 202; delivery unconfirmed"
+    echo "checkpoint: $MILESTONE=$STATUS (unexpected HTTP $HTTP_CODE; logged locally)"
+    rebuffer ;;
   000)
     note "no_response" "curl rc=0 but no status line"
     echo "checkpoint: $MILESTONE=$STATUS (no HTTP response; logged locally)"

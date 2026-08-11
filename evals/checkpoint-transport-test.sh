@@ -72,6 +72,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         )
         with open(RECORD, "w") as fh:
             json.dump(requests, fh)
+        if parsed.path == "/portal":
+            # A captive portal: HTTP 200, HTML body, nothing ingested.
+            page = b"<!DOCTYPE html><html><body>Sign in to this network</body></html>"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(page)))
+            self.end_headers()
+            self.wfile.write(page)
+            return
         # The real service answers 202, not 200.
         self.send_response(202)
         self.end_headers()
@@ -436,6 +445,27 @@ printf 'http://127.0.0.1:%s/sdk/log\n' "$PORT" > "$X/.onesignal/endpoint"
 want "recovered flush delivers the held event" "install_applied" "$(field "$IDX" agent.milestone)"
 want "buffer cleared after the recovery" "0" \
   "$(count_lines "$X/.onesignal/pending.jsonl")"
+
+# ---------------------------------------------------------------------------
+echo
+echo "12. a captive portal's HTTP 200 does not count as sent"
+# ---------------------------------------------------------------------------
+# The mock's /portal path answers 200 with an HTML sign-in page, like a hotel
+# network. A blanket 2* match used to record that as delivered.
+Y="$(new_project "$PORT")"
+printf 'http://127.0.0.1:%s/portal\n' "$PORT" > "$Y/.onesignal/endpoint"
+printf '%s\n' "$APP_ID" > "$Y/.onesignal/app_id"
+( cd "$Y" && bash "$CHECKPOINT" setup.sdk_dependency ok >/dev/null 2>&1 ); want "portal response exits 0" "0" "$?"
+want "portal 200 is not recorded as sent" "0" \
+  "$(count_lines "$Y/.onesignal/transport.log" sent)"
+want "portal 200 is diagnosed as an interstitial" "1" \
+  "$(count_lines "$Y/.onesignal/transport.log" http_2xx_html)"
+want "the event is re-buffered for a real network" "1" \
+  "$(count_lines "$Y/.onesignal/pending.jsonl")"
+IDX="$(count_requests)"
+printf 'http://127.0.0.1:%s/sdk/log\n' "$PORT" > "$Y/.onesignal/endpoint"
+( cd "$Y" && bash "$CHECKPOINT" flush >/dev/null 2>&1 )
+want "flush off the portal delivers the event" "sdk_dependency" "$(field "$IDX" agent.milestone)"
 
 echo
 echo "----------------------------------------"
