@@ -14,14 +14,26 @@
 // On AGP 8+ it is OFF by default — ensure the app's build.gradle.kts has:
 //     android { buildFeatures { buildConfig = true } }
 // (add it if missing; without it `BuildConfig` will not resolve).
+//
+// This file imports kotlinx.coroutines (to call the suspend `requestPermission`).
+// The OneSignal SDK exposes kotlinx-coroutines only as a RUNTIME (implementation)
+// dependency, not `api` — verified against com.onesignal:core Gradle module
+// metadata: coroutines is in the java-runtime variant, absent from java-api. So it
+// is NOT on the app's compile classpath transitively. If the app doesn't already
+// use coroutines, add to the app module's build.gradle(.kts):
+//     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+// (1.7.3 is the version the SDK resolves at runtime; newer is fine).
 package __PACKAGE__
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.Application
+import android.os.Bundle
 import android.widget.EditText
 import com.onesignal.OneSignal
 import com.onesignal.user.subscriptions.IPushSubscriptionObserver
 import com.onesignal.user.subscriptions.PushSubscriptionChangedState
+import java.lang.ref.WeakReference
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.atomic.AtomicBoolean
@@ -33,36 +45,69 @@ import org.json.JSONObject
 
 object OneSignalSetupVerification {
     private val dialogShown = AtomicBoolean(false)
+    // Track the foreground Activity instead of capturing the one passed to
+    // installIfDebug: the subscription id can arrive after a rotation or a screen
+    // change, when that Activity is destroyed. Presenting a dialog on a dead
+    // Activity throws BadTokenException; holding it in the SDK observer leaks it.
+    private var current: WeakReference<Activity> = WeakReference(null)
+    private var observer: IPushSubscriptionObserver? = null
+
+    private val lifecycle = object : Application.ActivityLifecycleCallbacks {
+        override fun onActivityResumed(activity: Activity) { current = WeakReference(activity) }
+        override fun onActivityCreated(activity: Activity, s: Bundle?) {}
+        override fun onActivityStarted(activity: Activity) {}
+        override fun onActivityPaused(activity: Activity) {}
+        override fun onActivityStopped(activity: Activity) {}
+        override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
+        override fun onActivityDestroyed(activity: Activity) {
+            if (current.get() === activity) current = WeakReference(null)
+        }
+    }
 
     fun installIfDebug(activity: Activity) {
         if (!BuildConfig.DEBUG) return // never runs in release
 
-        val observer = object : IPushSubscriptionObserver {
+        current = WeakReference(activity)
+        activity.application.registerActivityLifecycleCallbacks(lifecycle)
+
+        val obs = object : IPushSubscriptionObserver {
             override fun onPushSubscriptionChange(state: PushSubscriptionChangedState) {
-                checkRegistration(activity, state.current.id)
+                checkRegistration(state.current.id)
             }
         }
-        OneSignal.User.pushSubscription.addObserver(observer)
+        observer = obs
+        OneSignal.User.pushSubscription.addObserver(obs)
 
         // Race guard: the ID may already be assigned before the observer attaches.
-        checkRegistration(activity, OneSignal.User.pushSubscription.id)
+        checkRegistration(OneSignal.User.pushSubscription.id)
     }
 
     private fun isRegistered(id: String): Boolean = id.isNotEmpty() && !id.startsWith("local-")
 
-    private fun checkRegistration(activity: Activity, subscriptionId: String) {
+    private fun checkRegistration(subscriptionId: String) {
         if (!isRegistered(subscriptionId)) return
         if (!dialogShown.compareAndSet(false, true)) return // show once
 
-        activity.runOnUiThread {
-            AlertDialog.Builder(activity)
+        // Committed to showing once: stop observing so the SDK drops its strong
+        // reference to this object (and any Activity reachable through it).
+        observer?.let { OneSignal.User.pushSubscription.removeObserver(it) }
+        observer = null
+
+        val host = current.get() ?: return
+        host.application.unregisterActivityLifecycleCallbacks(lifecycle)
+        host.runOnUiThread {
+            // Resolve the Activity again at present time — the foreground one may
+            // have changed between registration and now.
+            val presenter = current.get() ?: host
+            if (presenter.isFinishing || presenter.isDestroyed) return@runOnUiThread
+            AlertDialog.Builder(presenter)
                 .setTitle("Your OneSignal SDK integration is complete!")
                 .setMessage("Tap 'Got it' to enable push notifications and send yourself a test message.")
                 .setPositiveButton("Got it") { _, _ ->
                     // requestPermission is a suspend fun — call it from a coroutine.
                     CoroutineScope(Dispatchers.Main).launch {
                         val accepted = OneSignal.Notifications.requestPermission(true)
-                        if (accepted) promptForTestMessage(activity, subscriptionId)
+                        if (accepted) promptForTestMessage(presenter, subscriptionId)
                     }
                 }
                 .setCancelable(false)

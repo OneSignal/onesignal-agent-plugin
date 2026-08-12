@@ -11,7 +11,7 @@ Checks are grep/structure-level and platform-aware. Each returns pass/fail with 
 severity. `error` failures set a nonzero exit; `warn` are advisory.
 
 Usage:
-    verify_integration.py <project_dir> --platform android|ios|web|expo|react-native|flutter|cordova|capacitor [--app-id UUID]
+    verify_integration.py <project_dir> --platform android|ios|web|expo|react-native|flutter|cordova|capacitor|unity [--app-id UUID]
 
 Exit: 0 all error-level checks pass; 1 an error-level check failed; 2 usage.
 """
@@ -31,8 +31,8 @@ CODE_EXTS = {".kt", ".java", ".swift", ".m", ".ts", ".tsx", ".js", ".jsx", ".dar
 RANGE_PATTERNS = [
     re.compile(r"OneSignal[\"']?\s*[,:]\s*[\"']?\[[^\]]*,"),          # gradle [x, y]
     re.compile(r"onesignal[^\n]*:\s*[\d.]+\s*\+"),                     # gradle x.y.+
-    re.compile(r"upToNextMajorVersion|upToNextMinorVersion"),          # SPM range
-    re.compile(r"\.package\([^)]*from\s*:"),                           # SPM from:
+    re.compile(r"\.package\([^)]*onesignal[^)]*upToNext(?:Major|Minor)", re.I),   # SPM OneSignal range fn
+    re.compile(r"\.package\([^)]*onesignal[^)]*from\s*:", re.I),                   # SPM OneSignal from:
     re.compile(r"[\"'][^\"'\n]*onesignal[^\"'\n]*[\"']\s*:\s*[\"'][~^]"),  # npm ^/~ in package.json
     re.compile(r"onesignal_flutter:\s*[\"']?[\^~]"),                   # pubspec ^/~
     re.compile(r"pod\s+['\"]OneSignal[^'\"]*['\"]\s*,\s*['\"]\s*[~>]"),   # cocoapods ~>
@@ -84,7 +84,7 @@ class Checks:
     def managed_marker_present(self):
         hits = grep(self.root, r"onesignal:managed")
         self.add("managed_marker_present", bool(hits), "warn",
-                 "no onesignal:managed marker found — skill may not have engaged, or markers were dropped")
+                 "" if hits else "no onesignal:managed marker found — skill may not have engaged, or markers were dropped")
 
     def no_placeholder_app_id(self):
         hits = grep(self.root, r"YOUR_ONESIGNAL_APP_ID|<APP_ID>")
@@ -153,6 +153,25 @@ class Checks:
         self.add("android_requestpermission_not_callback", not hits, "error",
                  "" if not hits else f"requestPermission called with a callback lambda at {hits[:3]} "
                  "— it is a suspend fun; call it from a coroutine (fabricated overload won't compile)")
+
+    def android_coroutines_on_classpath(self):
+        # com.onesignal:OneSignal exposes kotlinx-coroutines-core/-android only in
+        # its java-runtime variant (implementation), NOT java-api — verified against
+        # com.onesignal:core Gradle module metadata (5.9.1). So kotlinx.coroutines
+        # symbols are NOT on the app's compile classpath transitively. A file that
+        # imports them (the verification file calls requestPermission from a
+        # coroutine) needs the app to declare the dependency, or it fails to compile
+        # with "unresolved reference: coroutines" — same class as BuildConfig.DEBUG.
+        if not grep(self.root, re.compile(r"import\s+kotlinx\.coroutines")):
+            self.add("android_coroutines_on_classpath", True, "warn",
+                     "kotlinx.coroutines not imported; no coroutines dependency required")
+            return
+        declared = grep(self.root, re.compile(r"org\.jetbrains\.kotlinx:kotlinx-coroutines"))
+        self.add("android_coroutines_on_classpath", bool(declared), "error",
+                 "" if declared else "code imports kotlinx.coroutines but no kotlinx-coroutines dependency is "
+                 "declared — the OneSignal SDK exposes it as a runtime (implementation) dep, not api, so it is "
+                 "NOT on the compile classpath. Add `implementation(\"org.jetbrains.kotlinx:"
+                 "kotlinx-coroutines-android:1.7.3\")` (or newer) to the app module.")
 
     def android_buildconfig_feature_enabled(self):
         # BuildConfig.DEBUG only resolves if the app module enables the buildConfig
@@ -432,7 +451,11 @@ class Checks:
         by_platform = {
             "android": [self.android_init_in_application, self.android_manifest_registers_app,
                         self.android_no_stray_google_services, self.android_verification_debug_guarded,
-                        self.android_requestpermission_not_callback, self.android_buildconfig_feature_enabled],
+                        self.android_requestpermission_not_callback, self.android_buildconfig_feature_enabled,
+                        self.android_coroutines_on_classpath],
+            # Unity ships via .unitypackage/UPM (a GUI step, no text manifest we can
+            # structurally assert), so it runs the universal checks only.
+            "unity": [],
             "ios": [self.ios_init_in_launch, self.ios_verification_debug_guarded,
                     self.ios_verification_uses_push_observer],
             "expo": [self.expo_plugin_registered, self.expo_plugin_first,
@@ -456,7 +479,7 @@ def main():
     ap = argparse.ArgumentParser(description="Deterministic structural verification of a OneSignal integration.")
     ap.add_argument("project_dir")
     ap.add_argument("--platform", required=True,
-                    choices=["android", "ios", "web", "expo", "react-native", "flutter", "cordova", "capacitor"])
+                    choices=["android", "ios", "web", "expo", "react-native", "flutter", "cordova", "capacitor", "unity"])
     ap.add_argument("--app-id")
     args = ap.parse_args()
     if not os.path.isdir(args.project_dir):

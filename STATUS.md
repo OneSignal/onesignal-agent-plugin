@@ -1,8 +1,9 @@
 # OneSignal agent plugin — team status & orientation
 
 A snapshot for teammates picking this up or evaluating it. For customer-facing
-install/usage, see [README.md](README.md). For the deep engineering plan and
-hard-won rules, see [HANDOFF.md](HANDOFF.md).
+install/usage, see [README.md](README.md). This file is the team-facing
+orientation; the deep engineering rationale lives in the git history and the
+per-repo `tmp/` planning docs referenced below.
 
 **One line:** an agent-driven OneSignal SDK onboarding plugin (Claude Code skills +
 deterministic Python scripts) that installs the SDK with pinned versions, writes
@@ -62,7 +63,7 @@ Be precise about these when you share — they're direction, not features:
   Flutter SDK.
 - **Cursor / Codex adapters and non-optional hooks** (verify + secret-scan) —
   identified, not started.
-- **`npx` CLI** — blocked on the model-ownership decision (§4 Move 4 in HANDOFF).
+- **`npx` CLI** — blocked on the model-ownership decision (see Open decisions below).
 
 ## Where it's going (roadmap, in leverage order)
 
@@ -86,7 +87,7 @@ no check, so every gate ships with a negative control.
 
 Model ownership for a standalone CLI; whether to invest in deterministic iOS
 *native* (pbxproj) work; adopting confirmed-delivery as the north-star metric; and
-a couple of eval-hygiene calls. Details in HANDOFF §6.
+a couple of eval-hygiene calls.
 
 ## Repos
 

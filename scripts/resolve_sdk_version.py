@@ -158,6 +158,13 @@ def main():
             "The feed shape may have changed — ask the user to confirm the version.\n"
         )
         sys.exit(2)
+    # Emit the track substitution on stderr too, so it is visible in raw/line
+    # formats (which print only the version/dep line to stdout) — not just in JSON.
+    if track_used != args.track:
+        sys.stderr.write(
+            f"NOTE: requested track '{args.track}' had no release for '{args.platform}'; "
+            f"used '{track_used}' ({version}).\n"
+        )
 
     line_key = args.line_format or spec["default_line"]
     if line_key not in spec["lines"]:
@@ -174,6 +181,14 @@ def main():
                 "track_used": ct,
                 "line": f'"onesignal-expo-plugin": "{cv}"',
             }
+        else:
+            # Don't fall silent: an unresolved companion is exactly the case where
+            # the agent goes back to memory and fabricates a plugin version.
+            sys.stderr.write(
+                f"WARNING: could not resolve companion package "
+                f"'{spec['companion']['coordinate']}' from the feed. Do NOT guess its "
+                "version — confirm it with the user before pinning.\n"
+            )
 
     if args.format == "raw":
         print(version)
@@ -201,9 +216,8 @@ def main():
             f"feed build number is {version} (metadata only)."
         )
     if track_used != args.track:
-        out["note"] = out.get("note", "") + (
-            f" Requested track '{args.track}' had no release; used '{track_used}'."
-        ).strip()
+        fallback = f"Requested track '{args.track}' had no release; used '{track_used}'."
+        out["note"] = (out.get("note", "") + " " + fallback).strip()
     if companion:
         out["companion"] = companion
     print(json.dumps(out, indent=2))

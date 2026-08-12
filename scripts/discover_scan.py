@@ -74,9 +74,13 @@ RANKS = {
 
 
 def preview(line, m):
-    """Return a short hint around the match — a name/signal, not a data value."""
-    s = line.strip()
-    return (s[:100] + "…") if len(s) > 100 else s
+    """Return the signal token plus a little leading context — a schema/name hint,
+    not a data value. Trims to the match end on purpose: assigned values live to the
+    RIGHT of the token (`user.sub = "..."`), so cutting there keeps data out."""
+    start, end = m.span()
+    lo = max(0, start - 16)
+    snippet = line[lo:end].strip()
+    return ("…" if lo > 0 else "") + snippet
 
 
 def main():

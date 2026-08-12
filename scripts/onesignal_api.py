@@ -12,9 +12,9 @@ This encodes the fiddly, verified details that models keep getting wrong:
 Prefer the OneSignal MCP server's tools when connected (better auth story);
 this script is the generic curl-equivalent fallback that needs no MCP.
 
-Endpoints and their exact hosts are taken from references/api-reference.md.
-Only endpoints whose full host is documented there are implemented. Keys are
-read from --key or the environment; never printed back.
+Endpoint hosts are taken from references/api-reference.md and skills/verify/SKILL.md
+(the subscriber-presence probe path and its Key→Basic auth fallback are specified
+in verify/SKILL.md). Keys are read from --key or the environment; never printed back.
 
 Usage:
     onesignal_api.py web-probe <app_id>
@@ -37,10 +37,10 @@ import urllib.request
 API = "https://api.onesignal.com"
 
 
-def _get(url, key=None, timeout=20):
+def _get(url, key=None, timeout=20, scheme="Key"):
     req = urllib.request.Request(url)
     if key:
-        req.add_header("Authorization", f"Key {key}")
+        req.add_header("Authorization", f"{scheme} {key}")
     req.add_header("Accept", "application/json")
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -92,7 +92,7 @@ def cmd_web_probe(args):
         result = {"status": "no_such_app", "detail": "No app with that ID."}
     else:
         result = {"status": "unknown", "detail": f"HTTP {status}", "raw": data}
-    result.update({"probe": "web", "app_id": args.app_id, "cache_busted": True})
+    result.update({"probe": "web", "app_id": args.app_id, "http": status, "cache_busted": True})
     print(json.dumps(result, indent=2))
 
 
@@ -107,11 +107,11 @@ def cmd_android_params(args):
         data = _json(body) or {}
         if data.get("android_sender_id"):
             print(json.dumps({"probe": "android_params", "app_id": args.app_id,
-                              "status": "fcm_live", "attempts": attempt}, indent=2))
+                              "http": status, "status": "fcm_live", "attempts": attempt}, indent=2))
             return
         if time.time() >= deadline:
             print(json.dumps({"probe": "android_params", "app_id": args.app_id,
-                              "status": "not_live",
+                              "http": status, "status": "not_live",
                               "detail": "android_sender_id absent — FCM v1 credential "
                                         "not yet on the app (or still propagating).",
                               "attempts": attempt}, indent=2))
@@ -125,9 +125,18 @@ def cmd_notification_stats(args):
     status, body = _get(url, key=key)
     data = _json(body) or {}
     if status == 401:
-        print(json.dumps({"status": "auth_error", "detail": "Key does not belong to this app."}, indent=2)); return
+        print(json.dumps({"probe": "notification_stats", "http": status, "status": "auth_error",
+                          "detail": "Key does not belong to this app."}, indent=2)); return
+    if not (200 <= status < 300):
+        # Never print null stat fields as if they were real numbers on an error.
+        print(json.dumps({"probe": "notification_stats", "app_id": args.app_id,
+                          "notif_id": args.notif_id, "http": status, "status": "error",
+                          "detail": f"HTTP {status} — no stats returned (bad notif/app id, or route "
+                                    "unavailable). Do NOT read the numbers below as real.",
+                          "raw": data}, indent=2)); return
     out = {
         "probe": "notification_stats", "app_id": args.app_id, "notif_id": args.notif_id,
+        "http": status, "status": "ok",
         "successful": data.get("successful"),
         "errored": data.get("errored"),
         "failed_unsubscribed": data.get("failed"),  # NOT delivery errors
@@ -144,11 +153,16 @@ def cmd_app(args):
     status, body = _get(f"{API}/api/v1/apps/{args.app_id}", key=key)
     data = _json(body) or {}
     if status == 401:
-        print(json.dumps({"status": "auth_error", "detail": "Key does not belong to this app."}, indent=2)); return
+        print(json.dumps({"probe": "app", "http": status, "status": "auth_error",
+                          "detail": "Key does not belong to this app."}, indent=2)); return
     if status == 404:
-        print(json.dumps({"status": "not_found", "detail": "No app with that ID (or route unavailable)."}, indent=2)); return
+        print(json.dumps({"probe": "app", "http": status, "status": "not_found",
+                          "detail": "No app with that ID (or route unavailable)."}, indent=2)); return
+    if not (200 <= status < 300):
+        print(json.dumps({"probe": "app", "app_id": args.app_id, "http": status, "status": "error",
+                          "detail": f"HTTP {status}", "raw": data}, indent=2)); return
     # Surface which platforms look configured without asserting exact schema.
-    out = {"probe": "app", "app_id": args.app_id, "http": status,
+    out = {"probe": "app", "app_id": args.app_id, "http": status, "status": "ok",
            "keys_present": sorted(data.keys()) if isinstance(data, dict) else None}
     print(json.dumps(out, indent=2))
 
@@ -156,13 +170,29 @@ def cmd_app(args):
 def cmd_subscribers(args):
     key = _require_key(args)
     # Presence pattern: limit 1, non-empty => a subscriber exists.
-    status, body = _get(f"{API}/api/v1/players?app_id={args.app_id}&limit=1", key=key)
+    # Path + auth per verify/SKILL.md: /players is the legacy Devices API; try the
+    # current `Key` scheme first and fall back to legacy `Basic` if it is rejected,
+    # so a Basic-only app is not misdiagnosed as a wrong key.
+    url = f"{API}/players?app_id={args.app_id}&limit=1"
+    status, body = _get(url, key=key)
+    if status in (401, 403):
+        status, body = _get(url, key=key, scheme="Basic")
     data = _json(body) or {}
-    if status == 401:
-        print(json.dumps({"status": "auth_error", "detail": "Key does not belong to this app."}, indent=2)); return
+    if status in (401, 403):
+        print(json.dumps({"probe": "subscribers", "http": status, "status": "auth_error",
+                          "detail": "Rejected under both Key and Basic auth — the key does not "
+                                    "belong to this app, or lacks Devices-API access."}, indent=2)); return
+    if not (200 <= status < 300):
+        # A non-2xx here must NOT read as "no subscriber" — that sends verify into an
+        # endless "keep waiting" loop. Report the error and let the caller fall back.
+        print(json.dumps({"probe": "subscribers", "app_id": args.app_id, "http": status,
+                          "status": "error", "has_subscriber": None,
+                          "detail": f"HTTP {status} — presence unknown, not zero. Fall back to the "
+                                    "dashboard (Audience → Subscriptions) to confirm.",
+                          "raw": data}, indent=2)); return
     total = data.get("total_count")
     players = data.get("players") or []
-    out = {"probe": "subscribers", "app_id": args.app_id,
+    out = {"probe": "subscribers", "app_id": args.app_id, "http": status, "status": "ok",
            "has_subscriber": bool(players) or bool(total),
            "total_count": total}
     print(json.dumps(out, indent=2))

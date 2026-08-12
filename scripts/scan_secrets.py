@@ -11,8 +11,9 @@ Usage:
     git diff | scan_secrets.py -    # scan a diff on stdin
 
 Exit: 0 clean, 1 secret(s) found, 2 usage error.
-Findings print as file:line with the matched rule; the secret itself is
-redacted in output so this script never re-emits the value.
+Findings print as file:line (path:line parsed from the diff's +++/@@ headers when
+scanning a diff) with the matched rule and column. The matched value is never
+printed — only where it is and which rule fired — so this script never re-emits it.
 """
 import argparse
 import os
@@ -46,26 +47,55 @@ EXCLUDE_DIRS = {".git", "node_modules", "dist", "build", "Pods", "vendor",
 SKIP_FILES = {".env", ".env.local"}
 
 
-def redact(line):
-    line = line.strip()
-    return (line[:24] + "…[redacted]") if len(line) > 24 else "…[redacted]"
+def scan_line(where, line):
+    """Scan one line; report location + rule only, never the value."""
+    findings = []
+    for rule, rx in RULES:
+        m = rx.search(line)
+        if not m:
+            continue
+        # Scope the allow-list to the matched span, not the whole line: a real key
+        # on a line that merely contains the word "example" must still be flagged.
+        if ALLOW.search(m.group(0)):
+            continue
+        if rule == "rest_key_assignment":
+            val = re.search(r"['\"]([A-Za-z0-9_\-]{24,})['\"]", line)
+            if val and (UUID.match(val.group(1)) or ALLOW.search(val.group(1))):
+                continue  # public App ID or an explicit placeholder value
+        findings.append({"where": where, "rule": rule, "col": m.start() + 1})
+        break
+    return findings
 
 
 def scan_text(label, text):
     findings = []
     for i, line in enumerate(text.splitlines(), 1):
-        if ALLOW.search(line):
+        findings += scan_line(f"{label}:{i}", line)
+    return findings
+
+
+def scan_diff(diff_text):
+    """Scan a unified diff, tracking file + new-file line from +++/@@ headers so a
+    finding prints as <path>:<line>, not `diff:<n>`."""
+    findings = []
+    path, lineno = None, 0
+    for raw in diff_text.splitlines():
+        if raw.startswith("+++ "):
+            p = raw[4:].strip().split("\t", 1)[0]
+            if p.startswith("b/"):
+                p = p[2:]
+            path = None if p == "/dev/null" else p
+        elif raw.startswith("@@"):
+            m = re.search(r"\+(\d+)", raw)
+            lineno = int(m.group(1)) if m else 0
+        elif raw.startswith("---"):
             continue
-        for rule, rx in RULES:
-            m = rx.search(line)
-            if not m:
-                continue
-            if rule == "rest_key_assignment":
-                val = re.search(r"['\"]([A-Za-z0-9_\-]{24,})['\"]", line)
-                if val and UUID.match(val.group(1)):
-                    continue  # public App ID, not a secret
-            findings.append({"where": f"{label}:{i}", "rule": rule, "preview": redact(line)})
-            break
+        elif raw.startswith("+"):
+            findings += scan_line(f"{path or '?'}:{lineno}", raw[1:])
+            lineno += 1
+        elif raw.startswith(" "):
+            lineno += 1
+        # '-' (removed) lines don't advance the new-file counter.
     return findings
 
 
@@ -88,10 +118,7 @@ def git_diff(staged):
         return None
     if out.returncode != 0:
         return None
-    # Only scan added lines.
-    added = "\n".join(l[1:] for l in out.stdout.splitlines()
-                      if l.startswith("+") and not l.startswith("+++"))
-    return added
+    return out.stdout
 
 
 def main():
@@ -102,7 +129,7 @@ def main():
 
     findings = []
     if args.paths == ["-"]:
-        findings += scan_text("stdin", sys.stdin.read())
+        findings += scan_diff(sys.stdin.read())
     elif args.paths:
         for fp in iter_files(args.paths):
             if os.path.basename(fp) in SKIP_FILES:
@@ -117,12 +144,12 @@ def main():
         if diff is None:
             sys.stderr.write("No paths given and no git diff available. Pass files or pipe a diff.\n")
             sys.exit(2)
-        findings += scan_text("diff", diff)
+        findings += scan_diff(diff)
 
     if findings:
         print("SECRET-SHAPED STRINGS FOUND — do not commit:")
         for f in findings:
-            print(f"  {f['where']}  [{f['rule']}]  {f['preview']}")
+            print(f"  {f['where']}  [{f['rule']}]  col {f['col']}")
         print("\nMove secrets to env vars (safety contract §\"Never\"). App IDs are public and OK.")
         sys.exit(1)
     print("clean: no secret-shaped strings found")

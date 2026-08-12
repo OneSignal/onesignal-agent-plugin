@@ -150,8 +150,11 @@ def main():
         f"  (A) Bump the host Kotlin Gradle plugin to at least {floor}.x — a real change to their "
         f"build config; get explicit approval. Do NOT bump to an intermediate version below {floor} "
         f"(e.g. 2.0.0 when {floor} is required) — it still fails and mutates their build for nothing.\n"
-        f"  (B) If they can't move off Kotlin {host_kotlin}, this is a hard compatibility blocker — "
-        f"offer an older OneSignal SDK line they confirm resolves a stdlib their compiler can read."
+        f"  (B) If they can't move off Kotlin {host_kotlin}, this is a hard compatibility blocker. "
+        f"resolve_sdk_version.py only serves the current stable/current pins, so it will NOT hand you an "
+        f"older line — do NOT guess one. Ask the user to name a specific older OneSignal SDK version (from "
+        f"the SDK release notes), confirm it resolves a kotlin-stdlib their compiler can read, and pin "
+        f"exactly that."
     )
     print(json.dumps(out, indent=2))
     sys.exit(1)

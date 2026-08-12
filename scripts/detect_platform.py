@@ -80,7 +80,16 @@ def detect_platform(pkgdir, root=None):
         candidates.append(("cordova", "config.xml + cordova dep"))
     if _glob_any(pkgdir, r"\.csproj$") and (_has(pkgdir, "ProjectSettings") or _has(pkgdir, "Assets")):
         candidates.append(("unity", "csproj + ProjectSettings/Assets"))
-    if _has(pkgdir, "Podfile") or _glob_any(pkgdir, r"\.xcodeproj$", r"\.xcworkspace$") or _appdelegate(pkgdir):
+    # A cross-platform framework owns the native ios/ folder (Flutter's Runner,
+    # RN/Expo/Capacitor/Cordova AppDelegate) — the package to integrate is the JS/
+    # Dart one, not "ios". Guard the ios rule the same way the android rule below
+    # does, or every such project reports a spurious `ios` co-candidate (ambiguous).
+    _hybrid_js = pj and any(d in deps for d in ("react-native", "expo", "@capacitor/core", "cordova"))
+    _has_capacitor = _has(pkgdir, "capacitor.config.ts", "capacitor.config.js", "capacitor.config.json")
+    if ((_has(pkgdir, "Podfile") or _glob_any(pkgdir, r"\.xcodeproj$", r"\.xcworkspace$") or _appdelegate(pkgdir))
+            and not _has(pkgdir, "pubspec.yaml")
+            and not _hybrid_js
+            and not _has_capacitor):
         candidates.append(("ios", "Podfile / xcodeproj / AppDelegate"))
     gradle_file = (_has(pkgdir, "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts")
                    or _find_file(pkgdir, "build.gradle") or _find_file(pkgdir, "build.gradle.kts"))

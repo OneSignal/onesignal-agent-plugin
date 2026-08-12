@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Compile-verify the shipped iOS Swift templates against the real iOS SDK (UIKit)
-# plus a faithful stub of the OneSignal SDK surface (HANDOFF §8.1, validated
-# against OneSignal-iOS-SDK source). This is the "template only when
+# plus a faithful stub of the OneSignal SDK surface (validated against
+# OneSignal-iOS-SDK source). This is the "template only when
 # compile-verifiable" gate for iOS — the analog of building the Android
 # templates on the Kotlin fixture.
 #
@@ -25,7 +25,7 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/out"
 
-# --- Faithful OneSignal SDK stub (HANDOFF §8.1) ---
+# --- Faithful OneSignal SDK stub (validated against OneSignal-iOS-SDK source) ---
 cat > "$WORK/OneSignalFramework.swift" <<'SW'
 import Foundation
 public enum OSLogLevel { case LL_NONE, LL_FATAL, LL_ERROR, LL_WARN, LL_INFO, LL_DEBUG, LL_VERBOSE }
