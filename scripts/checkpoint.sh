@@ -71,7 +71,17 @@ case "$RAW_MILESTONE" in
   *)   SKILL_NAME="unknown";              MILESTONE="$RAW_MILESTONE" ;;
 esac
 
-STATE_DIR=".onesignal"
+# State lives at the REPO ROOT, per the contract. A cwd-relative path invoked
+# from a monorepo package directory created a second .onesignal with a fresh
+# run_id, splitting one install into two funnel runs. Outside a git work tree
+# (or with git missing) there is no root to resolve, so cwd keeps the old
+# behavior — Step 0 already warns the user when there is no VCS.
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -n "$REPO_ROOT" ] && [ -d "$REPO_ROOT" ]; then
+  STATE_DIR="$REPO_ROOT/.onesignal"
+else
+  STATE_DIR=".onesignal"
+fi
 mkdir -p "$STATE_DIR" 2>/dev/null || true
 
 # Resolve our own directory using only bash builtins. Deliberately avoids

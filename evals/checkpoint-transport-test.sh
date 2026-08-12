@@ -575,6 +575,24 @@ print("ok" if not problems else " ".join(sorted(problems)))
 ')"
 want "wire attribute set equals the allow-list, on every request" "ok" "$GOT"
 
+# ---------------------------------------------------------------------------
+echo
+echo "17. state resolves to the repo root, not the invoking directory"
+# ---------------------------------------------------------------------------
+# Run from a monorepo package directory. A cwd-relative state dir created a
+# second .onesignal with a fresh run_id there and split the funnel.
+MR="$(new_project "$PORT")"
+( cd "$MR" && git init -q . )
+mkdir -p "$MR/packages/app"
+( cd "$MR/packages/app" && bash "$CHECKPOINT" setup.preflight ok >/dev/null 2>&1 )
+want "the event lands in the repo-root buffer" "1" \
+  "$(count_lines "$MR/.onesignal/pending.jsonl")"
+if [ -d "$MR/packages/app/.onesignal" ]; then
+  bad "no second state dir appears in the package" "found $MR/packages/app/.onesignal"
+else
+  ok "no second state dir appears in the package"
+fi
+
 echo
 echo "----------------------------------------"
 printf '%d passed, %d failed\n' "$PASS" "$FAIL"
