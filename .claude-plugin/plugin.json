@@ -3,7 +3,7 @@
   "name": "onesignal",
   "displayName": "OneSignal",
   "description": "OneSignal onboarding & activation skills: install and initialize the SDK, provision your app and push credentials, discover instrumentable data in your codebase, wire identity/tags/events, verify real delivery, and set up conversion tracking.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": {
     "name": "OneSignal",
     "url": "https://onesignal.com"

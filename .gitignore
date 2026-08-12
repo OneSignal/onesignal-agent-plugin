@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.onesignal/
+
+# Local test harness — not part of the shipped plugin. It stays on disk for
+# local testing until evals consolidate into a parent repo.
+evals/
+
+# Local agent-run transcripts dropped in for analysis
+claude-log*.txt

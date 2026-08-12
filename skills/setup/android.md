@@ -73,13 +73,27 @@ A Hilt `@Singleton` variant and a Java variant are in the upstream android/integ
 
 ## Deletable verification file (`OneSignalSetupVerification.kt`)
 
-Full verified implementation is in `sdk-ai-prompts/docs/android/integrate.md` (Kotlin and Java). Reproduce it faithfully. Non-negotiable properties (SKILL.md Step 6):
+Full verified implementation is in `sdk-ai-prompts/docs/android/integrate.md` (Kotlin and Java). Reproduce it faithfully — with the two corrections below, which a live run proved against the upstream text. Non-negotiable properties (SKILL.md Step 6):
 - `if (!BuildConfig.DEBUG) return` guard.
 - Register `IPushSubscriptionObserver` AND evaluate `OneSignal.User.pushSubscription.id` immediately (race guard — the ID can be assigned before the observer attaches).
 - `isRegistered` = non-empty AND not `startsWith("local-")`.
 - Shown-once `AtomicBoolean`; native `AlertDialog` titled "Your OneSignal SDK integration is complete!" with a single **"Got it"** button.
 - On tap → `OneSignal.Notifications.requestPermission(true)` (the ONLY permission prompt) → text-input dialog → unauthenticated `POST https://api.onesignal.com/notifications` with `include_subscription_ids` (no Authorization header; relies on `permit_unauth_notif_create` — on HTTP 401 fall back to a dashboard/REST-key send, api-reference).
 - Top-of-file comment naming the file + the `MainActivity.onCreate()` call site to delete.
+
+**Correction — `BuildConfig` on AGP 8+:** AGP no longer generates `BuildConfig` by default
+for application modules, so the `BuildConfig.DEBUG` guard fails to compile on a default
+project. Either enable it — `android { buildFeatures { buildConfig = true } }` — and report
+`setup.install_applied ok_after_fix buildconfig_disabled`, or gate on
+`applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE` instead, which needs no build
+change and keeps the milestone a plain `ok`.
+
+**Correction — permission callback from Kotlin:** the upstream flow's `Continue.with { }`
+is a Java-interop shim; from Kotlin it returns a `kotlin.coroutines.Continuation` you cannot
+pass explicitly, and it does not compile. `requestPermission(fallbackToSettings: Boolean)`
+is a plain suspend function — call it from a coroutine (`lifecycleScope.launch` on a
+`ComponentActivity`; `activity-ktx` is already present on any modern template). Use
+`Continue.with` only in the Java variant.
 
 Wire it with ONE line at the end of `MainActivity.onCreate()`:
 ```kotlin
