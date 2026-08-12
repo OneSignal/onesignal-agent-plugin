@@ -48,15 +48,20 @@ Route:
 
 ## The API-upload mechanism (shared by Apple .p8 and Firebase)
 
-Both agent-uploadable credentials go to the **write-once provisioning endpoint**. Read the "Credential provisioning" section of [../../references/api-reference.md](../../references/api-reference.md) — it is the contract — then apply these rules:
+Both agent-uploadable credentials go to the **write-once provisioning endpoint**, via one of two transports for the same payload:
+
+- **Preferred — the `provision_app_credentials` MCP tool**, when the OneSignal MCP is connected and exposes it. The tool forwards the MCP session's auth downstream, so you pass only the credential params (no `Authorization` header) and still supply base64 strings, not file paths — the MCP can't read local files, so you read and encode the file yourself. It provisions one platform set per call. The raw API response comes back unchanged, so the validation loop and every status mapping below apply as-is.
+- **Fallback — a direct `POST`** when the MCP isn't connected or doesn't expose the tool yet.
+
+Read the "Credential provisioning" section of [../../references/api-reference.md](../../references/api-reference.md) — it is the contract — then apply these rules:
 
 - **Endpoint:** `POST /api/v1/apps/{app_id}/credentials`. It sets a platform's credentials **only when that platform has nothing configured** (write-once, per platform). Replacement stays dashboard-only (Settings > Push Platforms) or org-key — never through this endpoint.
-- **Auth = an app-scoped key**, sent as `Authorization: Key <key>`: the key provided with the setup invocation, or the app's REST API key from an already-exported env var (`$ONESIGNAL_REST_API_KEY`). No org key needed. Never write a key into any repo file and never ask for one in chat.
+- **Auth (direct-call fallback) = an app-scoped key**, sent as `Authorization: Key <key>`: the key provided with the setup invocation, or the app's REST API key from an already-exported env var (`$ONESIGNAL_REST_API_KEY`). No org key needed. Never write a key into any repo file and never ask for one in chat. (Via the MCP tool you attach no key — the session auth is forwarded for you.)
 - **Payloads are Base64-encoded strings.** The `.p8` key body and the FCM JSON are Base64-encoded before upload; every param must be a plain string (non-string values get a 400). Encode from the file the user points you at — `base64 -i <path>` — never by pasting contents into chat.
 - **The API validates on upload.** A malformed key, wrong Key/Team ID, or a JSON from the wrong Firebase project is rejected server-side. This is your validation loop: see [Credential validation loop](#credential-validation-loop).
 - **A successful provision emails the app owner.** Expected behavior — tell the user the notification is normal, not a security alarm.
 - **If the endpoint returns 404**, the feature flag for this app is off — the route doesn't exist for it. Fall back to guiding the user through the dashboard upload (Settings > Push Platforms) instead; don't retry the API.
-- **If the user has the OneSignal MCP connected**, note that the MCP is an API proxy for messaging/users and does **not** expose credential upload — this write stays a direct API call (or a dashboard step). Do not invent an MCP tool for it.
+- **If the user has the OneSignal MCP connected**, prefer its `provision_app_credentials` tool over a raw call (see the transport note above). It carries the credential params only — the MCP forwards the session auth, so you don't attach a key. If the connected MCP doesn't expose that tool yet, fall back to the direct `POST` or a dashboard step.
 
 ## Apple APNs .p8 flow
 
