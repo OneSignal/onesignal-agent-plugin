@@ -248,7 +248,9 @@ fi
 #   1. $ONESIGNAL_SKILL_ENDPOINT        — CI, or when you control the shell
 #   2. .onesignal/endpoint        — per-project, for testing (gitignored)
 #   3. <skill>/endpoint.conf            — shipped/per-install default
-#   4. built-in placeholder             — unresolvable on purpose
+#   4. built-in placeholder             — unresolvable; a safety net, not a
+#      normal path. endpoint.conf ships with the production endpoint, so this
+#      only fires when that file was deleted or emptied.
 #
 # Files may contain comments (#) and blank lines; the first non-comment line
 # is used.
@@ -274,7 +276,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# app_id — REQUIRED by OneSignal's log-ingestion-service. It is passed as a
+# app_id — REQUIRED by the ingestion endpoint. It is passed as a
 # query parameter and validated: must parse as a UUID (else 400) and the app
 # must be Enabled (else 403), unless the UUID is in the ConfigCat
 # `allowed_listed_uuids` list, which bypasses the status check.
@@ -322,13 +324,13 @@ fi
 # run_id — stable across the checkpoints of a single install, random per run.
 #
 # $ONESIGNAL_SKILL_RUN_ID overrides and is NOT persisted. Used for out-of-band
-# checks (set_endpoint.sh verification, CI smoke tests) so they never share a
+# checks (CI smoke tests, manual verification runs) so they never share a
 # run_id with a real install and cannot corrupt completion-rate counting.
 #
 # Otherwise the id is cached in .onesignal/run_id so the milestones of one
-# install share it. install.sh and reset.sh clear that file, so a freshly set-up
-# project always starts a new run. Reusing a project directory WITHOUT running
-# either will merge the new run into the previous one's id.
+# install share it. NOTHING CLEARS THAT FILE TODAY: reusing a project directory
+# merges a new onboarding attempt into the previous run's id. When a run ends —
+# and what should reset it — is an open design question, tracked in SDK-5016.
 # ---------------------------------------------------------------------------
 new_id() {
   if [ -r /dev/urandom ]; then
@@ -354,10 +356,9 @@ fi
 # Runtime detection.
 #
 # HEURISTIC AND INCOMPLETE. These env vars are best guesses, not documented
-# contracts, and some are certainly wrong. Confirm each one during the
-# validation matrix run (validation/MATRIX.md, "runtime label" column) by
-# checking what `env | sort` actually shows in that runtime, then correct this
-# block. Until then expect "unknown" and treat the field as unreliable.
+# contracts, and some are certainly wrong. Confirm each one against a real run
+# in that runtime by checking what `env | sort` actually shows, then correct
+# this block. Until then expect "unknown" and treat the field as unreliable.
 # ---------------------------------------------------------------------------
 detect_runtime() {
   [ -n "${CLAUDECODE:-}${CLAUDE_CODE:-}" ]           && { echo "claude-code";   return; }
@@ -508,9 +509,11 @@ fi
 # ---------------------------------------------------------------------------
 # Misconfiguration guard.
 #
-# The default endpoint is intentionally unresolvable. If it is still in place,
-# say so unambiguously — do NOT let this look like a blocked network. During
-# validation those two conclusions are opposites: one means "fix your shell",
+# The built-in default is intentionally unresolvable. Because endpoint.conf
+# ships with the production endpoint, this branch is normally dead — it exists
+# for installs where that file was deleted or emptied. If it fires, say so
+# unambiguously — do NOT let this look like a blocked network. During
+# validation those two conclusions are opposites: one means "fix your config",
 # the other means "this runtime denies egress". Conflating them wastes a whole
 # test round.
 # ---------------------------------------------------------------------------
@@ -708,10 +711,11 @@ case "$HTTP_CODE" in
       echo "    application. Triggered by request SHAPE, not content — the known cause"
       echo "    here is an unexpected custom header. Send only Content-Type."
     elif grep -qiE 'status (Enabled|Disabled|Unknown)|Missing required parameter: app_id|Invalid UUID format' "$RESP_FILE" 2>/dev/null; then
-      echo "  ^ this is log-ingestion-service responding. See"
-      echo "    validation/INGESTION_CONTRACT.md for what each code means."
+      echo "  ^ this is the ingestion service responding. Its codes: 202 accepted;"
+      echo "    400 = missing or malformed app_id query param; 415 = Content-Type"
+      echo "    is not exactly application/x-protobuf."
     elif grep -qiE 'parse JSON|Authorization|API key' "$RESP_FILE" 2>/dev/null; then
-      echo "  ^ NOT log-ingestion-service. A JSON-parse or API-key error means the"
+      echo "  ^ NOT the ingestion service. A JSON-parse or API-key error means the"
       echo "    general OneSignal JSON API handled it, i.e. nothing is routed at this"
       echo "    path. The real path is /sdk/log — check the URL."
     fi ;;

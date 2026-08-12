@@ -131,7 +131,8 @@ never resumes otherwise leaves no trace of why:
   supplies a valid ID, report `setup.app_id ok` and flush as normal — the fail→ok pair is
   the recovery story, not a contradiction.
 
-Both buffer, and will send if the user returns with a valid ID.
+Both buffer. Nothing sends by itself: they go out when you record `setup.app_id ok` and
+run the `flush` from the checkpoint block above.
 
 **Never** hardcode a demo/placeholder App ID as a working fallback. Use a clearly-fake sentinel like `YOUR_ONESIGNAL_APP_ID` only inside code you are about to have the user replace, and replace it with the real ID before the final diff if you have it.
 

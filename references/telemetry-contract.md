@@ -100,8 +100,9 @@ Per event: milestone, status, failure class, `run_id`, platform, skill name, plu
 version, agent runtime, OS, timestamp, and the **OneSignal App ID**.
 
 Never sent: source code, file contents, file paths, project or package names, repo
-metadata, and — per safety contract §31 — **the setup key or any other credential**. The
-App ID is public (safety contract §23) and is the only identifier included.
+metadata, and — per the safety contract's "Never" rules and its "The setup key" section —
+**the setup key or any other credential**. The App ID is public (safety contract, "Never"
+section) and is the only identifier included.
 
 ## App ID ordering, and buffering
 
@@ -182,3 +183,9 @@ Then slice by `labels."agent.platform"`, `labels."agent.skill"`,
 `jsonPayload."agent.milestone"`, `jsonPayload."agent.status"`. Group by
 `jsonPayload."agent.run_id"` for funnel analysis — use `=` and not `=~`, since a regex
 silently merges runs.
+
+**De-duplication is mandatory, not optional.** A partial flush keeps the whole buffer, so
+an accepted event re-sends on the next attempt — duplicate delivery is a designed
+trade-off (never drop an event to avoid a duplicate). Every count, funnel step, and
+completion rate MUST first de-duplicate on `run_id` + milestone, keeping one row per pair
+(earliest timestamp). A query that skips this step overcounts whatever it measures.

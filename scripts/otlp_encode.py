@@ -6,11 +6,15 @@ Writes raw protobuf to stdout. Reads the checkpoint as a JSON object on stdin.
     echo '{"milestone":"build_passed", ...}' | python3 otlp_encode.py > body.pb
 
 WHY THIS EXISTS
-    OneSignal's log-ingestion-service accepts only `application/x-protobuf` holding
-    an OTLP LogsData message. curl cannot produce that, so we build the wire format
-    by hand. Deliberately dependency-free — no protobuf library, no pip install —
-    because this runs on an end user's machine inside an agent session where we
-    control nothing about the environment.
+    OneSignal has a publicly accessible HTTP endpoint that accepts SDK telemetry
+    data such as logs. It implements the OpenTelemetry Protocol (OTLP) over HTTP,
+    using Protocol Buffers (protobuf) as the serialization format, per the OTLP
+    specification (https://opentelemetry.io/docs/specs/otlp/) — the endpoint
+    accepts only `application/x-protobuf` holding an OTLP LogsData message.
+    curl cannot produce that, so we build the wire format by hand. Deliberately
+    dependency-free — no protobuf library, no pip install — because this runs on
+    an end user's machine inside an agent session where we control nothing about
+    the environment.
 
     Protobuf wire format is simple enough to emit directly: every field is a
     varint tag (field_number << 3 | wire_type) followed by a varint length and the
@@ -64,8 +68,11 @@ import time
 
 TIME_FIELD_IS_SECONDS = True
 
-# Severity numbers per OTLP. 9 = INFO, 17 = ERROR.
-# The consumer maps 9-12 -> "INFO" and 17-20 -> "ERROR" for GCP severity.
+# Severity numbers per OTLP: 9 = INFO, 13 = WARN, 17 = ERROR. The consumer
+# maps the standard OTLP bands to GCP severity: 9-12 -> "INFO",
+# 13-16 -> "WARNING", 17-20 -> "ERROR". The WARN band is verified in
+# production: an ok_after_fix (13) sent 2026-08-10 (run_id 73832ff7632b0476)
+# landed in GCP Logs Explorer with severity WARNING.
 SEVERITY_INFO = 9
 SEVERITY_WARN = 13
 SEVERITY_ERROR = 17
