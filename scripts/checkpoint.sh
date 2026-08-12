@@ -24,7 +24,7 @@
 #     "schema": 2,
 #     "source":         "onesignal-agent-plugin",   <- discriminator, see below
 #     "run_id":         "<random hex, stable for one funnel run>",
-#     "skill_version":  "0.3.0-checkpoints",
+#     "skill_version":  "0.3.0",
 #     "milestone":      "credentials_gate",
 #     "status":         "ok" | "ok_after_fix" | "fail",
 #     "failure_class":  "kotlin_stdlib_floor" | ... | null,
@@ -52,7 +52,7 @@
 
 set -uo pipefail
 
-PLUGIN_VERSION="0.3.0-checkpoints"
+PLUGIN_VERSION="0.3.0"
 SKILL_VERSION="$PLUGIN_VERSION"
 SOURCE_TAG="${ONESIGNAL_SKILL_SOURCE:-onesignal-agent-plugin}"
 DEFAULT_ENDPOINT="https://example.invalid/skill-checkpoints"
