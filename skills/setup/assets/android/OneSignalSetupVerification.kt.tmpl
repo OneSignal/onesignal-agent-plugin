@@ -111,21 +111,25 @@ object OneSignalSetupVerification {
     // yet (app in background when the id resolved), stay pending and retry from
     // onActivityResumed — never consume the one-shot without actually showing.
     private fun tryShow() {
-        val id = pendingId ?: return
-        val host = current.get() ?: return
-        if (host.isFinishing || host.isDestroyed) return
-        if (!dialogShown.compareAndSet(false, true)) return // present once
-        pendingId = null
-
-        // Committed and showing: stop observing so the SDK drops its strong
-        // reference to this object (and any Activity reachable through it).
-        observer?.let { OneSignal.User.pushSubscription.removeObserver(it) }
-        observer = null
-        host.application.unregisterActivityLifecycleCallbacks(lifecycle)
-
+        if (pendingId == null) return
+        // Do the liveness re-check, the one-shot claim, and the teardown together
+        // on the main thread inside the post. If the Activity dies during the hop
+        // we return having consumed nothing (dialogShown/pendingId/observer stay
+        // intact), so onActivityResumed can retry — the contract above. Reading
+        // isFinishing/isDestroyed here also keeps it off the SDK's observer thread.
         main.post {
-            val presenter = current.get() ?: host
+            val id = pendingId ?: return@post
+            val presenter = current.get() ?: return@post
             if (presenter.isFinishing || presenter.isDestroyed) return@post
+            if (!dialogShown.compareAndSet(false, true)) return@post // present once
+            pendingId = null
+
+            // Committed and showing: stop observing so the SDK drops its strong
+            // reference to this object (and any Activity reachable through it).
+            observer?.let { OneSignal.User.pushSubscription.removeObserver(it) }
+            observer = null
+            presenter.application.unregisterActivityLifecycleCallbacks(lifecycle)
+
             AlertDialog.Builder(presenter)
                 .setTitle("Your OneSignal SDK integration is complete!")
                 .setMessage("Tap 'Got it' to enable push notifications and send yourself a test message.")

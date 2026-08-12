@@ -71,12 +71,20 @@ the call site. Current set:
 `dirty_tree`, `prior_install`, `platform_ambiguous`, `no_app_id`, `invalid_app_id`,
 `credentials_missing`, `uploaded_during_run`, `deferred`, `releases_unreachable`,
 `diff_rejected`, `network_blocked`, `kotlin_stdlib_floor`, `minsdk_floor`, `agp_floor`,
-`dependency_conflict`, `buildconfig_disabled`, `manifest_merger`, `unknown`.
+`dependency_conflict`, `buildconfig_disabled`, `coroutines_missing`, `manifest_merger`,
+`unknown`.
 
 `buildconfig_disabled`: AGP 8+ stopped generating `BuildConfig` by default, so the
 verification file's `BuildConfig.DEBUG` guard needs `buildFeatures { buildConfig = true }`
 added to the app module — this will hit most modern Android projects (android.md documents
 the alternative that avoids it).
+
+`coroutines_missing`: the verification file calls the suspend `requestPermission` from a
+coroutine, but the app has no `kotlinx-coroutines` on its compile classpath — the OneSignal
+SDK ships it only as a runtime (`implementation`) dependency, not `api`, so a bare app fails
+to compile until it declares coroutines (the `android_coroutines_on_classpath` check flags
+this; android.md documents the exact dependency line). Sibling of `buildconfig_disabled`:
+correct code that does not compile until the app module declares one more thing.
 
 `no_app_id` and `invalid_app_id` are different findings: the first means the user has no
 OneSignal app yet, the second means they supplied an ID that does not parse as a UUID

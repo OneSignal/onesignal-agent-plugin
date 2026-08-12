@@ -73,15 +73,23 @@ RANKS = {
 }
 
 
-def preview(line, m):
+# Ranks whose useful signal is the matched identifier itself (`user.id`,
+# `sessionClaims`, `publicMetadata`). A window there buys no name and only risks
+# echoing a neighbouring value — e.g. `user.id, "jane.doe@real..."` — so show just
+# the match. Every other rank keeps a small window (rank 4's column name follows
+# the matched `t.string "` prefix, so it genuinely needs the trailing context).
+_TIGHT_RANKS = {"5-auth-provider"}
+
+
+def preview(line, m, rank):
     """Return a small window around the match — a schema/name hint, not the whole
-    line. Some signals put the name BEFORE the match end (`user.sub`) and some just
-    AFTER (`t.string "col"` — the column follows the matched prefix), so we keep a
-    little on both sides. It stays a hint, not a data dump: the window is bounded,
-    so bulk values on a wide log line are not echoed."""
+    line. Bounded so bulk values on a wide line are not echoed; for auth-id ranks
+    it is tightened to the match itself so trailing context can't leak the next
+    value."""
     start, end = m.span()
-    lo = max(0, start - 16)
-    hi = min(len(line), end + 16)
+    pad = 0 if rank in _TIGHT_RANKS else 16
+    lo = max(0, start - pad)
+    hi = min(len(line), end + pad)
     snippet = line[lo:hi].strip()
     return ("…" if lo > 0 else "") + snippet + ("…" if hi < len(line) else "")
 
@@ -121,7 +129,7 @@ def main():
                                 if m:
                                     hits[rank].append({
                                         "file": relf, "line": i,
-                                        "signal": label, "preview": preview(line, m),
+                                        "signal": label, "preview": preview(line, m, rank),
                                     })
                                     break
             except Exception:

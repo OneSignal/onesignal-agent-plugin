@@ -24,7 +24,8 @@ import sys
 EXCLUDE = {"node_modules", "build", ".gradle", "Pods", ".git", "dist", "DerivedData",
            "__pycache__", ".dart_tool", "out"}
 CODE_EXTS = {".kt", ".java", ".swift", ".m", ".ts", ".tsx", ".js", ".jsx", ".dart",
-             ".gradle", ".kts", ".html", ".xml", ".rb", ".ruby", ".plist", ".json"}
+             ".gradle", ".kts", ".html", ".xml", ".rb", ".ruby", ".plist", ".json", ".toml"}
+# .toml is needed for gradle/libs.versions.toml (version-catalog dependency decls).
 # .json is needed for package.json / app.json (Expo/RN config, npm version ranges).
 
 # A OneSignal dependency line carrying a range/dynamic version instead of a pin.
@@ -200,16 +201,30 @@ class Checks:
         # imports them (the verification file calls requestPermission from a
         # coroutine) needs the app to declare the dependency, or it fails to compile
         # with "unresolved reference: coroutines" — same class as BuildConfig.DEBUG.
-        if not grep(self.root, re.compile(r"import\s+kotlinx\.coroutines")):
+        coro_imports = grep(self.root, re.compile(r"import\s+kotlinx\.coroutines"))
+        if not coro_imports:
             self.add("android_coroutines_on_classpath", True, "warn",
                      "kotlinx.coroutines not imported; no coroutines dependency required")
             return
-        declared = grep(self.root, re.compile(r"org\.jetbrains\.kotlinx:kotlinx-coroutines"))
-        self.add("android_coroutines_on_classpath", bool(declared), "error",
-                 "" if declared else "code imports kotlinx.coroutines but no kotlinx-coroutines dependency is "
-                 "declared — the OneSignal SDK exposes it as a runtime (implementation) dep, not api, so it is "
-                 "NOT on the compile classpath. Add `implementation(\"org.jetbrains.kotlinx:"
-                 "kotlinx-coroutines-android:1.7.3\")` (or newer) to the app module.")
+        # Evidence the app actually has coroutines on the compile classpath, in ANY
+        # of the ways it can legitimately be declared/obtained — don't fail correct
+        # code (this is the same false-positive class the SPM scoping fixed):
+        #  - a literal coordinate, in build.gradle(.kts) OR a version-catalog .toml
+        #  - a version-catalog alias reference (implementation(libs.kotlinx.coroutines))
+        #  - the app's OWN code already imports coroutines outside the managed
+        #    verification file — if it compiles with them today they are available,
+        #    which also covers coroutines pulled in transitively via an `api` dep
+        #    (e.g. androidx.lifecycle:lifecycle-*-ktx).
+        declared = (grep(self.root, re.compile(r"org\.jetbrains\.kotlinx:kotlinx-coroutines"))
+                    or grep(self.root, re.compile(r"\blibs\.[\w.]*coroutines", re.I)))
+        app_uses = [h for h in coro_imports if "verif" not in os.path.basename(h[0]).lower()]
+        ok = bool(declared) or bool(app_uses)
+        self.add("android_coroutines_on_classpath", ok, "error",
+                 "" if ok else "the verification file imports kotlinx.coroutines but the app declares no "
+                 "coroutines dependency (coordinate or version-catalog alias) and uses none elsewhere — the "
+                 "OneSignal SDK exposes it as a runtime (implementation) dep, not api, so it is NOT on the "
+                 "compile classpath. Add `implementation(\"org.jetbrains.kotlinx:kotlinx-coroutines-android:"
+                 "1.7.3\")` (or a version-catalog equivalent) to the app module.")
 
     def android_buildconfig_feature_enabled(self):
         # BuildConfig.DEBUG only resolves if the app module enables the buildConfig
