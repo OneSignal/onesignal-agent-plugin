@@ -55,10 +55,14 @@ Be precise about these when you share — they're direction, not features:
   Turning that into a headless, eval-measured **confirmed-delivery rate** is
   **spiked, not built** — see `OS/general-eval/tmp/delivery-verification-spike.md`.
   This is the intended differentiator.
-- **MCP credential provisioning over OAuth.** Today the OneSignal MCP is
-  integrated for reads/sends but *cannot* upload credentials, and the Rails
-  endpoint doesn't accept OAuth tokens. The path to change that is **spec'd, not
-  built** — see `OS/mcp-http/tmp/` and `OS/OneSignal/tmp/` planning docs.
+- **MCP credential provisioning — now shipped (Phase 1).** The OneSignal MCP
+  exposes `provision_app_credentials` (mcp-http#111, merged), and the Rails
+  endpoint accepts OAuth bearer tokens in addition to app/org keys (LAU-725,
+  done — additive, flag-gated behind `integrations_feature_oauth_api_auth_05_26`).
+  The plugin's credentials skill prefers the tool when the MCP is connected. What
+  is **not** built yet: create-or-update/replace semantics and the OAuth-only
+  lockdown (Rails Phases 3–4), after which app-key support is retired. Until then
+  provisioning stays write-once, and app-key remains the default transport.
 - **Flutter template + `flutter analyze` eval gate** — blocked on installing the
   Flutter SDK.
 - **Cursor / Codex adapters and non-optional hooks** (verify + secret-scan) —
@@ -69,8 +73,9 @@ Be precise about these when you share — they're direction, not features:
 
 1. **Close the delivery loop** — make confirmed-delivery a real eval metric (the
    spike above is step one). Highest leverage; it's the thing competitors don't do.
-2. **Credential provisioning via OAuth/MCP** — the two planning docs sequence the
-   cross-repo work (mcp-http tool ← Rails OAuth endpoint ← auth-grpc scope).
+2. **Finish the OAuth credential path** — Phase 1 (the MCP tool + OAuth
+   acceptance) shipped; what remains is replace/create-or-update semantics and
+   the OAuth-only lockdown (Rails Phases 3–4), then retiring app-key support.
 3. **Regenerate reference docs from source** — kill doc rot while keeping the
    exact-string fidelity embedded docs give us.
 

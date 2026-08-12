@@ -51,6 +51,7 @@ Route:
 Both agent-uploadable credentials go to the **write-once provisioning endpoint**, via one of two transports for the same payload:
 
 - **Preferred — the `provision_app_credentials` MCP tool**, when the OneSignal MCP is connected and exposes it. The tool forwards the MCP session's auth downstream, so you pass only the credential params (no `Authorization` header) and still supply base64 strings, not file paths — the MCP can't read local files, so you read and encode the file yourself. It provisions one platform set per call. The raw API response comes back unchanged, so the validation loop and every status mapping below apply as-is.
+  - **App-ID precondition (do this first).** The tool is app-scoped: it takes no `app_id` and writes to the app the MCP session is bound to. Mirror the read-tool rule in [../status/SKILL.md](../status/SKILL.md) — call `onesignal_config` and use the tool **only if the bound app matches the target App ID**; if they differ (a normal state, since each MCP connection is scoped to one app — README "Optional: connect the OneSignal MCP server"), use the direct `POST` instead. This endpoint is write-once (below), so a credential written to the wrong app cannot be undone through it — the check is not optional.
 - **Fallback — a direct `POST`** when the MCP isn't connected or doesn't expose the tool yet.
 
 Read the "Credential provisioning" section of [../../references/api-reference.md](../../references/api-reference.md) — it is the contract — then apply these rules:
@@ -109,7 +110,7 @@ The apps API validates credentials at upload time, so the API response *is* the 
    - **Firebase "configuration is for a different Firebase Project" / Sender ID mismatch** → the JSON is from the wrong project; ask for the JSON from the project whose Sender ID matches the app. ⚠️ Write-once caveat: if a *wrong-but-valid* file was accepted, this endpoint cannot replace it — the fix moves to the dashboard (Settings > Push Platforms).
    - **409 "already configured"** → relay the response message verbatim (it says exactly where to replace: dashboard Settings > Push Platforms, or an org key) and move on to the next step — this is not a dead end, and nothing was written (multi-channel requests are all-or-nothing). Do not retry.
    - **404** → the write-once endpoint's feature flag is off for this app; fall back to the dashboard upload walkthrough.
-   - **401** → the key doesn't belong to this app (or isn't a valid app key). Check which env var was used.
+   - **401** → on the **direct `POST`**, the key doesn't belong to this app (or isn't a valid app key) — check which env var was used. On the **MCP tool** path no key or env var is involved (the session auth is forwarded), so a 401 most likely means the MCP session is bound to a different app or account — re-check with `onesignal_config` (this is the same failure the App-ID precondition above is meant to catch before you write).
 4. Never retry with a mutation more than the propagation-wait case warrants. If it keeps failing, stop and report the verbatim error plus the mapped hypothesis; point the user at `support@onesignal.com` with their App ID.
 
 ## gitignore check for secret files
