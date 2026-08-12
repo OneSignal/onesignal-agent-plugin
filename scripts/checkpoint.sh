@@ -348,7 +348,15 @@ else
   if [ -z "${RUN_ID:-}" ]; then
     RUN_ID="$(new_id)"
     RUN_ID="${RUN_ID:-$(date +%s)-$$}"
-    printf '%s' "$RUN_ID" > "$RUN_ID_FILE" 2>/dev/null || true
+    # Say so when the cache write fails: this event still sends with the fresh
+    # id, but every later checkpoint mints another one and the funnel splits
+    # into single-event runs that no completion-rate query can stitch together.
+    if ! printf '%s' "$RUN_ID" > "$RUN_ID_FILE" 2>/dev/null; then
+      note "run_id_write_failed" "cannot write $RUN_ID_FILE"
+      echo "checkpoint: WARNING — could not cache run_id in $RUN_ID_FILE."
+      echo "  Each milestone will mint its own run_id and this install will not"
+      echo "  count as one funnel run. Check permissions on $STATE_DIR."
+    fi
   fi
 fi
 
