@@ -69,9 +69,9 @@ Reuse an existing class where one fits; otherwise add it here rather than invent
 the call site. Current set:
 
 `dirty_tree`, `prior_install`, `platform_ambiguous`, `no_app_id`, `invalid_app_id`,
-`credentials_missing`, `deferred`, `releases_unreachable`, `diff_rejected`,
-`network_blocked`, `kotlin_stdlib_floor`, `buildconfig_disabled`, `manifest_merger`,
-`unknown`.
+`credentials_missing`, `uploaded_during_run`, `deferred`, `releases_unreachable`,
+`diff_rejected`, `network_blocked`, `kotlin_stdlib_floor`, `minsdk_floor`, `agp_floor`,
+`dependency_conflict`, `buildconfig_disabled`, `manifest_merger`, `unknown`.
 
 `buildconfig_disabled`: AGP 8+ stopped generating `BuildConfig` by default, so the
 verification file's `BuildConfig.DEBUG` guard needs `buildFeatures { buildConfig = true }`
@@ -97,7 +97,9 @@ reported as `ok` and nearly lost.
 ## What is sent
 
 Per event: milestone, status, failure class, `run_id`, platform, skill name, plugin
-version, agent runtime, OS, timestamp, and the **OneSignal App ID**.
+version, agent runtime, OS, timestamp, and the **OneSignal App ID** — plus three fixed
+constants: the source tag (`onesignal-agent-plugin`), the payload schema version, and the
+service name (`OneSignalAgentSkill`).
 
 Never sent: source code, file contents, file paths, project or package names, repo
 metadata, and — per the safety contract's "Never" rules and its "The setup key" section —

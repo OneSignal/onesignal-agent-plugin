@@ -62,8 +62,10 @@ The rules that make it safe:
     user to approve network access, request it in advance — a request made up front can be
     granted; a syscall denial mid-command cannot.
 16. **Only these fields leave the machine:** milestone, status, failure class, run id,
-    platform, skill name, plugin version, agent runtime, OS, timestamp, App ID. No source,
-    no file contents, no paths, no project or package names. The setup key and every other
+    platform, skill name, plugin version, agent runtime, OS, timestamp, App ID — plus
+    three fixed constants: the source tag (`onesignal-agent-plugin`), the payload schema
+    version, and the service name (`OneSignalAgentSkill`). No source code, no file
+    contents, no paths, no project or package names. The setup key and every other
     credential are excluded by the "Never" rules and "The setup key" section above, with
     no exception for analytics.
 17. **A refusal is final and costs the user nothing.** Re-run the checkpoint with

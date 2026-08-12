@@ -51,7 +51,11 @@ Rules that matter:
   with mutations to make a milestone reportable.
 - The script **always exits 0**. A blocked or declined send never alters the onboarding.
 - Write `.onesignal/platform` at Step 1 and `.onesignal/app_id` at Step 2 — the script
-  reads them. Include `.onesignal/` in the Step-5 allow-list and add it to `.gitignore`.
+  reads them **from the repo root** (`git rev-parse --show-toplevel`). Write them there,
+  not relative to your current directory: in a monorepo run from a package folder, a
+  cwd-relative write puts the App ID where the script never looks, and every event
+  buffers silently. Include `.onesignal/` in the Step-5 allow-list and add it to
+  `.gitignore`.
 - Milestones before Step 2 are **buffered**, because the endpoint needs the App ID. Run
   `bash <plugin>/scripts/checkpoint.sh flush` right after Step 2. **Never invent an App ID
   to make an early send work** (safety contract §19).
@@ -98,7 +102,8 @@ Read project manifests (never execute them). Detect per-package in monorepos. Ma
 **Checkpoint.** Once the platform is known, write it and report preflight — it will buffer until Step 2:
 
 ```bash
-mkdir -p .onesignal && echo "<platform>" > .onesignal/platform
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+mkdir -p "$ROOT/.onesignal" && echo "<platform>" > "$ROOT/.onesignal/platform"
 bash <plugin>/scripts/checkpoint.sh setup.preflight ok
 ```
 
@@ -117,7 +122,8 @@ Every SDK init needs a OneSignal **App ID** (a public UUID — safe to commit in
 **Checkpoint.** Record the App ID for the checkpoint scripts, then flush anything buffered:
 
 ```bash
-echo "<APP_ID>" > .onesignal/app_id
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+echo "<APP_ID>" > "$ROOT/.onesignal/app_id"
 bash <plugin>/scripts/checkpoint.sh setup.app_id ok
 bash <plugin>/scripts/checkpoint.sh flush
 ```
@@ -155,6 +161,13 @@ bash <plugin>/scripts/checkpoint.sh setup.credentials_gate fail credentials_miss
 bash <plugin>/scripts/checkpoint.sh setup.credentials_gate fail deferred            # user chose to skip
 ```
 
+**Report the fail before ending the turn** — the same rule as Steps 0–2. This gate blocks
+on human steps (console work, an upload, a defer decision), and a session that stops here
+must leave a record: `fail credentials_missing` the moment the gate blocks, `fail deferred`
+the moment the user chooses to skip. If credentials then land and the gate passes, report
+`ok_after_fix uploaded_during_run` — the fail→fix pair is the recovery story, not a
+contradiction.
+
 4. **The user may explicitly defer** ("just install the SDK, I'll do credentials later"). Honor it, but say plainly: the device will register as unsubscribed until credentials land, and the verify skill must be re-run afterwards. Note the deferral in the final summary.
 
 ## Step 4 — SDK version selection (exact pin; never guess, never a range)
@@ -178,7 +191,7 @@ Open the platform reference file for the detected platform and follow its instal
 
 Touching anything outside this list requires re-confirming with the user. Then compute the **full change set and show it as diffs**, get **one** approval for the whole set, and apply exactly as previewed. If a file drifted since preview, abort that file and re-preview it. Mark every generated block with `// onesignal:managed v1` (or the platform's comment syntax) so re-runs are idempotent.
 
-**Checkpoint:** after the change set is applied, `setup.install_applied ok`. If the user rejected the diff, `fail diff_rejected` and stop. If you had to change something outside the minimal integration to make it work — a `minSdk` bump, a Kotlin or AGP version, a dependency conflict — use `ok_after_fix <class>` and name it.
+**Checkpoint:** after the change set is applied, `setup.install_applied ok`. If the user rejected the diff, `fail diff_rejected` and stop. If you had to change something outside the minimal integration to make it work, use `ok_after_fix` with the registered class: `minsdk_floor` (raised `minSdk`), `kotlin_stdlib_floor`, `agp_floor` (bumped AGP), `dependency_conflict`, `manifest_merger`, `buildconfig_disabled`. Classes come from the contract's list — never invent one at the call site.
 
 Match the repo's existing architecture, style, and package manager. No repo-wide reformatting, no import reordering, no unrelated dependency bumps (safety contract §7). Minimal integration only: SDK init in the correct lifecycle spot plus what the verification file needs — **no** extra OneSignal features unless the user asked (safety contract §8).
 
