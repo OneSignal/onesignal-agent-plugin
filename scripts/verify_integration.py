@@ -65,6 +65,42 @@ def grep(root, pattern, files=None):
     return hits
 
 
+# Range forms: `from:`, `.upToNextMajor/Minor`, or the `"x"..<"y"` / `"x"..."y"`
+# operators. The operator alternative is bounded by quotes on both sides so it
+# matches a version range, not the `...` in an abbreviated URL path.
+_SPM_RANGE_KW = re.compile(r"from\s*:|upToNext(?:Major|Minor)|\"\s*\.\.[.<]\s*\"", re.I)
+
+
+def spm_range_hits(root):
+    """Multi-line-aware scan for a OneSignal SPM `.package(...)` call that carries a
+    range (from:/upToNext/..<) instead of an exact pin. The per-line RANGE_PATTERNS
+    miss the Xcode-generated style where url and version sit on separate lines, so
+    parse each `.package(` call as a balanced-paren span across newlines."""
+    hits = []
+    for fp in walk_files(root):
+        if os.path.basename(fp) != "Package.swift":
+            continue
+        text = read(fp)
+        i = 0
+        while True:
+            j = text.find(".package(", i)
+            if j < 0:
+                break
+            depth, end = 0, j + len(".package(") - 1
+            for end in range(end, len(text)):
+                if text[end] == "(":
+                    depth += 1
+                elif text[end] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        break
+            call = text[j:end + 1]
+            if "onesignal" in call.lower() and _SPM_RANGE_KW.search(call):
+                hits.append((os.path.relpath(fp, root), text.count("\n", 0, j) + 1))
+            i = end + 1
+    return hits
+
+
 class Checks:
     def __init__(self, root, platform, app_id):
         self.root, self.platform, self.app_id = root, platform, app_id
@@ -78,6 +114,8 @@ class Checks:
         hits = []
         for rx in RANGE_PATTERNS:
             hits += grep(self.root, rx)
+        hits += spm_range_hits(self.root)
+        hits = sorted(set(hits))  # a single-line SPM range matches both paths
         self.add("no_version_range", not hits, "error",
                  "" if not hits else f"range/dynamic version at {hits[:5]} — must be an exact pin")
 

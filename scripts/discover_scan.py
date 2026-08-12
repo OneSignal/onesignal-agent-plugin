@@ -74,13 +74,16 @@ RANKS = {
 
 
 def preview(line, m):
-    """Return the signal token plus a little leading context — a schema/name hint,
-    not a data value. Trims to the match end on purpose: assigned values live to the
-    RIGHT of the token (`user.sub = "..."`), so cutting there keeps data out."""
+    """Return a small window around the match — a schema/name hint, not the whole
+    line. Some signals put the name BEFORE the match end (`user.sub`) and some just
+    AFTER (`t.string "col"` — the column follows the matched prefix), so we keep a
+    little on both sides. It stays a hint, not a data dump: the window is bounded,
+    so bulk values on a wide log line are not echoed."""
     start, end = m.span()
     lo = max(0, start - 16)
-    snippet = line[lo:end].strip()
-    return ("…" if lo > 0 else "") + snippet
+    hi = min(len(line), end + 16)
+    snippet = line[lo:hi].strip()
+    return ("…" if lo > 0 else "") + snippet + ("…" if hi < len(line) else "")
 
 
 def main():

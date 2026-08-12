@@ -110,6 +110,17 @@ def cmd_android_params(args):
                               "http": status, "status": "fcm_live", "attempts": attempt}, indent=2))
             return
         if time.time() >= deadline:
+            # Distinguish "endpoint answered, sender_id absent" (keep waiting) from
+            # "endpoint erroring" (bad app id / outage). Reporting a non-2xx as
+            # not_live sends the caller into an endless wait on a request failure.
+            if not (200 <= status < 300):
+                print(json.dumps({"probe": "android_params", "app_id": args.app_id,
+                                  "http": status, "status": "error",
+                                  "detail": f"HTTP {status} on every poll — not an FCM-not-live "
+                                            "signal but a request failure (bad app id, or the "
+                                            "route is unavailable). Do NOT keep waiting on this.",
+                                  "attempts": attempt}, indent=2))
+                return
             print(json.dumps({"probe": "android_params", "app_id": args.app_id,
                               "http": status, "status": "not_live",
                               "detail": "android_sender_id absent — FCM v1 credential "
@@ -124,9 +135,10 @@ def cmd_notification_stats(args):
     url = f"{API}/notifications/{args.notif_id}?app_id={args.app_id}"
     status, body = _get(url, key=key)
     data = _json(body) or {}
-    if status == 401:
-        print(json.dumps({"probe": "notification_stats", "http": status, "status": "auth_error",
-                          "detail": "Key does not belong to this app."}, indent=2)); return
+    if status in (401, 403):
+        print(json.dumps({"probe": "notification_stats", "app_id": args.app_id,
+                          "notif_id": args.notif_id, "http": status, "status": "auth_error",
+                          "detail": "Key does not belong to this app (or lacks access)."}, indent=2)); return
     if not (200 <= status < 300):
         # Never print null stat fields as if they were real numbers on an error.
         print(json.dumps({"probe": "notification_stats", "app_id": args.app_id,
@@ -152,11 +164,11 @@ def cmd_app(args):
     key = _require_key(args)
     status, body = _get(f"{API}/api/v1/apps/{args.app_id}", key=key)
     data = _json(body) or {}
-    if status == 401:
-        print(json.dumps({"probe": "app", "http": status, "status": "auth_error",
-                          "detail": "Key does not belong to this app."}, indent=2)); return
+    if status in (401, 403):
+        print(json.dumps({"probe": "app", "app_id": args.app_id, "http": status, "status": "auth_error",
+                          "detail": "Key does not belong to this app (or lacks access)."}, indent=2)); return
     if status == 404:
-        print(json.dumps({"probe": "app", "http": status, "status": "not_found",
+        print(json.dumps({"probe": "app", "app_id": args.app_id, "http": status, "status": "not_found",
                           "detail": "No app with that ID (or route unavailable)."}, indent=2)); return
     if not (200 <= status < 300):
         print(json.dumps({"probe": "app", "app_id": args.app_id, "http": status, "status": "error",
@@ -179,7 +191,8 @@ def cmd_subscribers(args):
         status, body = _get(url, key=key, scheme="Basic")
     data = _json(body) or {}
     if status in (401, 403):
-        print(json.dumps({"probe": "subscribers", "http": status, "status": "auth_error",
+        print(json.dumps({"probe": "subscribers", "app_id": args.app_id, "http": status,
+                          "status": "auth_error",
                           "detail": "Rejected under both Key and Basic auth — the key does not "
                                     "belong to this app, or lacks Devices-API access."}, indent=2)); return
     if not (200 <= status < 300):

@@ -91,8 +91,8 @@ def scan_diff(diff_text):
         elif raw.startswith("---"):
             continue
         elif raw.startswith("+"):
-            findings += scan_line(f"{path or '?'}:{lineno}", raw[1:])
-            lineno += 1
+            findings += scan_line(f"{path or '?'}:{lineno or 1}", raw[1:])
+            lineno = (lineno or 1) + 1
         elif raw.startswith(" "):
             lineno += 1
         # '-' (removed) lines don't advance the new-file counter.

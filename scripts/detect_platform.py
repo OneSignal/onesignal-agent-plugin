@@ -80,23 +80,22 @@ def detect_platform(pkgdir, root=None):
         candidates.append(("cordova", "config.xml + cordova dep"))
     if _glob_any(pkgdir, r"\.csproj$") and (_has(pkgdir, "ProjectSettings") or _has(pkgdir, "Assets")):
         candidates.append(("unity", "csproj + ProjectSettings/Assets"))
-    # A cross-platform framework owns the native ios/ folder (Flutter's Runner,
-    # RN/Expo/Capacitor/Cordova AppDelegate) — the package to integrate is the JS/
-    # Dart one, not "ios". Guard the ios rule the same way the android rule below
-    # does, or every such project reports a spurious `ios` co-candidate (ambiguous).
+    # A cross-platform framework owns the native ios/ AND android/ folders
+    # (Flutter's Runner, RN/Expo/Capacitor/Cordova) — the package to integrate is
+    # the JS/Dart one, not "ios"/"android". Both native rules share the same guard,
+    # or such a project reports a spurious native co-candidate (ambiguous → the
+    # skill needlessly asks which package to integrate).
     _hybrid_js = pj and any(d in deps for d in ("react-native", "expo", "@capacitor/core", "cordova"))
     _has_capacitor = _has(pkgdir, "capacitor.config.ts", "capacitor.config.js", "capacitor.config.json")
+    _cross_platform = _has(pkgdir, "pubspec.yaml") or _hybrid_js or _has_capacitor
     if ((_has(pkgdir, "Podfile") or _glob_any(pkgdir, r"\.xcodeproj$", r"\.xcworkspace$") or _appdelegate(pkgdir))
-            and not _has(pkgdir, "pubspec.yaml")
-            and not _hybrid_js
-            and not _has_capacitor):
+            and not _cross_platform):
         candidates.append(("ios", "Podfile / xcodeproj / AppDelegate"))
     gradle_file = (_has(pkgdir, "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts")
                    or _find_file(pkgdir, "build.gradle") or _find_file(pkgdir, "build.gradle.kts"))
     if (gradle_file
             and _find_file(pkgdir, "AndroidManifest.xml")
-            and not _has(pkgdir, "pubspec.yaml")
-            and not (pj and ("react-native" in deps or "expo" in deps))):
+            and not _cross_platform):
         candidates.append(("android", "build.gradle + AndroidManifest.xml"))
     if pj and any(w in deps for w in ("next", "react-dom", "vue", "@angular/core", "svelte", "vite")):
         candidates.append(("web", "web framework dep"))
