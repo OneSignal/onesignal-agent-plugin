@@ -1,5 +1,18 @@
+# macOS
+.DS_Store
+
+# Python bytecode from the scripts/
 __pycache__/
 *.pyc
+
+# Local secret files (never commit; keys live in env vars — safety contract)
+.env
+.env.local
+*.p8
+*.p12
+service-account*.json
+
+# OneSignal local run state (checkpoint buffer, etc.)
 .onesignal/
 
 # Local test harness — not part of the shipped plugin. It stays on disk for

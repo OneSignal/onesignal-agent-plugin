@@ -75,13 +75,13 @@ The production entry point is **`/onesignal:setup app=<APP_ID> token=<key>`**. I
 ## Step 0 — Preflight (safety contract §1–4, do this before anything else)
 
 1. Run `git status --porcelain`. Dirty tree → STOP and ask: stash / proceed on top / abort. **Report the dropout before ending the turn to ask** — a session that never resumes otherwise leaves no trace of why: `bash <plugin>/scripts/checkpoint.sh setup.preflight fail dirty_tree` (it buffers; no App ID exists yet). If the user answers and you proceed, report the normal Step 1 checkpoint as usual — the fail→ok pair is the recovery story, not a contradiction. No `.git` present → tell the user there is no VCS safety net; you will write `<file>.onesignal.bak` siblings before edits, and proceed only if they accept.
-2. **Detect a prior OneSignal install FIRST** (idempotency): grep for the dependency line (`onesignal` / `OneSignal` / `react-native-onesignal` / `onesignal_flutter` / `onesignal-cordova-plugin` / `@onesignal/capacitor-plugin`), an existing `OneSignal.init`/`initialize`/`initWithContext` call, an `OneSignalSDKWorker.js`, or our marker `onesignal:managed`. Found → propose **update/repair**, never a duplicate install. If a **different App ID** is already wired in, ask which is correct; never silently overwrite.
+2. **Detect platform and prior install deterministically.** Run `${CLAUDE_PLUGIN_ROOT}/scripts/detect_platform.py` (defaults to CWD). It returns detected platform(s) + language + package manager per package (monorepo-aware), and a `prior_onesignal` block that greps for the dependency line, init calls (`OneSignal.init`/`initialize`/`initWithContext`), `OneSignalSDKWorker.js`, and our `onesignal:managed` marker. If `prior_onesignal.found` is true → propose **update/repair**, never a duplicate install; if a **different App ID** is already wired in, ask which is correct, never silently overwrite. If `ambiguous` is true (multiple packages / no clear signal) → ASK which package(s) to integrate; do not guess. Read-only; never executes repo code (safety contract §12).
 3. Propose a new `onesignal-integration` branch (default). The user may opt to write to the current branch instead.
 4. You will declare the full file allow-list in Step 5 before writing. Include `.onesignal/` (checkpoint run state) and `.gitignore`.
 
 ## Step 1 — Detect platform & framework
 
-Read project manifests (never execute them). Detect per-package in monorepos. Match strongest signal first:
+Step 0.2 already ran `detect_platform.py`, which returns the platform, language, and package manager per package. Use its output as the source of truth. The table below documents the signals it matches — consult it to interpret results or when the script is unavailable; do not re-derive detection by hand when the script has run. Never execute repo manifests.
 
 | Signal file / content | Platform → reference |
 |---|---|
@@ -148,10 +148,11 @@ The single worst onboarding failure is installing the SDK before push credential
 
 1. **Check what's configured.** With an app-scoped key available (`$ONESIGNAL_SETUP_TOKEN` / `$ONESIGNAL_REST_API_KEY`), `GET /api/v1/apps/{APP_ID}` (app auth works) and check the platform you're about to install: Android → FCM service-account configured? iOS → APNs key configured? Web → Site URL/origin configured? No key available → ask the user to check the dashboard (Settings > Push Platforms) and tell you.
 2. **Missing → run the credentials skill NOW**, before writing any code. It walks the human through the Apple/Firebase console steps and uploads the file itself via the write-once endpoint (`POST /api/v1/apps/{APP_ID}/credentials`). Do not proceed until it reports success or the user explicitly defers.
-3. **Confirm the config is LIVE before any device ever runs:**
-   - **Android:** poll `https://api.onesignal.com/apps/{APP_ID}/android_params.js` until `android_sender_id` appears. ⚠️ Poll only AFTER the upload — fetching it before credentials exist primes a CDN cache with the empty response on a fresh app.
+3. **Confirm the config is LIVE before any device ever runs** — use the API script, which encodes the cache-bust and poll-ordering quirks (prefer the OneSignal MCP if connected):
+   - **Android:** `${CLAUDE_PLUGIN_ROOT}/scripts/onesignal_api.py android-params <APP_ID>` — polls until `android_sender_id` appears (`status: fcm_live`). ⚠️ Run only AFTER the credential upload; fetching before credentials exist primes a CDN cache with the empty response on a fresh app.
    - **iOS:** the upload's success response is the config confirmation. (New APNs keys can take ~10–15 min to propagate on Apple's side — that affects delivery, not this gate.)
-   - **Web:** confirm with the free unauthenticated probe `GET https://api.onesignal.com/sync/{APP_ID}/web` → `success: true` means the web platform is live; `code: 2` ("This app is not configured for web push.") means it is NOT provisioned — the signup flow does not do this automatically. ⚠️ Probe only AFTER the config/upload, and append `?fresh=<timestamp>` — responses are CDN-cached ~1 h (`max-age=3600`), so an early probe primes the cache with the error (api-reference "Web platform config probe").
+   - **Web:** `${CLAUDE_PLUGIN_ROOT}/scripts/onesignal_api.py web-probe <APP_ID>` — free, unauthenticated. `status: provisioned` = live; `status: not_configured` (feed `code: 2`) = the dashboard web step never happened (the signup flow does not do it automatically). The script always appends the `?fresh=<ts>` cache-bust for you — responses are CDN-cached ~1 h, so probing by hand without it can read a stale error (api-reference "Web platform config probe"). ⚠️ Probe only AFTER the config/upload.
+
 **Checkpoint — this is the one that matters most.** This step encodes our belief that missing credentials are the single worst onboarding failure; the data either confirms it or does not:
 
 ```bash
@@ -170,13 +171,23 @@ contradiction.
 
 4. **The user may explicitly defer** ("just install the SDK, I'll do credentials later"). Honor it, but say plainly: the device will register as unsubscribed until credentials land, and the verify skill must be re-run afterwards. Note the deferral in the final summary.
 
-## Step 4 — SDK version selection (exact pin; never guess, never a range)
+## Step 4 — SDK version selection (deterministic — do NOT read the feed by hand)
 
-Get versions ONLY from the official JSON endpoint: **https://onesignal.github.io/sdk-releases/releases.json**. Do NOT use the human-readable releases page, npm/pub.dev/Maven/GitHub-releases, or web search for a version number, and do NOT invent one. Find the SDK entry by matching the platform against its `name`/`displayName` and read the exact version from `channels.<track>.version` — use the **stable** track unless the user asked for Current. Do not infer versions from tags, release order, or semver sorting. **Pin the exact version — do not use a version range or caret** (ranges are a verified source of mobile build failures, and the upstream prompt forbids them). If you cannot fetch the endpoint, tell the user and ask them to confirm the version — do not assert a number.
+Version selection is the single most-failed step in evals: agents that skim this instruction hedge with a range (`[5.6.1, 5.9.99]`, `upToNextMajorVersion`), which is a verified source of mobile build failures. Do not resolve the version yourself. **Run the resolver script and paste its output verbatim:**
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/resolve_sdk_version.py <platform> --format json
+# platform ∈ android|ios|web|react-native|expo|flutter|cordova|capacitor|unity
+# add --track current only if the user explicitly asked for the Current track
+```
+
+(If `${CLAUDE_PLUGIN_ROOT}` is not set in your shell, locate the plugin root — e.g. `claude plugin path onesignal` — and run `scripts/resolve_sdk_version.py` from there.)
+
+The script fetches the official feed, resolves the exact `channels.stable.version`, and emits a ready-to-paste `dependency_line` that is **always an exact pin — it cannot emit a range**. Use that line as-is; do not rewrite the version. If the script exits non-zero (feed unreachable), tell the user and ask them to confirm the version — do NOT guess a number, and do NOT fall back to a range.
 
 **Checkpoint:** `setup.sdk_pinned ok` once you have an exact version. If the endpoint was unreachable and you had to ask the user, that is `ok_after_fix releases_unreachable` — it is a real onboarding obstacle and worth counting, especially in sandboxed runtimes where egress is denied.
 
-Prefer the OneSignal MCP server's tools over raw curl for API reads if it is connected (api-reference "OneSignal MCP server"). The MCP cannot edit files or upload credentials — repo work stays with you.
+Prefer the OneSignal MCP server's tools over raw curl for API reads if it is connected (api-reference "OneSignal MCP server"). The MCP cannot edit files, upload credentials, or resolve SDK versions — repo work and version resolution stay with you and the scripts.
 
 ## Step 5 — Declare the allow-list, compute diffs, get ONE approval (safety contract §4–6)
 
@@ -226,12 +237,14 @@ Decide what is still missing:
 
 Emit a copy-ready summary: files changed; SDK version + that it came from the releases.json endpoint; the dashboard/console steps the human still owns (from the platform's "Human must do" column in the matrix); verification steps (run debug build → see dialog → grant permission → send self a push → receive it); the exact filename + call site to delete for cleanup; and rollback commands (`git checkout -- <files>` / delete the `onesignal-integration` branch / restore `.onesignal.bak` files). **Do NOT auto-commit or open a PR** — offer the commands; the user runs them.
 
+Before finishing, **run the structural self-check and fix anything it flags** — do not rely on the build or on your own reading: `${CLAUDE_PLUGIN_ROOT}/scripts/verify_integration.py <project_dir> --platform <platform> --app-id <APP_ID>`. It deterministically verifies the constraint-following facts a compiler cannot see (exact version pin, no placeholder/fabricated App ID, init in an Application subclass, the verification file guarded by `BuildConfig.DEBUG` so it can't ship to release, `onesignal:managed` markers, no stray `google-services.json`, no deprecated `addOutcome`). If `verdict` is `fail`, repair each error-level check and re-run until it passes; only then declare done. This is the deterministic close of the loop — the agent catches its own slips (e.g. a verification file that names `installIfDebug` but forgets the guard) instead of shipping them.
+
+Before finishing, **scan your own diff for secret-shaped strings** deterministically: `${CLAUDE_PLUGIN_ROOT}/scripts/scan_secrets.py` (scans the working-tree diff; add `--staged` for staged changes, or pass file paths). It flags REST/org keys, `.p8`/service-account contents, and `Authorization: Key` headers while ignoring the public App ID and obvious placeholders, and never prints the matched value — only its file, line, column, and rule. If it exits non-zero, abort and remove the secret — keys live in env vars only (safety contract §"Never").
+
 **Final checkpoint:** `setup.complete ok` before handing off, then one final
 `bash <plugin>/scripts/checkpoint.sh flush`. A transport failure mid-run re-buffers the
 event, and this flush is its second chance to send before the session ends. This is
 setup's own completion rate — the denominator for everything downstream in the funnel.
-
-Before finishing, **scan your own diff for secret-shaped strings** (REST API keys, org keys, `.p8`/service-account contents). If any secret is present in a committed/client file, abort and remove it — keys live in env vars only (safety contract §"Never").
 
 ---
 

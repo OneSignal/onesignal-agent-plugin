@@ -1,0 +1,27 @@
+// onesignal:managed v1
+// Centralized OneSignal wrapper — the ONLY place OneSignal SDK calls live
+// (except the deletable verification file). Place in your app's package and
+// set the package line to match. Signatures verified against the v5 SDK
+// data surface; string tag values only; call login() before tags/email/sms.
+package __PACKAGE__
+
+import android.content.Context
+import com.onesignal.OneSignal
+import com.onesignal.debug.LogLevel
+
+object OneSignalManager {
+    private var initialized = false
+
+    fun initialize(context: Context, appId: String) {
+        if (initialized) return
+        OneSignal.Debug.logLevel = LogLevel.VERBOSE // remove for production
+        OneSignal.initWithContext(context.applicationContext, appId)
+        initialized = true
+    }
+
+    fun login(externalId: String) = OneSignal.login(externalId)
+    fun logout() = OneSignal.logout()
+    fun setEmail(email: String) = OneSignal.User.addEmail(email)
+    fun setSmsNumber(number: String) = OneSignal.User.addSms(number)
+    fun setTag(key: String, value: String) = OneSignal.User.addTag(key, value)
+}

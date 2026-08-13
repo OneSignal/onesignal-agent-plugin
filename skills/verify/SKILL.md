@@ -56,7 +56,7 @@ The device cannot register until the app actually runs with the SDK linked. Pick
 
 ### Step 2 — Subscription presence (poll until first device registers)
 
-This is the dashboard signup wizard's own pattern: fetch subscriptions/players with `limit: 1` — a non-empty result means the first subscriber exists (see api-reference.md "Subscriber presence poll").
+This is the dashboard signup wizard's own pattern: fetch subscriptions/players with `limit: 1` — a non-empty result means the first subscriber exists (see api-reference.md "Subscriber presence poll"). Deterministic equivalents for the REST probes in this skill: `${CLAUDE_PLUGIN_ROOT}/scripts/onesignal_api.py subscribers|notification-stats|web-probe` (prefer the MCP if connected). The `notification-stats` output labels `failed` as unsubscribed targets, not delivery errors.
 
 - **MCP path:** there is no dedicated "list subscriptions" MCP tool; use the REST poll below (a key is still required). If only MCP is available and no key, tell the user this rung needs one.
 - **REST path:** `GET https://api.onesignal.com/players?app_id=<APP_ID>&limit=1` with `Authorization: Key <KEY>`. **Note: `/players` is the legacy Devices API — documented but marked deprecated** ("View players" reference page). Its documented auth form is `Authorization: Basic <legacy REST API key>`; try `Key` first with the current key and fall back to `Basic` if rejected. If the endpoint errors entirely, fall back to the dashboard (Audience → Subscriptions) and have the user confirm the row appeared. The only thing you assert from this call is *non-empty ⇒ a subscriber registered*.

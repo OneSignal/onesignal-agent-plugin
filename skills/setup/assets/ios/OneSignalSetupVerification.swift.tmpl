@@ -1,0 +1,86 @@
+// onesignal:managed v1 — DELETABLE VERIFICATION FILE
+// File: OneSignalSetupVerification.swift
+// Call site: OneSignalSetupVerification.install() — call once from your launch
+//   context (AppDelegate application(_:didFinishLaunchingWithOptions:) or the
+//   SwiftUI App init()), right after OneSignal.initialize(...).
+// Delete this file AND its single install() call once you have seen the success
+// dialog and received the test push. It is compiled out of release builds by the
+// #if DEBUG guard below, but it should not live in your codebase long-term.
+#if DEBUG
+import UIKit
+import OneSignalFramework
+
+final class OneSignalSetupVerification: NSObject, OSPushSubscriptionObserver {
+    static let shared = OneSignalSetupVerification()
+    private var hasShown = false
+    private let appId = "__APP_ID__"
+
+    static func install() {
+        let verifier = shared
+        OneSignal.User.pushSubscription.addObserver(verifier)
+        // Race guard: the subscription id may already be present before the
+        // observer fires, so evaluate the current value immediately too.
+        verifier.evaluate(OneSignal.User.pushSubscription.id)
+    }
+
+    func onPushSubscriptionDidChange(state: OSPushSubscriptionChangedState) {
+        evaluate(state.current.id)
+    }
+
+    private func evaluate(_ subscriptionId: String?) {
+        guard let id = subscriptionId, !id.isEmpty, !id.hasPrefix("local-") else { return }
+        DispatchQueue.main.async { [weak self] in self?.showSuccess(subscriptionId: id) }
+    }
+
+    private func showSuccess(subscriptionId: String) {
+        guard !hasShown else { return }
+        hasShown = true
+        guard let presenter = Self.topViewController() else { return }
+        let alert = UIAlertController(
+            title: "Your OneSignal SDK integration is complete!",
+            message: "Tap \"Got it\" to request notification permission and send yourself a test push.",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "Got it", style: .default) { [weak self] _ in
+            OneSignal.Notifications.requestPermission({ accepted in
+                guard accepted else { return }
+                self?.sendTestPush(subscriptionId: subscriptionId)
+            }, fallbackToSettings: true)
+        })
+        presenter.present(alert, animated: true)
+    }
+
+    private func sendTestPush(subscriptionId: String) {
+        guard let url = URL(string: "https://api.onesignal.com/notifications") else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = [
+            "app_id": appId,
+            "target_channel": "push",
+            "include_subscription_ids": [subscriptionId],
+            "headings": ["en": "OneSignal"],
+            "contents": ["en": "Your OneSignal integration works."],
+        ]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        // Unauthenticated create-notification call: no Authorization header. If the
+        // app disallows unauthenticated sends the API returns 401 — fall back to a
+        // dashboard send or a server-side call with your REST API key.
+        URLSession.shared.dataTask(with: request) { _, response, _ in
+            if let http = response as? HTTPURLResponse, http.statusCode == 401 {
+                print("[OneSignal] Test send returned 401. Send a test push from the "
+                    + "OneSignal dashboard, or use your REST API key server-side.")
+            }
+        }.resume()
+    }
+
+    private static func topViewController() -> UIViewController? {
+        let scene = UIApplication.shared.connectedScenes
+            .first { $0.activationState == .foregroundActive } as? UIWindowScene
+        let window = scene?.windows.first { $0.isKeyWindow } ?? scene?.windows.first
+        var top = window?.rootViewController
+        while let presented = top?.presentedViewController { top = presented }
+        return top
+    }
+}
+#endif
