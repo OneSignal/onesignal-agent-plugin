@@ -130,8 +130,28 @@ if [ "$RAW_MILESTONE" = "flush" ]; then
 
   # Pull one string field out of a buffered payload. A JSON `null` yields "", which is
   # what an absent failure_class should become.
+  #
+  # Pure bash, not a sed pattern: `[^"]*` stopped at the first quote, so any value
+  # holding an escaped quote — json_escape emits \" and \\ — was truncated there, and
+  # the re-sent event lost the rest of the value. A JSON string ends at the first quote
+  # preceded by an EVEN number of backslashes, which is what the parity check below
+  # measures. Bash rather than python3 keeps the flush path free of that dependency.
   buffered_field() {
-    printf '%s' "$1" | sed -n "s/.*\"$2\":\"\([^\"]*\)\".*/\1/p"
+    local line="$1" key="$2" rest chunk tail out=""
+    case "$line" in
+      *"\"$key\":\""*) rest="${line#*\"$key\":\"}" ;;
+      *) return 0 ;;
+    esac
+    while :; do
+      chunk="${rest%%\"*}"
+      out="$out$chunk"
+      rest="${rest#"$chunk"\"}"
+      tail="${chunk##*[!\\]}"
+      [ $(( ${#tail} % 2 )) -eq 0 ] && break
+      out="$out\""
+    done
+    out="${out//\\\"/\"}"
+    printf '%s' "${out//\\\\/\\}"
   }
 
   COUNT=$(grep -c . "$PENDING" 2>/dev/null || echo 0)
@@ -141,6 +161,24 @@ if [ "$RAW_MILESTONE" = "flush" ]; then
   # contract, so `|| FAILED=1` never fired and the buffer was cleared even when every
   # send was refused. The child reports its transport outcome out-of-band instead.
   RESULT_FILE="$STATE_DIR/.flush_result"
+
+  # Per-row bookkeeping: collect the rows that failed and rewrite the buffer with only
+  # those. One bad row used to keep the whole buffer, so every already-accepted row was
+  # sent again on the next flush. When this file cannot be created, fall back to keeping
+  # the whole buffer on any failure: a duplicate delivery is wasteful, a dropped event is
+  # not recoverable.
+  KEPT="$STATE_DIR/.pending.rewrite"
+  if printf '' > "$KEPT" 2>/dev/null; then
+    PER_ROW=1
+  else
+    PER_ROW=0
+  fi
+
+  keep_row() {
+    [ "$PER_ROW" -eq 1 ] && printf '%s\n' "$1" >> "$KEPT" 2>/dev/null
+    return 0
+  }
+
   FAILED=0
   SENT=0
   while IFS= read -r line; do
@@ -175,6 +213,7 @@ if [ "$RAW_MILESTONE" = "flush" ]; then
     # reporting — anything short of an explicit "sent" keeps the buffer.
     if ! printf 'unsent' > "$RESULT_FILE" 2>/dev/null; then
       FAILED=1
+      keep_row "$line"
       continue
     fi
     # Re-send through this same script so every send path stays identical: one encoder,
@@ -195,14 +234,20 @@ if [ "$RAW_MILESTONE" = "flush" ]; then
       SENT=$((SENT + 1))
     else
       FAILED=1
+      keep_row "$line"
     fi
   done < "$PENDING"
   rm -f "$RESULT_FILE" 2>/dev/null || true
 
   if [ "$FAILED" -eq 0 ]; then
     : > "$PENDING"
+    rm -f "$KEPT" 2>/dev/null || true
     echo "checkpoint: buffer cleared ($SENT sent)"
+  elif [ "$PER_ROW" -eq 1 ] && mv "$KEPT" "$PENDING" 2>/dev/null; then
+    HELD=$(grep -c . "$PENDING" 2>/dev/null || echo 0)
+    echo "checkpoint: $SENT of $COUNT sent — $HELD kept for a later flush"
   else
+    rm -f "$KEPT" 2>/dev/null || true
     echo "checkpoint: $SENT of $COUNT sent — buffer kept for a later flush"
   fi
   exit 0
@@ -668,6 +713,38 @@ if [ "$CURL_RC" -ne 0 ]; then
   exit 0
 fi
 
+# Print what the server actually said. Do NOT guess at a cause: a status code alone
+# cannot tell us WHICH hop answered. Requests to a public host may be rejected by a
+# CDN, an API gateway, or a load balancer long before reaching the ingestion service,
+# and those hops return their own 4xx with their own semantics. An earlier version of
+# this script asserted ingestion-service meanings for every code and produced a
+# confidently wrong diagnosis.
+explain_http_error() {
+  if [ -s "$RESP_FILE" ]; then
+    echo "  response body:"
+    head -c 400 "$RESP_FILE" 2>/dev/null | sed 's/^/    /'
+    echo
+  else
+    echo "  (empty response body)"
+  fi
+  # Only interpret when the body is recognisably from one side or the other.
+  # HTML is checked first: a block page is neither the service nor the JSON API,
+  # and the earlier branches would otherwise mislabel it.
+  if head -c 200 "$RESP_FILE" 2>/dev/null | grep -qiE '<!DOCTYPE|<html'; then
+    echo "  ^ an HTML error page, so a CDN or WAF blocked this before it reached any"
+    echo "    application. Triggered by request SHAPE, not content — the known cause"
+    echo "    here is an unexpected custom header. Send only Content-Type."
+  elif grep -qiE 'status (Enabled|Disabled|Unknown)|Missing required parameter: app_id|Invalid UUID format' "$RESP_FILE" 2>/dev/null; then
+    echo "  ^ this is the ingestion service responding. Its codes: 202 accepted;"
+    echo "    400 = missing or malformed app_id query param; 415 = Content-Type"
+    echo "    is not exactly application/x-protobuf."
+  elif grep -qiE 'parse JSON|Authorization|API key' "$RESP_FILE" 2>/dev/null; then
+    echo "  ^ NOT the ingestion service. A JSON-parse or API-key error means the"
+    echo "    general OneSignal JSON API handled it, i.e. nothing is routed at this"
+    echo "    path. The real path is /sdk/log — check the URL."
+  fi
+}
+
 case "$HTTP_CODE" in
   # "Sent" means the ingestion service accepted it, and the service answers 202
   # (INGESTION_CONTRACT.md) — 200 is tolerated as its likeliest drift. A blanket
@@ -694,39 +771,25 @@ case "$HTTP_CODE" in
     note "no_response" "curl rc=0 but no status line"
     echo "checkpoint: $MILESTONE=$STATUS (no HTTP response; logged locally)"
     rebuffer ;;
-  4*|5*)
-    note "http_error" "HTTP $HTTP_CODE"
-    echo "checkpoint: $MILESTONE=$STATUS (reached a server, HTTP $HTTP_CODE; logged locally)"
-    echo "  The request left this machine — egress is NOT blocked. Something rejected it."
-    # Print what the server actually said. Do NOT guess at a cause: a status code
-    # alone cannot tell us WHICH hop answered. Requests to a public host may be
-    # rejected by a CDN, an API gateway, or a load balancer long before reaching
-    # the ingestion service, and those hops return their own 4xx with their own
-    # semantics. An earlier version of this script asserted ingestion-service
-    # meanings for every code and produced a confidently wrong diagnosis.
-    if [ -s "$RESP_FILE" ]; then
-      echo "  response body:"
-      head -c 400 "$RESP_FILE" 2>/dev/null | sed 's/^/    /'
-      echo
-    else
-      echo "  (empty response body)"
-    fi
-    # Only interpret when the body is recognisably from one side or the other.
-    # HTML is checked first: a block page is neither the service nor the JSON API,
-    # and the earlier branches would otherwise mislabel it.
-    if head -c 200 "$RESP_FILE" 2>/dev/null | grep -qiE '<!DOCTYPE|<html'; then
-      echo "  ^ an HTML error page, so a CDN or WAF blocked this before it reached any"
-      echo "    application. Triggered by request SHAPE, not content — the known cause"
-      echo "    here is an unexpected custom header. Send only Content-Type."
-    elif grep -qiE 'status (Enabled|Disabled|Unknown)|Missing required parameter: app_id|Invalid UUID format' "$RESP_FILE" 2>/dev/null; then
-      echo "  ^ this is the ingestion service responding. Its codes: 202 accepted;"
-      echo "    400 = missing or malformed app_id query param; 415 = Content-Type"
-      echo "    is not exactly application/x-protobuf."
-    elif grep -qiE 'parse JSON|Authorization|API key' "$RESP_FILE" 2>/dev/null; then
-      echo "  ^ NOT the ingestion service. A JSON-parse or API-key error means the"
-      echo "    general OneSignal JSON API handled it, i.e. nothing is routed at this"
-      echo "    path. The real path is /sdk/log — check the URL."
-    fi ;;
+  # 429 and 5xx are transient: the service asked us to slow down, or it failed on its
+  # own side. Hold the event and let a later flush try again. 429 must be matched before
+  # the 4* arm below, because `case` takes the first pattern that matches.
+  429|5*)
+    note "http_retryable" "HTTP $HTTP_CODE"
+    echo "checkpoint: $MILESTONE=$STATUS (HTTP $HTTP_CODE, transient; logged locally)"
+    echo "  The request left this machine — egress is NOT blocked. The server refused it"
+    echo "  in a way that can succeed later, so the event is held for a retry."
+    explain_http_error
+    rebuffer ;;
+  # Every other 4xx rejects THIS payload permanently. A malformed app_id or a wrong
+  # Content-Type fails identically on every attempt, so a re-buffered event would be
+  # retried forever and would block the rows behind it.
+  4*)
+    note "http_rejected" "HTTP $HTTP_CODE"
+    echo "checkpoint: $MILESTONE=$STATUS (HTTP $HTTP_CODE, permanent; logged locally)"
+    echo "  The request left this machine — egress is NOT blocked. Something rejected it,"
+    echo "  and the same payload would be rejected again, so it is NOT held for a retry."
+    explain_http_error ;;
   *)
     note "http_other" "HTTP $HTTP_CODE"
     echo "checkpoint: $MILESTONE=$STATUS (endpoint returned HTTP $HTTP_CODE; logged locally)" ;;
