@@ -187,7 +187,7 @@ The script fetches the official feed, resolves the exact `channels.stable.versio
 
 **Checkpoint:** `setup.sdk_pinned ok` once you have an exact version. If the endpoint was unreachable and you had to ask the user, that is `ok_after_fix releases_unreachable` — it is a real onboarding obstacle and worth counting, especially in sandboxed runtimes where egress is denied.
 
-Prefer the OneSignal MCP server's tools over raw curl for API reads if it is connected (api-reference "OneSignal MCP server"). The MCP cannot edit files, upload credentials, or resolve SDK versions — repo work and version resolution stay with you and the scripts.
+Prefer the OneSignal MCP server's tools over raw curl for API reads if it is connected (api-reference "OneSignal MCP server"). The MCP cannot edit files or resolve SDK versions — repo work and version resolution stay with you and the scripts. (It *can* now provision push credentials via the `provision_app_credentials` tool; the credentials skill owns that path and its App-ID precondition.)
 
 ## Step 5 — Declare the allow-list, compute diffs, get ONE approval (safety contract §4–6)
 

@@ -40,6 +40,12 @@ nothing persistent. Full install options (marketplace, MCP, Cursor) are in the R
   (Capacitor) gates that reject fabricated call shapes.
 - **Credentials work today** via the current app-key API path (Apple `.p8`,
   Firebase FCM v1 JSON uploaded for you; console steps guided).
+- **MCP credential provisioning (Phase 1, shipped).** The OneSignal MCP exposes
+  `provision_app_credentials` (mcp-http#111, merged) and the Rails credentials
+  endpoint accepts OAuth bearer tokens alongside app/org keys (LAU-725, done —
+  additive, flag-gated behind `integrations_feature_oauth_api_auth_05_26`). The
+  credentials skill prefers the tool when the MCP is connected, gated on an
+  App-ID precondition, with a direct-`POST` fallback.
 - **An eval harness** (`OS/general-eval`) with a 3-arm version comparison and
   per-check structural rows. Most recent signal: the plugin's version-pin
   discipline took Android + Expo gating from 0–67% up to 67–100%, and a
@@ -55,10 +61,11 @@ Be precise about these when you share — they're direction, not features:
   Turning that into a headless, eval-measured **confirmed-delivery rate** is
   **spiked, not built** — see `OS/general-eval/tmp/delivery-verification-spike.md`.
   This is the intended differentiator.
-- **MCP credential provisioning over OAuth.** Today the OneSignal MCP is
-  integrated for reads/sends but *cannot* upload credentials, and the Rails
-  endpoint doesn't accept OAuth tokens. The path to change that is **spec'd, not
-  built** — see `OS/mcp-http/tmp/` and `OS/OneSignal/tmp/` planning docs.
+- **MCP credential provisioning — remaining phases.** Phase 1 shipped (see
+  "What's real today"). **Not** built yet: create-or-update/replace semantics and
+  the OAuth-only lockdown (Rails Phases 3–4), after which app-key support is
+  retired. Until then provisioning stays write-once, and app-key remains the
+  default auth mode.
 - **Flutter template + `flutter analyze` eval gate** — blocked on installing the
   Flutter SDK.
 - **Cursor / Codex adapters and non-optional hooks** (verify + secret-scan) —
@@ -69,8 +76,9 @@ Be precise about these when you share — they're direction, not features:
 
 1. **Close the delivery loop** — make confirmed-delivery a real eval metric (the
    spike above is step one). Highest leverage; it's the thing competitors don't do.
-2. **Credential provisioning via OAuth/MCP** — the two planning docs sequence the
-   cross-repo work (mcp-http tool ← Rails OAuth endpoint ← auth-grpc scope).
+2. **Finish the OAuth credential path** — Phase 1 (the MCP tool + OAuth
+   acceptance) shipped; what remains is replace/create-or-update semantics and
+   the OAuth-only lockdown (Rails Phases 3–4), then retiring app-key support.
 3. **Regenerate reference docs from source** — kill doc rot while keeping the
    exact-string fidelity embedded docs give us.
 
