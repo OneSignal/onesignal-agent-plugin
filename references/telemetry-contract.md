@@ -40,6 +40,10 @@ throw that away.
 
 Clear it only when starting a genuinely new onboarding attempt.
 
+From schema 3 a second value, `seq`, gives the position of each milestone inside the run.
+`run_id` says which run, and `seq` says where in that run. Together they identify one
+milestone report.
+
 ## Milestones
 
 Each is `skill.milestone`. Status is `ok`, `ok_after_fix`, or `fail`.
@@ -97,14 +101,125 @@ reported as `ok` and nearly lost.
 ## What is sent
 
 Per event: milestone, status, failure class, `run_id`, platform, skill name, plugin
-version, agent runtime, OS, timestamp, and the **OneSignal App ID** — plus three fixed
-constants: the source tag (`onesignal-agent-plugin`), the payload schema version, and the
-service name (`OneSignalAgentSkill`).
+version, agent runtime, OS, timestamp, and the **OneSignal App ID** — plus the source tag
+(`onesignal-agent-plugin`) and the payload schema version. Schema 2 adds the service name
+(`OneSignalAgentSkill`). Schema 3 drops the service name and adds `seq`.
 
 Never sent: source code, file contents, file paths, project or package names, repo
 metadata, and — per the safety contract's "Never" rules and its "The setup key" section —
 **the setup key or any other credential**. The App ID is public (safety contract, "Never"
 section) and is the only identifier included.
+
+## Wire format
+
+Two transports exist. The plugin sends schema 2 today. Schema 3 replaces it when the REST
+endpoint is live. Read both: production holds schema 2 rows for as long as the old
+transport runs, so a query that spans the change must accept both shapes.
+
+### Schema 2 — OTLP protobuf to `/sdk/log` (current)
+
+`scripts/otlp_encode.py` builds the record, so the plugin controls every field. Resource
+attributes become GCP labels. The scope name is `onesignal-agent-skill`. The status sets
+the severity: `ok` gives INFO, `ok_after_fix` gives WARNING, `fail` gives ERROR. The
+record time is the event time.
+
+### Schema 3 — REST GET to `/agent-progress` (target, not live yet)
+
+The server builds the record from query parameters. The plugin sends the request with
+`curl -G --data-urlencode`, so curl encodes every value. The request needs no header.
+
+The server changes the request in 4 ways:
+
+1. It removes `app_id` from the parameters and writes it as the resource attribute
+   `ossdk.app_id`. The value stays a GCP label.
+2. It adds the prefix `os_agent.` to every other key, then writes the keys as log record
+   attributes. They land in `jsonPayload`, not in `labels`.
+3. It reads `timestamp` and stamps the record with that value. The service adds this
+   parameter for us. Without it the record carries the time of receipt, which is wrong
+   for every event that waited in the buffer.
+4. It writes severity INFO for every record, and it writes no log body.
+
+Point 4 is the reason `status` below repeats what the OTLP record carried in its own
+severity field.
+
+#### Keys
+
+| Key | Always sent | Example | Notes |
+|---|---|---|---|
+| `app_id` | yes | `6a1b2c3d-…` | The server consumes it. It is the only gate on the endpoint. |
+| `schema` | yes | `3` | Payload schema version. Schema 2 is the OTLP payload. |
+| `source` | yes | `onesignal-agent-plugin` | The discriminator. It replaces `scope_name` and `service.name`. |
+| `run_id` | yes | `73832ff7632b0476` | Stable for one funnel run. |
+| `seq` | yes | `1` | Position in the run. See below. |
+| `skill` | yes | `setup` | |
+| `milestone` | yes | `credentials_gate` | The bare milestone, without the skill. |
+| `status` | yes | `fail` | `ok`, `ok_after_fix` or `fail`. |
+| `failure_class` | no | `credentials_missing` | The key is absent when there is no class. |
+| `timestamp` | yes | `1786000000` | The event time, in epoch seconds. The server writes it as the record time. |
+| `platform` | yes | `android` | |
+| `runtime` | yes | `claude-code` | |
+| `os` | yes | `darwin` | |
+| `skill_version` | yes | `0.3.0` | |
+| `message` | yes | `onesignal onboarding [android/setup]: …` | The GCP message column is empty, because the server writes no body. |
+
+Do not send `severity`. The server always writes INFO, so the value only repeats `status`.
+
+Do not send `sdk_base`. `platform` holds the same value.
+
+An absent `failure_class` is deliberate. An empty value creates an attribute that holds an
+empty string, which every count of failure classes must then exclude.
+
+#### `seq` — the position of a report inside a run
+
+`seq` counts the milestone reports of one run. The `timestamp` parameter does not remove
+the need for it. There are 3 reasons:
+
+1. **A milestone repeats inside one run, by design.** The `setup` skill reports
+   `setup.preflight fail platform_ambiguous`, asks the user, then reports
+   `setup.preflight ok`. The pair is the recovery story. A key of `run_id` + milestone
+   holds 1 row for the 2 reports and deletes the recovery. A key of `run_id` + `seq` keeps
+   both, because a re-send of one report carries the same `seq`.
+2. **The timestamp holds whole seconds, so 2 reports can tie.** `checkpoint.sh` writes
+   whole seconds and the consumer reads whole seconds. Eval runs and CI runs report
+   several milestones inside one second.
+3. **The clock belongs to the user.** A machine with a wrong clock gives a wrong order and
+   a wrong absolute time. The counter never reads the clock.
+
+- The plugin keeps the counter in `.onesignal/seq`, next to `run_id`.
+- The first checkpoint of a run sends `seq=1`.
+- The counter increments one time for each milestone recorded, not for each send attempt.
+  A flush re-send carries the original number, exactly as it carries the original
+  `timestamp`.
+- `seq=0` means the plugin could not read or write the counter.
+
+**Order a run by `seq`.**
+
+#### Field mapping
+
+| Schema 2 | Schema 3 |
+|---|---|
+| `labels."ossdk.app_id"` | unchanged |
+| `labels.scope_name` | `jsonPayload."os_agent.source"` |
+| `labels.scope_version` | `jsonPayload."os_agent.skill_version"` |
+| `labels."service.name"` | removed |
+| `labels."agent.source"` | `jsonPayload."os_agent.source"` |
+| `labels."agent.platform"` | `jsonPayload."os_agent.platform"` |
+| `labels."agent.skill"` | `jsonPayload."os_agent.skill"` |
+| `labels."agent.runtime"` | `jsonPayload."os_agent.runtime"` |
+| `labels."agent.skill.version"` | `jsonPayload."os_agent.skill_version"` |
+| `labels."os.name"` | `jsonPayload."os_agent.os"` |
+| `labels."ossdk.sdk_base"` | `jsonPayload."os_agent.platform"` |
+| `jsonPayload."agent.milestone"` | `jsonPayload."os_agent.milestone"` |
+| `jsonPayload."agent.status"` | `jsonPayload."os_agent.status"` |
+| `jsonPayload."agent.failure_class"` | `jsonPayload."os_agent.failure_class"` |
+| `jsonPayload."agent.run_id"` | `jsonPayload."os_agent.run_id"` |
+| `jsonPayload."agent.schema"` | `jsonPayload."os_agent.schema"` |
+| severity INFO / WARNING / ERROR | `jsonPayload."os_agent.status"` |
+| the record timestamp | unchanged, set from the `timestamp` parameter |
+| the log message | `jsonPayload."os_agent.message"` |
+
+Only `ossdk.app_id` survives as a label. Every other filter moves into `jsonPayload`, which
+costs more to query. Keep `labels."ossdk.app_id"` in a query when the app is known.
 
 ## App ID ordering, and buffering
 
@@ -114,8 +229,8 @@ The ingestion endpoint requires the App ID as a query parameter, but
 - Milestones before the App ID is known are **written locally and held**.
 - Once Step 2 resolves it, run `bash scripts/checkpoint.sh flush` — each pending event is
   sent as its own request, carrying the now-known App ID and every field as recorded:
-  milestone, status, failure class, skill, timestamp, platform, source, run_id, runtime
-  and os. Nothing is re-derived at flush time.
+  milestone, status, failure class, skill, timestamp, platform, source, run_id, runtime,
+  os, and `seq` from schema 3. Nothing is re-derived at flush time.
 - Everything after that sends as it happens. A **transport failure** on one of those sends
   (blocked network, timeout, killed connection, no HTTP response) puts the event back into
   `pending.jsonl` for a later flush. Deterministic failures do not re-buffer: an encoder
@@ -162,12 +277,16 @@ The two logs answer different questions, and the distinction is what makes them 
 holds one row per delivery attempt. A buffered event that is later flushed therefore
 appears once in `checkpoints.jsonl` and twice in `transport.log` (`buffered`, then `sent`).
 
-The wire timestamp is the **event time**: `otlp_encode.py` stamps the record with the
-payload's own `ts`, and a flush re-send carries the buffered event's original `ts` through.
-So a milestone that waited in the buffer lands in GCP at the moment it happened, and
-ordering GCP results by timestamp reflects the user's actual experience — a recovered
+Under schema 2 the wire timestamp is the **event time**: `otlp_encode.py` stamps the record
+with the payload's own `ts`, and a flush re-send carries the buffered event's original `ts`
+through. So a milestone that waited in the buffer lands in GCP at the moment it happened,
+and ordering GCP results by timestamp reflects the user's actual experience — a recovered
 failure sorts *before* the recovery, even though it was sent after it. The send moment
 travels separately in `observed_time_unix_nano`.
+
+Schema 3 keeps that property through the `timestamp` parameter, which sets the record time
+on the server. Order a run by `seq` even so, because the timestamp holds whole seconds and
+2 reports in the same second have no order of their own.
 
 Because skills declare a file allow-list before writing (safety contract §4, §10),
 **`.onesignal/` must appear in that declared list and be added to `.gitignore`.** It is
@@ -175,9 +294,16 @@ run state, not project content, and must never be committed.
 
 ## Querying it
 
+Both queries start from the same 2 lines:
+
 ```
 resource.type="k8s_container"
 resource.labels.namespace_name="log-ingestion-service-production"
+```
+
+### Schema 2
+
+```
 labels.scope_name="onesignal-agent-skill"
 ```
 
@@ -186,8 +312,40 @@ Then slice by `labels."agent.platform"`, `labels."agent.skill"`,
 `jsonPayload."agent.run_id"` for funnel analysis — use `=` and not `=~`, since a regex
 silently merges runs.
 
+### Schema 3
+
+```
+jsonPayload."os_agent.source"="onesignal-agent-plugin"
+```
+
+Then slice by `jsonPayload."os_agent.platform"`, `jsonPayload."os_agent.skill"`,
+`jsonPayload."os_agent.milestone"` and `jsonPayload."os_agent.status"`. Group by
+`jsonPayload."os_agent.run_id"`, and order each run by `jsonPayload."os_agent.seq"`.
+Add `labels."ossdk.app_id"` when the app is known: it is the one field that stays an
+indexed label.
+
+Severity no longer separates outcomes, because the server writes INFO for every record.
+Read `jsonPayload."os_agent.status"` instead. Any saved view or alert that reads severity
+needs the same change.
+
+### De-duplication
+
 **De-duplication is mandatory, not optional.** A partial flush keeps the whole buffer, so
 an accepted event re-sends on the next attempt — duplicate delivery is a designed
 trade-off (never drop an event to avoid a duplicate). Every count, funnel step, and
-completion rate MUST first de-duplicate on `run_id` + milestone, keeping one row per pair
-(earliest timestamp). A query that skips this step overcounts whatever it measures.
+completion rate MUST first de-duplicate, keeping one row per key.
+
+**Schema 3:** de-duplicate on `run_id` + `seq`. Both values survive a re-send unchanged, so
+duplicates collapse and separate reports stay separate.
+
+**Schema 2** has no `seq`, so it needs a compound key: `run_id` + milestone + status +
+failure class, keeping the earliest timestamp. **Do not use `run_id` + milestone alone.**
+A milestone repeats inside one run by design: `setup.preflight` reports
+`fail platform_ambiguous`, the user answers, and the skill reports `ok`. The shorter key
+keeps only the failure and deletes the recovery, which is the exact friction the funnel
+exists to measure.
+
+Where `seq` is `0`, the counter was unavailable. Treat those rows as schema 2 and use the
+compound key.
+
+A query that skips this step overcounts whatever it measures.
