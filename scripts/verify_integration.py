@@ -32,6 +32,12 @@ CODE_EXTS = {".kt", ".java", ".swift", ".m", ".ts", ".tsx", ".js", ".jsx", ".dar
 RANGE_PATTERNS = [
     re.compile(r"OneSignal[\"']?\s*[,:]\s*[\"']?\[[^\]]*,"),          # gradle [x, y]
     re.compile(r"onesignal[^\n]*:\s*[\d.]+\s*\+"),                     # gradle x.y.+
+    # Gradle version catalog (.toml): declares with `key = "value"`, which the
+    # `:`-based gradle patterns can't see. Require the quoted-string context so a
+    # JS array assigned to an onesignal-named var (`= ["a", ...]`) isn't mistaken
+    # for a range. Covers both a [versions] alias and an inline [libraries] version.
+    re.compile(r"onesignal[^\n]*=\s*[\"']\[[^\]]*,", re.I),             # catalog "[x, y]"
+    re.compile(r"onesignal[^\n]*=\s*[\"'][\d.]+\s*\+", re.I),          # catalog "x.y.+"
     re.compile(r"\.package\([^)]*onesignal[^)]*upToNext(?:Major|Minor)", re.I),   # SPM OneSignal range fn
     re.compile(r"\.package\([^)]*onesignal[^)]*from\s*:", re.I),                   # SPM OneSignal from:
     re.compile(r"[\"'][^\"'\n]*onesignal[^\"'\n]*[\"']\s*:\s*[\"'][~^]"),  # npm ^/~ in package.json
