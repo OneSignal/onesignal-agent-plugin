@@ -123,24 +123,46 @@ attributes become GCP labels. The scope name is `onesignal-agent-skill`. The sta
 the severity: `ok` gives INFO, `ok_after_fix` gives WARNING, `fail` gives ERROR. The
 record time is the event time.
 
-### Schema 3 — REST GET to `/agent-progress` (target, not live yet)
+Do not read a schema 2 timestamp without checking the unit first. `otlp_encode.py` writes
+**seconds** into `time_unix_nano`, because the consumer used to read seconds. The service
+now divides the field by 1e9, so the same value reports a date in 1970. The file holds a
+`TIME_FIELD_IS_SECONDS` flag for exactly this change, and the flag has to flip to `False`
+when the new service reaches production.
 
-The server builds the record from query parameters. The plugin sends the request with
-`curl -G --data-urlencode`, so curl encodes every value. The request needs no header.
+### Schema 3 — REST to `/agent-progress` (merged, not yet confirmed in production)
 
-The server changes the request in 4 ways:
+The server builds the OTLP record from a flat key/value map. The endpoint accepts 2
+methods, and the behaviour below is identical for both:
 
-1. It removes `app_id` from the parameters and writes it as the resource attribute
-   `ossdk.app_id`. The value stays a GCP label.
-2. It adds the prefix `os_agent.` to every other key, then writes the keys as log record
+- **GET** carries every key in the query string, `app_id` included. The plugin sends this
+  form with `curl -G --data-urlencode`, so curl encodes every value and the request needs
+  no header.
+- **POST** carries `app_id` in the query string and the rest as a JSON object in the body.
+  A JSON value may be a number or a boolean, but the server flattens every value to a
+  string, so the stored shape is the same.
+
+**The plugin sends GET.** POST exists as the escape hatch if the query string ever grows
+past a proxy limit; nothing in this contract depends on the method.
+
+The server changes the map in 4 ways:
+
+1. It removes `app_id` and writes it as the resource attribute `ossdk.app_id`. The value
+   stays a GCP label, and it is the only key that does.
+2. It reserves `message` and writes it as the log record body, **not** as an attribute. So
+   `message` reaches GCP as `jsonPayload.message`, which is the line the Logs Explorer
+   shows for the row. Keep sending it: it is what makes a row readable without a query.
+3. It reserves `timestamp` and writes it as the record time, then drops the key. So there
+   is no `os_agent.timestamp`. The server reads epoch seconds, milliseconds, microseconds,
+   nanoseconds, or an RFC 3339 string, and picks the unit from the magnitude. A missing or
+   unreadable value falls back to the time of receipt.
+4. It adds the prefix `os_agent.` to every remaining key and writes those as log record
    attributes. They land in `jsonPayload`, not in `labels`.
-3. It reads `timestamp` and stamps the record with that value. The service adds this
-   parameter for us. Without it the record carries the time of receipt, which is wrong
-   for every event that waited in the buffer.
-4. It writes severity INFO for every record, and it writes no log body.
 
-Point 4 is the reason `status` below repeats what the OTLP record carried in its own
-severity field.
+It also writes severity INFO for every record. That is the reason `status` below repeats
+what the OTLP record carried in its own severity field.
+
+The reserved keys and the prefix live in `src/log/agent_progress.rs` in
+`log-ingestion-service`. Check that file before you assume any other key is special.
 
 #### Keys
 
@@ -155,12 +177,15 @@ severity field.
 | `milestone` | yes | `credentials_gate` | The bare milestone, without the skill. |
 | `status` | yes | `fail` | `ok`, `ok_after_fix` or `fail`. |
 | `failure_class` | no | `credentials_missing` | The key is absent when there is no class. |
-| `timestamp` | yes | `1786000000` | The event time, in epoch seconds. The server writes it as the record time. |
+| `timestamp` | yes | `1786000000` | The event time. The server consumes the key, so it never becomes an attribute. Epoch seconds, or any unit down to nanoseconds, or RFC 3339. |
 | `platform` | yes | `android` | |
 | `runtime` | yes | `claude-code` | |
 | `os` | yes | `darwin` | |
 | `skill_version` | yes | `0.3.0` | |
-| `message` | yes | `onesignal onboarding [android/setup]: …` | The GCP message column is empty, because the server writes no body. |
+| `message` | yes | `onesignal onboarding [android/setup]: …` | Becomes the log body, so GCP shows it as the row's own line. |
+
+Because the server also reads RFC 3339, the plugin can send the ISO 8601 `ts` value that
+`checkpoints.jsonl` already holds, with no conversion step. Either form is valid.
 
 Do not send `severity`. The server always writes INFO, so the value only repeats `status`.
 
@@ -180,8 +205,9 @@ the need for it. There are 3 reasons:
    holds 1 row for the 2 reports and deletes the recovery. A key of `run_id` + `seq` keeps
    both, because a re-send of one report carries the same `seq`.
 2. **The timestamp holds whole seconds, so 2 reports can tie.** `checkpoint.sh` writes
-   whole seconds and the consumer reads whole seconds. Eval runs and CI runs report
-   several milestones inside one second.
+   whole seconds. Eval runs and CI runs report several milestones inside one second. The
+   server accepts sub-second units, so the plugin could break most ties by sending
+   milliseconds — but a tie stays possible, and reasons 1 and 3 hold either way.
 3. **The clock belongs to the user.** A machine with a wrong clock gives a wrong order and
    a wrong absolute time. The counter never reads the clock.
 
@@ -215,8 +241,8 @@ the need for it. There are 3 reasons:
 | `jsonPayload."agent.run_id"` | `jsonPayload."os_agent.run_id"` |
 | `jsonPayload."agent.schema"` | `jsonPayload."os_agent.schema"` |
 | severity INFO / WARNING / ERROR | `jsonPayload."os_agent.status"` |
-| the record timestamp | unchanged, set from the `timestamp` parameter |
-| the log message | `jsonPayload."os_agent.message"` |
+| the record timestamp | set from the `timestamp` parameter |
+| `jsonPayload.message` | unchanged — the `message` parameter becomes the body |
 
 Only `ossdk.app_id` survives as a label. Every other filter moves into `jsonPayload`, which
 costs more to query. Keep `labels."ossdk.app_id"` in a query when the app is known.
@@ -277,16 +303,22 @@ The two logs answer different questions, and the distinction is what makes them 
 holds one row per delivery attempt. A buffered event that is later flushed therefore
 appears once in `checkpoints.jsonl` and twice in `transport.log` (`buffered`, then `sent`).
 
-Under schema 2 the wire timestamp is the **event time**: `otlp_encode.py` stamps the record
-with the payload's own `ts`, and a flush re-send carries the buffered event's original `ts`
-through. So a milestone that waited in the buffer lands in GCP at the moment it happened,
-and ordering GCP results by timestamp reflects the user's actual experience — a recovered
-failure sorts *before* the recovery, even though it was sent after it. The send moment
-travels separately in `observed_time_unix_nano`.
+Both schemas put the **event time** on the wire, not the send time. Schema 2 stamps the
+record in `otlp_encode.py` from the payload's own `ts`; schema 3 sends the same value as
+the `timestamp` parameter and the server stamps the record. A flush re-send carries the
+buffered event's original `ts` either way, so a milestone that waited in the buffer reports
+the moment it happened. Under schema 2 the send moment travels separately in
+`observed_time_unix_nano`.
 
-Schema 3 keeps that property through the `timestamp` parameter, which sets the record time
-on the server. Order a run by `seq` even so, because the timestamp holds whole seconds and
-2 reports in the same second have no order of their own.
+**Order a run by `seq`, not by a timestamp.** The event time reaches GCP as
+`jsonPayload.timestamp`, and it is **not confirmed** that GCP promotes the value to the log
+entry timestamp — the column the Logs Explorer sorts by. The consumer writes the value as
+an ISO 8601 string under the key `timestamp`, and Google's agent documents the promotion
+only for `timestamp` as an object of `seconds` and `nanos`, for `timestampSeconds` with
+`timestampNanos`, or for a string under the key `time`. One production sample agrees with
+the pessimistic reading: the entry timestamp held the time of receipt while
+`jsonPayload.timestamp` kept the event time. Until somebody checks one record end to end,
+read the event time from `jsonPayload.timestamp` and order by `seq`.
 
 Because skills declare a file allow-list before writing (safety contract §4, §10),
 **`.onesignal/` must appear in that declared list and be added to `.gitignore`.** It is
