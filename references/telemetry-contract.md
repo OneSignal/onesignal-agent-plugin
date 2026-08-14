@@ -192,12 +192,22 @@ methods, and the behaviour below is identical for both:
   string, so the stored shape is the same.
 
 **The plugin sends GET.** Nothing in this contract depends on the method, and the query
-string has room. The longest possible request measures 494 bytes, with the longest value
-from every enum, and `message` is the only free-text field — the plugin builds it from the
-other fields, so it cannot grow without bound. No setting in `OneSignal/infra` bounds a
-URL, a query string, or a request header for this service. The one size limit on the path
-is a Cloudflare rule that blocks a `POST /sdk/log` body above 64 KB, and no GET request
-meets it. So the reason to choose POST would be the edge route below, not the size.
+string has room to spare.
+
+The longest possible request measures 494 bytes, with the longest value from every enum.
+`message` is the only free-text field, and the plugin builds it from the other fields, so it
+cannot grow without bound. jlbelmonte reports that Cloudflare accepts a URL up to 32 KB, so
+the request uses about 1.5% of the budget. No setting in `OneSignal/infra` or
+`OneSignal/infra-foundation` bounds a URL, a query string, or a request header for this
+service, so the remaining hops (the GCP load balancer and Envoy) apply their own defaults.
+Neither default is measured, and neither is plausibly below 494 bytes.
+
+The one other size limit on the path is a Cloudflare rule that blocks a `POST /sdk/log` body
+above 64 KB, and no GET request meets it.
+
+**So size is not a reason to prefer POST.** The only reason to choose POST is the edge route
+below. A new field costs about 25 bytes, so the budget is not a constraint on the schema
+either.
 
 #### The edge route does not exist yet
 
