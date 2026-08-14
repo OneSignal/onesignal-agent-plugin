@@ -141,8 +141,29 @@ methods, and the behaviour below is identical for both:
   A JSON value may be a number or a boolean, but the server flattens every value to a
   string, so the stored shape is the same.
 
-**The plugin sends GET.** POST exists as the escape hatch if the query string ever grows
-past a proxy limit; nothing in this contract depends on the method.
+**The plugin sends GET.** Nothing in this contract depends on the method, and the query
+string has room. The longest possible request measures 494 bytes, with the longest value
+from every enum, and `message` is the only free-text field — the plugin builds it from the
+other fields, so it cannot grow without bound. No setting in `OneSignal/infra` bounds a
+URL, a query string, or a request header for this service. The one size limit on the path
+is a Cloudflare rule that blocks a `POST /sdk/log` body above 64 KB, and no GET request
+meets it. So the reason to choose POST would be the edge route below, not the size.
+
+#### The edge route does not exist yet
+
+`api.onesignal.com` reaches this service through 1 Emissary mapping, and that mapping reads
+`prefix: "/sdk/log"` with `method: "POST"`, in
+`kubernetes/helmfiles/apps/emissary/production/mappings-production.yml`. The string
+`agent-progress` appears nowhere in `OneSignal/infra`. So 2 changes have to land in that
+repo before any schema 3 request reaches the service:
+
+1. A mapping for `/agent-progress` on `api.onesignal.com`, with `auth: { bypass: true }`.
+   The endpoint carries no header, and `app_id` is the whole gate.
+2. `GET` in the method list of that mapping. A copy of the mapping above rejects a GET at
+   the edge, and the service never sees the request.
+
+The merged server code is necessary but not enough. Confirm the mapping before you read an
+empty dashboard as an empty funnel.
 
 The server changes the map in 4 ways:
 
