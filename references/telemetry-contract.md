@@ -244,7 +244,7 @@ The reserved keys and the prefix live in `src/log/agent_progress.rs` in
 | `status` | yes | `fail` | `ok`, `ok_after_fix` or `fail`. |
 | `failure_class` | no | `credentials_missing` | The key is absent when there is no class. |
 | `timestamp` | yes | `1786000000` | The event time. The server consumes the key, so it never becomes an attribute. Epoch seconds, or any unit down to nanoseconds, or RFC 3339. |
-| `platform` | yes | `android` | |
+| `platform` | yes | `android` | A closed set. See below. |
 | `runtime` | yes | `claude-code` | |
 | `os` | yes | `darwin` | |
 | `skill_version` | yes | `0.3.0` | |
@@ -254,6 +254,18 @@ Because the server also reads RFC 3339, the plugin can send the ISO 8601 `ts` va
 `checkpoints.jsonl` already holds, with no conversion step. Either form is valid.
 
 Do not send `severity`. The server always writes INFO, so the value only repeats `status`.
+
+#### The `platform` vocabulary
+
+`platform` is a filter key for every funnel query, so it holds a closed set of 9 tokens:
+
+`android`, `ios`, `web`, `react-native`, `expo`, `flutter`, `capacitor`, `cordova`, `unity`.
+
+`scripts/detect_platform.py` emits exactly these values, and `setup/SKILL.md` Step 1 writes
+the script's value into `.onesignal/platform`. A 10th value, `unknown`, reaches the wire
+only when `checkpoint.sh` finds no readable file. Never add a spelling outside this set: a
+second spelling of one platform splits that row of the funnel and every count built on it.
+`capacitor` covers Ionic, because an Ionic app is a Capacitor app or a Cordova app.
 
 Do not send `sdk_base`. `platform` holds the same value.
 

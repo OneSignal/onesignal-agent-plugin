@@ -83,23 +83,28 @@ The production entry point is **`/onesignal:setup app=<APP_ID> token=<key>`**. I
 
 Step 0.2 already ran `detect_platform.py`, which returns the platform, language, and package manager per package. Use its output as the source of truth. The table below documents the signals it matches — consult it to interpret results or when the script is unavailable; do not re-derive detection by hand when the script has run. Never execute repo manifests.
 
-| Signal file / content | Platform → reference |
-|---|---|
-| `package.json` has `expo` dep OR `app.json`/`app.config.{js,ts}` with `expo` key | **Expo** → [expo.md](expo.md) |
-| `package.json` has `react-native` (no `expo`) | **React Native (bare)** → [cross-platform.md](cross-platform.md) |
-| `pubspec.yaml` | **Flutter** → [cross-platform.md](cross-platform.md) |
-| `capacitor.config.{ts,js,json}` OR `@capacitor/core` in `package.json` | **Capacitor / Ionic** → [cross-platform.md](cross-platform.md) |
-| `config.xml` + `cordova` in `package.json` | **Cordova** → [cross-platform.md](cross-platform.md) |
-| `*.csproj`/`ProjectSettings/` with Unity, `Assets/` folder | **Unity** → [cross-platform.md](cross-platform.md) (agent-automatability is LOW; see matrix) |
-| `Podfile`, `*.xcodeproj`/`*.xcworkspace`, `Package.swift` with iOS product, `AppDelegate.swift`/`.m` | **iOS native** → [ios.md](ios.md) |
-| `build.gradle`/`build.gradle.kts` + `AndroidManifest.xml`, no JS/Flutter manifest | **Android native** → [android.md](android.md) |
-| `package.json` web deps (`next`, `react-dom`, `vue`, `@angular/core`, `svelte`, `vite`) OR plain `index.html` with no native project | **Web** → [web.md](web.md) |
+The `token` column is the value the script emits, and the only spelling that may reach a
+file or the wire. The bold name is for your prose to the user.
+
+| Signal file / content | Platform → reference | token |
+|---|---|---|
+| `package.json` has `expo` dep OR `app.json`/`app.config.{js,ts}` with `expo` key | **Expo** → [expo.md](expo.md) | `expo` |
+| `package.json` has `react-native` (no `expo`) | **React Native (bare)** → [cross-platform.md](cross-platform.md) | `react-native` |
+| `pubspec.yaml` | **Flutter** → [cross-platform.md](cross-platform.md) | `flutter` |
+| `capacitor.config.{ts,js,json}` OR `@capacitor/core` in `package.json` | **Capacitor / Ionic** → [cross-platform.md](cross-platform.md) | `capacitor` |
+| `config.xml` + `cordova` in `package.json` | **Cordova** → [cross-platform.md](cross-platform.md) | `cordova` |
+| `*.csproj`/`ProjectSettings/` with Unity, `Assets/` folder | **Unity** → [cross-platform.md](cross-platform.md) (agent-automatability is LOW; see matrix) | `unity` |
+| `Podfile`, `*.xcodeproj`/`*.xcworkspace`, `Package.swift` with iOS product, `AppDelegate.swift`/`.m` | **iOS native** → [ios.md](ios.md) | `ios` |
+| `build.gradle`/`build.gradle.kts` + `AndroidManifest.xml`, no JS/Flutter manifest | **Android native** → [android.md](android.md) | `android` |
+| `package.json` web deps (`next`, `react-dom`, `vue`, `@angular/core`, `svelte`, `vite`) OR plain `index.html` with no native project | **Web** → [web.md](web.md) | `web` |
 
 **Monorepo / workspaces:** if `package.json` has `workspaces`, a `pnpm-workspace.yaml`, `lerna.json`, `nx.json`, or `turbo.json`, enumerate each package and detect per-package. A repo can hold BOTH a web app and a mobile app. Do NOT assume one platform for the whole repo.
 
 **Ambiguous or multiple candidates → ASK.** Do not guess. Present the detected candidates and let the user pick which package(s) to integrate. React Native could be bare or Expo — if unclear, ask. If detection finds nothing recognizable, ask the user to name their platform/framework rather than proceeding. **Report the dropout before ending the turn to ask**: `bash <plugin>/scripts/checkpoint.sh setup.preflight fail platform_ambiguous`. When the user answers and detection resolves, report the normal checkpoint below — the fail→ok pair records the friction.
 
-**Checkpoint.** Once the platform is known, write it and report preflight — it will buffer until Step 2:
+**Checkpoint.** Once the platform is known, write it and report preflight — it will buffer until Step 2.
+
+Write `<platform>` as the **exact** `platform` value from `detect_platform.py`, for the package you are integrating — one of the tokens in the table above. If the script did not run, take the token from the row you matched. Never write a bold display name, never change the case, and never invent a spelling: the value becomes a filter key in the onboarding funnel, so `iOS native` and `ios` count as two platforms and split one row of the funnel in half.
 
 ```bash
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
