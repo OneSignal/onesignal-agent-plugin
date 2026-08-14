@@ -124,19 +124,46 @@ The ingestion endpoint requires the App ID as a query parameter, but
   sent as its own request, carrying the now-known App ID and every field as recorded:
   milestone, status, failure class, skill, timestamp, platform, source, run_id, runtime
   and os. Nothing is re-derived at flush time.
-- Everything after that sends as it happens. A **transport failure** on one of those sends
-  (blocked network, timeout, killed connection, no HTTP response) puts the event back into
-  `pending.jsonl` for a later flush. Deterministic failures do not re-buffer: an encoder
-  error or an HTTP 4xx would fail identically on every retry, forever.
+- Everything after that sends as it happens. A failed send is held for a later flush or
+  dropped, according to the retry matrix below.
 - Run `flush` one final time at `setup.complete`, so events re-buffered mid-run get a
   second attempt before the session ends.
 
-The buffer is cleared **only when every pending event was accepted**. If egress is blocked
-the events stay in `pending.jsonl` for a later flush, so a run that later gains network
-access loses nothing — this holds both before the App ID exists and after it. A partial
-flush reports `<n> of <total> sent` and keeps the whole buffer; the accepted events will
-be re-sent on the next attempt, so treat duplicate delivery as possible and de-duplicate
-on `run_id` + milestone when analysing.
+A flush sends each row as its own request and keeps **only the rows that failed**. An event
+confirmed as accepted is never sent again, so a single bad row no longer forces the whole
+buffer to be re-delivered. A partial flush reports `<n> of <total> sent — <k> kept for a
+later flush`, and the buffer file is rewritten with those `k` rows.
+
+If egress is blocked, events stay in `pending.jsonl` and a run that later gains network
+access loses nothing. That holds both before the App ID exists and after it.
+
+### Retry matrix
+
+The rule is whether an identical retry could plausibly succeed. Anything transient is held;
+anything that rejects **this** payload is dropped, because a permanent failure re-queued
+forever would also block every row behind it.
+
+| Outcome | `transport.log` | Held for a retry? |
+| --- | --- | --- |
+| `202` (or `200`) with an empty body | `sent` | Delivered, nothing to hold |
+| `2xx` with an HTML body (captive portal) | `http_2xx_html` | Yes — never reached the service |
+| `2xx` otherwise unexpected | `http_2xx_unexpected` | Yes — delivery unconfirmed |
+| `curl` never got a reply | `dns_unresolved`, `connection_refused`, `timeout`, `tls_error`, `connection_killed`, `curl_rc_<n>` | Yes |
+| `curl` succeeded but sent no status line | `no_response` | Yes |
+| `429` — rate limited | `http_retryable` | Yes |
+| `5xx` — server or gateway error | `http_retryable` | Yes |
+| Any other `4xx`, including `400` and `415` | `http_rejected` | **No** — same payload fails again |
+| `1xx` or `3xx` | `http_other` | **No** — the endpoint is misconfigured, not busy |
+| Encoder error before any request | `encode_failed` | **No** — deterministic |
+
+`429` is the one 4xx that is held: it is an instruction to slow down, not a verdict on the
+payload. `408` and `425` are treated as permanent, because the ingestion service does not
+emit them — a gateway that does would cost one dropped checkpoint, not a retry loop.
+
+**Delivery is at-least-once, so de-duplication stays mandatory.** Per-row bookkeeping
+removes the *bulk* duplicate source, but not every one: a request whose response is lost
+after the server accepted it is indistinguishable from a request that never arrived, so it
+is held and re-sent. Never drop an event to avoid a duplicate.
 
 **Never substitute a placeholder or demo App ID to make an early send work.** Setup Step 2
 already forbids hardcoded fallback App IDs, and attributing a real user's onboarding to a
@@ -194,8 +221,9 @@ Then slice by `labels."agent.platform"`, `labels."agent.skill"`,
 `jsonPayload."agent.run_id"` for funnel analysis — use `=` and not `=~`, since a regex
 silently merges runs.
 
-**De-duplication is mandatory, not optional.** A partial flush keeps the whole buffer, so
-an accepted event re-sends on the next attempt — duplicate delivery is a designed
-trade-off (never drop an event to avoid a duplicate). Every count, funnel step, and
+**De-duplication is mandatory, not optional.** Delivery is at-least-once: a response lost
+after the server accepted the request cannot be told apart from one that never arrived, so
+the event is held and re-sent — duplicate delivery is a designed trade-off (never drop an
+event to avoid a duplicate). Every count, funnel step, and
 completion rate MUST first de-duplicate on `run_id` + milestone, keeping one row per pair
 (earliest timestamp). A query that skips this step overcounts whatever it measures.
