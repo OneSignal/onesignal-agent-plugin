@@ -174,7 +174,12 @@ now divides the field by 1e9, so the same value reports a date in 1970. The file
 `TIME_FIELD_IS_SECONDS` flag for exactly this change, and the flag has to flip to `False`
 when the new service reaches production.
 
-### Schema 3 — REST to `/agent-progress` (merged, not yet confirmed in production)
+### Schema 3 — REST to `/sdk/agent-progress` (merged, not yet confirmed in production)
+
+The full path is `https://api.onesignal.com/sdk/agent-progress`. The service nests every
+per-app route under `/sdk` (`nest_service("/sdk", …)` in `router.rs`), which is why the
+current OTLP path is `/sdk/log`. The handler file names the route `/agent-progress`, so read
+the nest before you copy a path out of that file.
 
 The server builds the OTLP record from a flat key/value map. The endpoint accepts 2
 methods, and the behaviour below is identical for both:
@@ -196,16 +201,30 @@ meets it. So the reason to choose POST would be the edge route below, not the si
 
 #### The edge route does not exist yet
 
-`api.onesignal.com` reaches this service through 1 Emissary mapping, and that mapping reads
-`prefix: "/sdk/log"` with `method: "POST"`, in
-`kubernetes/helmfiles/apps/emissary/production/mappings-production.yml`. The string
-`agent-progress` appears nowhere in `OneSignal/infra`. So 2 changes have to land in that
-repo before any schema 3 request reaches the service:
+`api.onesignal.com` reaches this service through 1 Emissary mapping, in
+`kubernetes/helmfiles/apps/emissary/production/mappings-production.yml`. The mapping matches
+`prefix: "/sdk/log"` with `method: "POST"`, and it covers no other path. No mapping matches
+`/sdk/agent-progress`, and the string `agent-progress` appears nowhere in `OneSignal/infra`.
+The only other `/sdk` prefix in the file is `/sdks/`, plural, which belongs to a different
+service. So a new mapping has to land in that repo, and it has to allow GET. The repo already
+uses that form for other routes, so the shape is settled:
 
-1. A mapping for `/agent-progress` on `api.onesignal.com`, with `auth: { bypass: true }`.
-   The endpoint carries no header, and `app_id` is the whole gate.
-2. `GET` in the method list of that mapping. A copy of the mapping above rejects a GET at
-   the edge, and the service never sees the request.
+```yaml
+- service: log-ingestion-http.log-ingestion-service-production
+  hostname: api.onesignal.com
+  auth: { bypass: true }
+  routes:
+    - name: agent-progress-production
+      spec:
+        prefix: "/sdk/agent-progress"
+        method: "(GET|POST)"
+        method_regex: true
+```
+
+`auth: { bypass: true }` matches the existing route. The endpoint carries no header, and
+`app_id` is the whole gate. `method_regex` is needed because `method` holds 1 method
+otherwise, and a copy of the current mapping would reject a GET at the edge. The staging file
+needs the same route, for a test before the cutover.
 
 The merged server code is necessary but not enough. Confirm the mapping before you read an
 empty dashboard as an empty funnel.
