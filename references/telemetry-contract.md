@@ -38,7 +38,44 @@ mapping, and the degradation behaviour.
 through `conversions` and see exactly which step they stopped at. A per-skill id would
 throw that away.
 
-Clear it only when starting a genuinely new onboarding attempt.
+### When a run ends
+
+A run ends when the plugin starts a new one. `checkpoint.sh` starts a new run when either
+rule below is true. In every other case it reuses the cached id.
+
+**Rule 1 — a second entry into setup.** The milestone is `setup.preflight`, and the current
+run already holds a `setup.preflight` row with status `ok` or `ok_after_fix`. One run passes
+preflight at most one time, so a second pass is a new attempt.
+
+**Rule 2 — 8 hours with no checkpoint.** `.onesignal/run_last_seen` holds the epoch time of
+the last checkpoint. A gap of more than 8 hours starts a new run.
+
+Rule 1 keeps every `fail` → `ok` recovery pair inside one run. Setup reports
+`setup.preflight fail dirty_tree`, stops to ask the user, then reports `setup.preflight ok`
+in the same session. The run holds no successful preflight when the failure is reported, so
+the pair stays together. A reset at every `setup.preflight` would split the pair. The
+milestone alone is therefore not the rule.
+
+Rule 2 covers the case rule 1 cannot see. A user can stop at `fail dirty_tree` and never
+reach a successful preflight. Rule 1 finds no successful preflight in that run, so a later
+attempt would merge into the abandoned one. The 8 hour limit separates them. The value is a
+judgment: a recovery inside one conversation takes minutes, and a user who returns the next
+morning starts a new attempt.
+
+Both rules fail safe. The plugin keeps the cached id if `run_last_seen` is absent, if the
+value is unreadable, or if it cannot read the local record. A merged run under-counts one
+dropout. A wrong reset invents a run that never happened, which is worse.
+
+Two behaviours do not change. `ONESIGNAL_SKILL_RUN_ID` always wins and is never persisted,
+so CI smoke tests keep their own id. Deletion of `.onesignal/` still starts a new run, which
+is how each eval fixture gets one run.
+
+A reset does not touch `pending.jsonl`. A held event carries the `run_id` it was recorded
+with, so it still flushes into the run it belongs to.
+
+One run can hold more than one `setup.preflight` row, by design. A de-duplication key of
+`run_id` + milestone is therefore not enough. SDK-5017 defines the full key. That ticket
+also adds a per-run `seq` counter, and a reset must set `seq` back to 0.
 
 ## Milestones
 
@@ -189,8 +226,9 @@ treat their absence as a floor, not a measurement.
 
 ## Local state
 
-Everything lands in `.onesignal/` at the repo root: `run_id`, `checkpoints.jsonl` (every
-payload, sent or not), `transport.log` (what happened to each attempt), `pending.jsonl`.
+Everything lands in `.onesignal/` at the repo root: `run_id`, `run_last_seen` (the epoch
+time of the last checkpoint, which rule 2 reads), `checkpoints.jsonl` (every payload, sent
+or not), `transport.log` (what happened to each attempt), `pending.jsonl`.
 
 The two logs answer different questions, and the distinction is what makes them assertable:
 **`checkpoints.jsonl` holds exactly one row per milestone reported**, and `transport.log`

@@ -366,16 +366,46 @@ if [ -n "$APP_ID" ] && ! printf '%s' "$APP_ID" | grep -qE "$UUID_RE"; then
 fi
 
 # ---------------------------------------------------------------------------
-# run_id — stable across the checkpoints of a single install, random per run.
+# transport.log and note() must be defined BEFORE the run_id block below, which
+# audits a run reset and a failed run_id cache write. note() used to live further
+# down the file, so `note "run_id_write_failed"` called a function that did not
+# exist yet and logged nothing at all.
+# ---------------------------------------------------------------------------
+TS="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)"
+TRANSPORT_LOG="$STATE_DIR/transport.log"
+
+# Every transport outcome also goes to $ONESIGNAL_SKILL_RESULT_FILE when set, because a
+# caller cannot learn it from the exit status — this script always exits 0. `flush` is
+# the caller that needs it, to tell an accepted send from a refused one.
+note() {
+  printf '%s\t%s\t%s\t%s\n' "$TS" "$MILESTONE" "$1" "$2" >> "$TRANSPORT_LOG" 2>/dev/null || true
+  if [ -n "${ONESIGNAL_SKILL_RESULT_FILE:-}" ]; then
+    printf '%s' "$1" > "$ONESIGNAL_SKILL_RESULT_FILE" 2>/dev/null || true
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# run_id — stable across the checkpoints of one funnel run, random per run.
 #
 # $ONESIGNAL_SKILL_RUN_ID overrides and is NOT persisted. Used for out-of-band
 # checks (CI smoke tests, manual verification runs) so they never share a
 # run_id with a real install and cannot corrupt completion-rate counting.
 #
 # Otherwise the id is cached in .onesignal/run_id so the milestones of one
-# install share it. NOTHING CLEARS THAT FILE TODAY: reusing a project directory
-# merges a new onboarding attempt into the previous run's id. When a run ends —
-# and what should reset it — is an open design question, tracked in SDK-5016.
+# install share it. Two rules end a run — see "When a run ends" in
+# references/telemetry-contract.md:
+#
+#   1. A second entry into setup: this checkpoint is setup.preflight AND the
+#      cached run already passed preflight. One run passes preflight at most
+#      once, so a second pass is a new attempt. Keying on the milestone ALONE
+#      would be wrong. Setup reports `preflight fail dirty_tree`, stops to ask
+#      the user, then reports `preflight ok` in the same session, and that
+#      fail -> ok pair is one run by design.
+#   2. Idle for longer than RUN_IDLE_LIMIT. Covers the run abandoned BEFORE
+#      preflight ever succeeded, which rule 1 cannot see.
+#
+# Both rules fail safe toward KEEPING the cached id. A merged run under-counts
+# one dropout; a wrong reset invents a run that never happened.
 # ---------------------------------------------------------------------------
 new_id() {
   if [ -r /dev/urandom ]; then
@@ -386,10 +416,47 @@ new_id() {
 }
 
 RUN_ID_FILE="$STATE_DIR/run_id"
+LAST_SEEN_FILE="$STATE_DIR/run_last_seen"
+RUN_ENTRY_POINT="setup.preflight"
+RUN_IDLE_LIMIT=28800   # 8 hours
+NOW_EPOCH="$(date +%s 2>/dev/null || echo 0)"
+case "$NOW_EPOCH" in ''|*[!0-9]*) NOW_EPOCH=0 ;; esac
+
+# Rule 1. Only PRIOR rows can match: the current event is appended to
+# checkpoints.jsonl further down, so it cannot see itself here.
+run_passed_entry_point() {
+  [ -f "$STATE_DIR/checkpoints.jsonl" ] || return 1
+  grep -F "\"run_id\":\"$RUN_ID\"" "$STATE_DIR/checkpoints.jsonl" 2>/dev/null \
+    | grep -E "\"milestone\":\"$MILESTONE\",\"status\":\"(ok|ok_after_fix)\"" \
+    | grep -qF "\"skill\":\"$SKILL_NAME\""
+}
+
+# Rule 2. An absent or unparsable stamp means "cannot tell" — keep the run.
+run_is_idle() {
+  local last
+  [ "$NOW_EPOCH" -gt 0 ] || return 1
+  [ -f "$LAST_SEEN_FILE" ] || return 1
+  last="$(cat "$LAST_SEEN_FILE" 2>/dev/null)"
+  case "$last" in ''|*[!0-9]*) return 1 ;; esac
+  [ $(( NOW_EPOCH - last )) -gt "$RUN_IDLE_LIMIT" ]
+}
+
 if [ -n "${ONESIGNAL_SKILL_RUN_ID:-}" ]; then
   RUN_ID="$ONESIGNAL_SKILL_RUN_ID"
 else
   [ -f "$RUN_ID_FILE" ] && RUN_ID="$(cat "$RUN_ID_FILE" 2>/dev/null)"
+  if [ -n "${RUN_ID:-}" ]; then
+    RESET_REASON=""
+    if [ "$RAW_MILESTONE" = "$RUN_ENTRY_POINT" ] && run_passed_entry_point; then
+      RESET_REASON="second $RUN_ENTRY_POINT in one run"
+    elif run_is_idle; then
+      RESET_REASON="idle for longer than $(( RUN_IDLE_LIMIT / 3600 ))h"
+    fi
+    if [ -n "$RESET_REASON" ]; then
+      note "run_reset" "$RESET_REASON — previous run_id was $RUN_ID"
+      RUN_ID=""
+    fi
+  fi
   if [ -z "${RUN_ID:-}" ]; then
     RUN_ID="$(new_id)"
     RUN_ID="${RUN_ID:-$(date +%s)-$$}"
@@ -403,6 +470,12 @@ else
       echo "  count as one funnel run. Check permissions on $STATE_DIR."
     fi
   fi
+fi
+
+# Mark activity for rule 2. The flush child re-sends an event that was recorded
+# earlier, so it must not extend the session.
+if [ "${ONESIGNAL_SKILL_SKIP_LOCAL_RECORD:-0}" != "1" ] && [ "$NOW_EPOCH" -gt 0 ]; then
+  printf '%s' "$NOW_EPOCH" > "$LAST_SEEN_FILE" 2>/dev/null || true
 fi
 
 # ---------------------------------------------------------------------------
@@ -432,7 +505,6 @@ detect_runtime() {
 RUNTIME="${ONESIGNAL_SKILL_RUNTIME:-$(detect_runtime)}"
 OS_NAME="${ONESIGNAL_SKILL_OS:-$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')}"
 OS_NAME="${OS_NAME:-unknown}"
-TS="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)"
 
 # The payload's ts is the EVENT time, which the encoder stamps onto the wire
 # record. A flush re-send passes the buffered event's original ts in via
@@ -516,27 +588,15 @@ if [ "${ONESIGNAL_SKILL_SKIP_LOCAL_RECORD:-0}" != "1" ]; then
   fi
 fi
 
-TRANSPORT_LOG="$STATE_DIR/transport.log"
-
-# Every transport outcome also goes to $ONESIGNAL_SKILL_RESULT_FILE when set, because a
-# caller cannot learn it from the exit status — this script always exits 0. `flush` is
-# the caller that needs it, to tell an accepted send from a refused one.
-note() {
-  printf '%s\t%s\t%s\t%s\n' "$TS" "$MILESTONE" "$1" "$2" >> "$TRANSPORT_LOG" 2>/dev/null || true
-  if [ -n "${ONESIGNAL_SKILL_RESULT_FILE:-}" ]; then
-    printf '%s' "$1" > "$ONESIGNAL_SKILL_RESULT_FILE" 2>/dev/null || true
-  fi
-}
-
 # Hold this event for a later flush after a TRANSPORT failure. Buffering used to
 # be gated only on a missing App ID, so once Step 2 wrote it (5 of 7 milestones),
 # a blocked network dropped every event with exit 0 while the contract promised
-# a later flush "loses nothing". Scope: transport failures only — an encoder
-# error or an HTTP 4xx is deterministic, so re-sending the identical payload
-# would fail identically, forever, on every future flush.
+# a later flush "loses nothing". Scope: the outcomes marked as held in the retry
+# matrix. An encoder error, or a 4xx that is not 429, rejects this exact payload,
+# so a re-send would fail in the same way on every future flush.
 #
-# A flush child must NOT re-append: the parent keeps the whole buffer when any
-# send fails, so appending here would duplicate the row on every attempt.
+# A flush child must NOT re-append: the parent collects the rows that failed and
+# rewrites the buffer, so appending here would duplicate the row.
 rebuffer() {
   if [ "${ONESIGNAL_SKILL_SKIP_LOCAL_RECORD:-0}" = "1" ]; then
     return 0
