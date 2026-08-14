@@ -29,7 +29,13 @@ These are non-negotiable. Breaking one is a failure of the skill, not a judgment
 
 ## Step 2 — Rank sources and grep for signals (richest → weakest)
 
-Run the source-ranking scan from `../../references/data-mapping-rules.md`. Read the **richest present source first** and let it anchor; weaker sources only fill gaps. Full grep signatures, wrapper-indirection handling, and per-ecosystem detail are in **[grep-signatures.md](./grep-signatures.md)** — use it as your search cookbook. Summary of the ladder:
+Start with the deterministic scanner, which applies the exclusion set, the secret-file skip list, and the data-value skip list for you (guardrails 3–4) and reports candidate locations by rank — names/schema only, never data values:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/discover_scan.py [subdir]   # defaults to CWD; pass a package dir in a monorepo
+```
+
+It returns `hits_by_rank` (file:line + signal). Read those locations for trait keys, event-name literals, and column names — never the values. The script is a starting map, not a substitute for judgment: confirm wrapper indirection and run the semantic pass below. Full grep signatures, wrapper-indirection handling, and per-ecosystem detail are in **[grep-signatures.md](./grep-signatures.md)** — use it as your search cookbook when the script misses an ecosystem or you need to widen the net. Summary of the ladder:
 
 | Rank | Source | What it yields | Default confidence |
 |---|---|---|---|

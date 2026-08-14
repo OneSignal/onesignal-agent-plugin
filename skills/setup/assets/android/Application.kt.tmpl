@@ -1,0 +1,18 @@
+// onesignal:managed v1
+// Application subclass — the only reliable place to initialize OneSignal.
+// Never initialize from a ViewModel/Activity/Fragment (breaks cold-start push
+// and deep links). Register this class in AndroidManifest.xml via
+//   <application android:name=".__APP_CLASS__" ...>
+// If an android:name Application class already exists, DO NOT create a new one —
+// add the OneSignalManager.initialize(...) call to its onCreate() instead.
+// Add @HiltAndroidApp only if Hilt is ALREADY present; never introduce Hilt.
+package __PACKAGE__
+
+import android.app.Application
+
+class __APP_CLASS__ : Application() {
+    override fun onCreate() {
+        super.onCreate()
+        OneSignalManager.initialize(this, "__APP_ID__")
+    }
+}

@@ -36,6 +36,7 @@ Detected by `pubspec.yaml`. Full detail: `sdk-ai-prompts/docs/flutter/integrate.
   OneSignal.initialize('YOUR_ONESIGNAL_APP_ID'); // onesignal:managed v1
   ```
 - Wrapper: a single `OneSignalService` class (async methods). Signatures per api-reference "SDK data surface"; tag values are strings; `login()` before tags/email/sms.
+- Verification file (deletable): guard the whole thing on `kDebugMode` (from `package:flutter/foundation.dart`); register `OneSignal.User.pushSubscription.addObserver((state) {...})` reading `state.current.id`, and read `OneSignal.User.pushSubscription.id` immediately (race guard); `await OneSignal.Notifications.requestPermission(true)` returns `Future<bool>` (like web/RN — NOT iOS's completion block or Android's suspend form). A notification-received listener is not proof of registration — key off the push subscription. The Step-8 self-check (`verify_integration.py --platform flutter`) enforces init in `main()`, the `kDebugMode` guard, and the real push-subscription observer.
 - iOS side: same native Xcode human steps as ios.md (Flutter's `ios/` subproject). Android side: the plugin handles Gradle/manifest; do NOT add `google-services.json`. Flutter 3.29+ recommended (matrix).
 
 ## Cordova (`onesignal-cordova-plugin`)
@@ -49,6 +50,7 @@ Detected by `config.xml` + `cordova` in `package.json`.
   window.plugins.OneSignal.initialize('YOUR_ONESIGNAL_APP_ID'); // onesignal:managed v1
   ```
   Verify the exact JS namespace (`window.plugins.OneSignal` vs an imported module) against the current Cordova SDK reference before finalizing — API surface is authoritative.
+- `OneSignal.Notifications.requestPermission(fallbackToSettings?)` returns `Promise<boolean>`; read the subscription id with `OneSignal.User.pushSubscription.getIdAsync()` (the `.id` getter is deprecated) and observe with `pushSubscription.addEventListener('change', (e) => e.current.id)`. The Step-8 self-check (`verify_integration.py --platform cordova`) enforces the package present, init present (near `deviceready`), and that the verification file reads the push subscription (not a notification-received listener).
 - Native iOS/Android obligations are the same as the RN wrapper: iOS GUI capabilities (+ NSE for rich features), no `google-services.json` for Android.
 
 ## Capacitor / Ionic (`@onesignal/capacitor-plugin`)
@@ -65,6 +67,7 @@ Detected by `capacitor.config.{ts,js,json}` or `@capacitor/core` in `package.jso
   import OneSignal from '@onesignal/capacitor-plugin';
   OneSignal.initialize('YOUR_ONESIGNAL_APP_ID'); // onesignal:managed v1
   ```
+- `OneSignal.initialize(appId)` returns `Promise<void>`; `requestPermission(fallbackToSettings?)` returns `Promise<boolean>`; read the id with `pushSubscription.getIdAsync()` and observe with `pushSubscription.addEventListener('change', ...)`. The Step-8 self-check (`verify_integration.py --platform capacitor`) enforces the package present, init present, `ios.handleApplicationNotifications=false`, and that the verification file reads the push subscription.
 - Native obligations same as above (iOS GUI; Android handled by plugin, no `google-services.json`). Run `npx cap sync` after native config changes.
 
 ## Unity (`OneSignal.Initialize`)

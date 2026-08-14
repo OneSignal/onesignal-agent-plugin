@@ -38,7 +38,44 @@ mapping, and the degradation behaviour.
 through `conversions` and see exactly which step they stopped at. A per-skill id would
 throw that away.
 
-Clear it only when starting a genuinely new onboarding attempt.
+### When a run ends
+
+A run ends when the plugin starts a new one. `checkpoint.sh` starts a new run when either
+rule below is true. In every other case it reuses the cached id.
+
+**Rule 1 — a second entry into setup.** The milestone is `setup.preflight`, and the current
+run already holds a `setup.preflight` row with status `ok` or `ok_after_fix`. One run passes
+preflight at most one time, so a second pass is a new attempt.
+
+**Rule 2 — 8 hours with no checkpoint.** `.onesignal/run_last_seen` holds the epoch time of
+the last checkpoint. A gap of more than 8 hours starts a new run.
+
+Rule 1 keeps every `fail` → `ok` recovery pair inside one run. Setup reports
+`setup.preflight fail dirty_tree`, stops to ask the user, then reports `setup.preflight ok`
+in the same session. The run holds no successful preflight when the failure is reported, so
+the pair stays together. A reset at every `setup.preflight` would split the pair. The
+milestone alone is therefore not the rule.
+
+Rule 2 covers the case rule 1 cannot see. A user can stop at `fail dirty_tree` and never
+reach a successful preflight. Rule 1 finds no successful preflight in that run, so a later
+attempt would merge into the abandoned one. The 8 hour limit separates them. The value is a
+judgment: a recovery inside one conversation takes minutes, and a user who returns the next
+morning starts a new attempt.
+
+Both rules fail safe. The plugin keeps the cached id if `run_last_seen` is absent, if the
+value is unreadable, or if it cannot read the local record. A merged run under-counts one
+dropout. A wrong reset invents a run that never happened, which is worse.
+
+Two behaviours do not change. `ONESIGNAL_SKILL_RUN_ID` always wins and is never persisted,
+so CI smoke tests keep their own id. Deletion of `.onesignal/` still starts a new run, which
+is how each eval fixture gets one run.
+
+A reset does not touch `pending.jsonl`. A held event carries the `run_id` it was recorded
+with, so it still flushes into the run it belongs to.
+
+One run can hold more than one `setup.preflight` row, by design. A de-duplication key of
+`run_id` + milestone is therefore not enough. The "De-duplication" section defines the full
+key for each schema. A reset also sets the `seq` counter back to 0.
 
 From schema 3 a second value, `seq`, gives the position of each milestone inside the run.
 `run_id` says which run, and `seq` says where in that run. Together they identify one
@@ -75,12 +112,20 @@ the call site. Current set:
 `dirty_tree`, `prior_install`, `platform_ambiguous`, `no_app_id`, `invalid_app_id`,
 `credentials_missing`, `uploaded_during_run`, `deferred`, `releases_unreachable`,
 `diff_rejected`, `network_blocked`, `kotlin_stdlib_floor`, `minsdk_floor`, `agp_floor`,
-`dependency_conflict`, `buildconfig_disabled`, `manifest_merger`, `unknown`.
+`dependency_conflict`, `buildconfig_disabled`, `coroutines_missing`, `manifest_merger`,
+`unknown`.
 
 `buildconfig_disabled`: AGP 8+ stopped generating `BuildConfig` by default, so the
 verification file's `BuildConfig.DEBUG` guard needs `buildFeatures { buildConfig = true }`
 added to the app module — this will hit most modern Android projects (android.md documents
 the alternative that avoids it).
+
+`coroutines_missing`: the verification file calls the suspend `requestPermission` from a
+coroutine, but the app has no `kotlinx-coroutines` on its compile classpath — the OneSignal
+SDK ships it only as a runtime (`implementation`) dependency, not `api`, so a bare app fails
+to compile until it declares coroutines (the `android_coroutines_on_classpath` check flags
+this; android.md documents the exact dependency line). Sibling of `buildconfig_disabled`:
+correct code that does not compile until the app module declares one more thing.
 
 `no_app_id` and `invalid_app_id` are different findings: the first means the user has no
 OneSignal app yet, the second means they supplied an ID that does not parse as a UUID
@@ -233,11 +278,13 @@ the need for it. There are 3 reasons:
    a wrong absolute time. The counter never reads the clock.
 
 - The plugin keeps the counter in `.onesignal/seq`, next to `run_id`.
-- The first checkpoint of a run sends `seq=1`.
+- A new run sets the file back to 0, under either rule in "When a run ends".
+- The first checkpoint of a run sends `seq=1`. The counter increments before the send, so
+  no event ever carries 0 because of a reset.
 - The counter increments one time for each milestone recorded, not for each send attempt.
   A flush re-send carries the original number, exactly as it carries the original
   `timestamp`.
-- `seq=0` means the plugin could not read or write the counter.
+- `seq=0` on the wire means one thing only: the plugin could not read or write the counter.
 
 **Order a run by `seq`.**
 
@@ -278,19 +325,46 @@ The ingestion endpoint requires the App ID as a query parameter, but
   sent as its own request, carrying the now-known App ID and every field as recorded:
   milestone, status, failure class, skill, timestamp, platform, source, run_id, runtime,
   os, and `seq` from schema 3. Nothing is re-derived at flush time.
-- Everything after that sends as it happens. A **transport failure** on one of those sends
-  (blocked network, timeout, killed connection, no HTTP response) puts the event back into
-  `pending.jsonl` for a later flush. Deterministic failures do not re-buffer: an encoder
-  error or an HTTP 4xx would fail identically on every retry, forever.
+- Everything after that sends as it happens. A failed send is held for a later flush or
+  dropped, according to the retry matrix below.
 - Run `flush` one final time at `setup.complete`, so events re-buffered mid-run get a
   second attempt before the session ends.
 
-The buffer is cleared **only when every pending event was accepted**. If egress is blocked
-the events stay in `pending.jsonl` for a later flush, so a run that later gains network
-access loses nothing — this holds both before the App ID exists and after it. A partial
-flush reports `<n> of <total> sent` and keeps the whole buffer; the accepted events will
-be re-sent on the next attempt, so treat duplicate delivery as possible and de-duplicate
-on `run_id` + milestone when analysing.
+A flush sends each row as its own request and keeps **only the rows that failed**. An event
+confirmed as accepted is never sent again, so a single bad row no longer forces the whole
+buffer to be re-delivered. A partial flush reports `<n> of <total> sent — <k> kept for a
+later flush`, and the buffer file is rewritten with those `k` rows.
+
+If egress is blocked, events stay in `pending.jsonl` and a run that later gains network
+access loses nothing. That holds both before the App ID exists and after it.
+
+### Retry matrix
+
+The rule is whether an identical retry could plausibly succeed. Anything transient is held;
+anything that rejects **this** payload is dropped, because a permanent failure re-queued
+forever would also block every row behind it.
+
+| Outcome | `transport.log` | Held for a retry? |
+| --- | --- | --- |
+| `202` (or `200`) with an empty body | `sent` | Delivered, nothing to hold |
+| `2xx` with an HTML body (captive portal) | `http_2xx_html` | Yes — never reached the service |
+| `2xx` otherwise unexpected | `http_2xx_unexpected` | Yes — delivery unconfirmed |
+| `curl` never got a reply | `dns_unresolved`, `connection_refused`, `timeout`, `tls_error`, `connection_killed`, `curl_rc_<n>` | Yes |
+| `curl` succeeded but sent no status line | `no_response` | Yes |
+| `429` — rate limited | `http_retryable` | Yes |
+| `5xx` — server or gateway error | `http_retryable` | Yes |
+| Any other `4xx`, including `400` and `415` | `http_rejected` | **No** — same payload fails again |
+| `1xx` or `3xx` | `http_other` | **No** — the endpoint is misconfigured, not busy |
+| Encoder error before any request | `encode_failed` | **No** — deterministic |
+
+`429` is the one 4xx that is held: it is an instruction to slow down, not a verdict on the
+payload. `408` and `425` are treated as permanent, because the ingestion service does not
+emit them — a gateway that does would cost one dropped checkpoint, not a retry loop.
+
+**Delivery is at-least-once, so de-duplication stays mandatory.** Per-row bookkeeping
+removes the *bulk* duplicate source, but not every one: a request whose response is lost
+after the server accepted it is indistinguishable from a request that never arrived, so it
+is held and re-sent. Never drop an event to avoid a duplicate.
 
 **Never substitute a placeholder or demo App ID to make an early send work.** Setup Step 2
 already forbids hardcoded fallback App IDs, and attributing a real user's onboarding to a
@@ -316,8 +390,10 @@ treat their absence as a floor, not a measurement.
 
 ## Local state
 
-Everything lands in `.onesignal/` at the repo root: `run_id`, `checkpoints.jsonl` (every
-payload, sent or not), `transport.log` (what happened to each attempt), `pending.jsonl`.
+Everything lands in `.onesignal/` at the repo root: `run_id`, `run_last_seen` (the epoch
+time of the last checkpoint, which rule 2 reads), `seq` (the counter schema 3 sends),
+`checkpoints.jsonl` (every payload, sent or not), `transport.log` (what happened to each
+attempt), `pending.jsonl`.
 
 The two logs answer different questions, and the distinction is what makes them assertable:
 **`checkpoints.jsonl` holds exactly one row per milestone reported**, and `transport.log`
@@ -383,10 +459,11 @@ needs the same change.
 
 ### De-duplication
 
-**De-duplication is mandatory, not optional.** A partial flush keeps the whole buffer, so
-an accepted event re-sends on the next attempt — duplicate delivery is a designed
-trade-off (never drop an event to avoid a duplicate). Every count, funnel step, and
-completion rate MUST first de-duplicate, keeping one row per key.
+**De-duplication is mandatory, not optional.** Delivery is at-least-once: a response lost
+after the server accepted the request cannot be told apart from one that never arrived, so
+the event is held and re-sent — duplicate delivery is a designed trade-off (never drop an
+event to avoid a duplicate). Every count, funnel step, and completion rate MUST first
+de-duplicate, keeping one row per key.
 
 **Schema 3:** de-duplicate on `run_id` + `seq`. Both values survive a re-send unchanged, so
 duplicates collapse and separate reports stay separate.

@@ -13,7 +13,7 @@ Reference for the `setup` skill. Follow [SKILL.md](SKILL.md) Steps 0–8; this f
 
 ### 1. Page SDK + init
 
-Add to the page `<head>` (or the framework's root document/layout). The two-line pattern is verified in `web-push-custom-code-setup.mdx` and the SDK repo's `index.html`:
+Add to the page `<head>` (or the framework's root document/layout). Use the template [assets/web/init-snippet.html.tmpl](assets/web/init-snippet.html.tmpl) (substitute `__APP_ID__`); the pattern is verified in `web-push-custom-code-setup.mdx` and the SDK repo's `index.html`:
 
 ```html
 <!-- onesignal:managed v1 -->
@@ -35,7 +35,7 @@ Add to the page `<head>` (or the framework's root document/layout). The two-line
 
 ### 2. Service worker (must be same-origin)
 
-Create `OneSignalSDKWorker.js` containing exactly one line (verified in `onesignal-service-worker.mdx`):
+Create `OneSignalSDKWorker.js` containing exactly one line. **Copy it verbatim from [assets/web/OneSignalSDKWorker.js](assets/web/OneSignalSDKWorker.js) — do NOT download the worker from GitHub or a release link.** (Eval finding: an agent followed a download link and saved a 404 HTML page as the worker, silently breaking push.) The file is exactly:
 
 ```js
 importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");

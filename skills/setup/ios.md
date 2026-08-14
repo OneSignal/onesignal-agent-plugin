@@ -16,17 +16,21 @@ A Notification Service Extension is only needed for rich media, confirmed delive
 
 ## Dependency
 
-Detect the existing manager: `Podfile`/`Podfile.lock` → CocoaPods; `Package.swift`/`Package.resolved` or an SPM project → SPM. Match it; don't introduce a second package manager. Read the exact Stable version from https://onesignal.github.io/sdk-releases/releases.json (iOS entry, `channels.stable.version`; SKILL.md Step 4 — do not guess, do not use a version range).
+Detect the existing manager: `Podfile`/`Podfile.lock` → CocoaPods; `Package.swift`/`Package.resolved` or an SPM project → SPM. Match it; don't introduce a second package manager. Resolve the exact version with the script — do not read the feed by hand and do not use a range (on SPM that means an **exact-version** rule, never `upToNextMajorVersion` / `from:`):
 
-**Swift Package Manager** (smaller XCFramework download — matrix): add package `https://github.com/OneSignal/OneSignal-XCFramework`, and add the **`OneSignalFramework`** library product to the app target (add `OneSignalInAppMessages` / `OneSignalLocation` only if those features are wanted). SPM add is partly GUI — if you cannot edit the pbxproj package references safely, give the human the exact File ▸ Add Packages steps.
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/resolve_sdk_version.py ios --format json   # for the version
+${CLAUDE_PLUGIN_ROOT}/scripts/resolve_sdk_version.py ios --format line --line-format podfile   # Podfile line
+```
+
+**Swift Package Manager** (smaller XCFramework download — matrix): add package `https://github.com/OneSignal/OneSignal-XCFramework` with an **Exact Version** rule set to the resolver's `version`, and add the **`OneSignalFramework`** library product to the app target (add `OneSignalInAppMessages` / `OneSignalLocation` only if those features are wanted). SPM add is partly GUI — if you cannot edit the pbxproj package references safely, give the human the exact File ▸ Add Packages steps.
 
 **CLI builds + SPM keychain wall:** `xcodebuild`-driven SPM resolution can pop a macOS **login-keychain password prompt** (and re-prompt on Deny), which stalls headless/agent runs. Pass `-scmProvider system` to `xcodebuild` so package fetching uses system git credentials instead of Xcode's keychain-backed SCM.
 
-**CocoaPods** (`Podfile`) — exact pin, no range (example — `5.5.1` was Stable at authoring; read the current value from releases.json):
+**CocoaPods** (`Podfile`) — paste the resolver's `--line-format podfile` output verbatim (it is an exact pin), then `pod install`. Shape:
 ```ruby
-pod 'OneSignal/OneSignal', '5.5.1' # onesignal:managed v1 — exact Stable from releases.json
+pod 'OneSignal/OneSignal', '5.5.1' # onesignal:managed v1
 ```
-then `pod install`.
 
 ## Initialize at launch
 
@@ -57,23 +61,16 @@ Add `aps-environment` to the `.entitlements` file (`development`, or `production
 
 ## Centralized wrapper (Swift)
 
-Signatures verified against api-reference "SDK data surface". `login()` before tags/email/sms.
-```swift
-import OneSignalFramework
-final class OneSignalManager { // onesignal:managed v1
-    static let shared = OneSignalManager(); private init() {}
-    func login(_ externalId: String) { OneSignal.login(externalId) }
-    func logout() { OneSignal.logout() }
-    func setEmail(_ email: String) { OneSignal.User.addEmail(email) }
-    func setSmsNumber(_ number: String) { OneSignal.User.addSms(number) }
-    func setTag(key: String, value: String) { OneSignal.User.addTag(key: key, value: value) }
-}
-```
-No direct OneSignal calls outside this wrapper except the verification observer.
+Use the template [assets/ios/OneSignalManager.swift.tmpl](assets/ios/OneSignalManager.swift.tmpl) as-is (no substitution needed). Signatures are verified against api-reference "SDK data surface"; `login()` before tags/email/sms. No direct OneSignal calls outside this wrapper except the verification observer.
 
 ## Deletable verification (SwiftUI + UIKit)
 
-Full verified implementations (`OSPushSubscriptionObserver`) are in `sdk-ai-prompts/docs/ios/integrate.md`. Reproduce faithfully. Non-negotiable properties (SKILL.md Step 6):
+Use the verified template [assets/ios/OneSignalSetupVerification.swift.tmpl](assets/ios/OneSignalSetupVerification.swift.tmpl) — substitute `__APP_ID__` (the real App ID from Step 2) and write it as-is. Do NOT hand-write this file. It is UIKit-based and works for both UIKit and SwiftUI apps (it presents from the active window's root view controller); call `OneSignalSetupVerification.install()` once from your launch context right after `OneSignal.initialize(...)`. Every API in it is validated against the iOS SDK source and the file is **compile-verified** against the real iOS SDK + a faithful OneSignal stub by `scripts/compile_check_ios.sh` (which also proves the check rejects the fabricated call shapes below). **Use the real observer API** — do NOT wire verification to a `NotificationCenter` event (an eval fabrication: agents listened for a OneSignal registration notification the SDK never posts; it compiles and is functionally dead). The correct surface:
+- conform to `OSPushSubscriptionObserver` and implement `func onPushSubscriptionDidChange(state: OSPushSubscriptionChangedState)`; read `state.current.id` (type `String?`).
+- register with `OneSignal.User.pushSubscription.addObserver(self)`; also read `OneSignal.User.pushSubscription.id` immediately (race guard).
+- `requestPermission` on iOS DOES take a completion block: `OneSignal.Notifications.requestPermission({ accepted in ... }, fallbackToSettings: true)` (unlike Android's suspend form).
+
+The Step-8 structural self-check (`verify_integration.py --platform ios`) enforces `#if DEBUG`, the real push observer (not NotificationCenter), and init in a launch context. Non-negotiable properties (SKILL.md Step 6):
 - Guard on `#if DEBUG` so it never ships.
 - Register the observer AND call `evaluate(OneSignal.User.pushSubscription.id)` immediately (race guard).
 - `isRegistered` = non-empty AND not `hasPrefix("local-")`.
