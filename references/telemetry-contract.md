@@ -75,11 +75,10 @@ with, so it still flushes into the run it belongs to.
 
 One run can hold more than one `setup.preflight` row, by design. A de-duplication key of
 `run_id` + milestone is therefore not enough. The "De-duplication" section defines the full
-key for each schema. A reset also sets the `seq` counter back to 0.
+key. A reset also sets the `seq` counter back to 0.
 
-From schema 3 a second value, `seq`, gives the position of each milestone inside the run.
-`run_id` says which run, and `seq` says where in that run. Together they identify one
-milestone report.
+A second value, `seq`, gives the position of each milestone inside the run. `run_id` says
+which run, and `seq` says where in that run. Together they identify one milestone report.
 
 ## Milestones
 
@@ -145,36 +144,31 @@ reported as `ok` and nearly lost.
 
 ## What is sent
 
-Per event: milestone, status, failure class, `run_id`, platform, skill name, plugin
+Per event: milestone, status, failure class, `run_id`, `seq`, platform, skill name, plugin
 version, agent runtime, OS, timestamp, and the **OneSignal App ID** — plus the source tag
-(`onesignal-agent-plugin`) and the payload schema version. Schema 2 adds the service name
-(`OneSignalAgentSkill`). Schema 3 drops the service name and adds `seq`.
+(`onesignal-agent-plugin`) and the payload schema version.
 
 Never sent: source code, file contents, file paths, project or package names, repo
 metadata, and — per the safety contract's "Never" rules and its "The setup key" section —
 **the setup key or any other credential**. The App ID is public (safety contract, "Never"
 section) and is the only identifier included.
 
-## Wire format
+## Wire format — payload schema 3, REST to `/sdk/agent-progress`
 
-Two transports exist. The plugin sends schema 2 today. Schema 3 replaces it when the REST
-endpoint is live. Read both: production holds schema 2 rows for as long as the old
-transport runs, so a query that spans the change must accept both shapes.
+**The scripts do not send this yet.** `checkpoint.sh` and `otlp_encode.py` still send OTLP
+protobuf to `/sdk/log`, which carries `schema=2`. The port is a separate change, and 2 other
+things have to land with it:
 
-### Schema 2 — OTLP protobuf to `/sdk/log` (current)
+1. The edge route below. Without a mapping the endpoint is unreachable.
+2. The flip of `TIME_FIELD_IS_SECONDS` to `False` in `otlp_encode.py`. The file writes
+   **seconds** into `time_unix_nano`, and the new service divides that field by 1e9, so
+   every schema 2 row reports a date in 1970 once the service deploys. The failure is
+   silent.
 
-`scripts/otlp_encode.py` builds the record, so the plugin controls every field. Resource
-attributes become GCP labels. The scope name is `onesignal-agent-skill`. The status sets
-the severity: `ok` gives INFO, `ok_after_fix` gives WARNING, `fail` gives ERROR. The
-record time is the event time.
-
-Do not read a schema 2 timestamp without checking the unit first. `otlp_encode.py` writes
-**seconds** into `time_unix_nano`, because the consumer used to read seconds. The service
-now divides the field by 1e9, so the same value reports a date in 1970. The file holds a
-`TIME_FIELD_IS_SECONDS` flag for exactly this change, and the flag has to flip to `False`
-when the new service reaches production.
-
-### Schema 3 — REST to `/sdk/agent-progress` (merged, not yet confirmed in production)
+This document specifies schema 3 only. Schema 2 has no specification here, and it needs
+none: the plugin has no external release, so no saved query, dashboard, or alert reads the
+old shape, and nothing has to survive the cutover. Read `otlp_encode.py` for what the code
+sends until the port lands.
 
 The full path is `https://api.onesignal.com/sdk/agent-progress`. The service nests every
 per-app route under `/sdk` (`nest_service("/sdk", …)` in `router.rs`), which is why the
@@ -191,8 +185,8 @@ methods, and the behaviour below is identical for both:
   A JSON value may be a number or a boolean, but the server flattens every value to a
   string, so the stored shape is the same.
 
-**The plugin sends GET.** Nothing in this contract depends on the method, and the query
-string has room to spare.
+**Use GET.** Nothing in this contract depends on the method, and the query string has room
+to spare.
 
 The longest possible request measures 494 bytes, with the longest value from every enum.
 `message` is the only free-text field, and the plugin builds it from the other fields, so it
@@ -209,7 +203,7 @@ above 64 KB, and no GET request meets it.
 below. A new field costs about 25 bytes, so the budget is not a constraint on the schema
 either.
 
-#### The edge route does not exist yet
+### The edge route does not exist yet
 
 `api.onesignal.com` reaches this service through 1 Emissary mapping, in
 `kubernetes/helmfiles/apps/emissary/production/mappings-production.yml`. The mapping matches
@@ -253,19 +247,19 @@ The server changes the map in 4 ways:
 4. It adds the prefix `os_agent.` to every remaining key and writes those as log record
    attributes. They land in `jsonPayload`, not in `labels`.
 
-It also writes severity INFO for every record. That is the reason `status` below repeats
-what the OTLP record carried in its own severity field.
+It also writes severity INFO for every record, so severity cannot separate outcomes. That is
+why `status` below carries the outcome as a field of its own.
 
 The reserved keys and the prefix live in `src/log/agent_progress.rs` in
 `log-ingestion-service`. Check that file before you assume any other key is special.
 
-#### Keys
+### Keys
 
 | Key | Always sent | Example | Notes |
 |---|---|---|---|
 | `app_id` | yes | `6a1b2c3d-…` | The server consumes it. It is the only gate on the endpoint. |
-| `schema` | yes | `3` | Payload schema version. Schema 2 is the OTLP payload. |
-| `source` | yes | `onesignal-agent-plugin` | The discriminator. It replaces `scope_name` and `service.name`. |
+| `schema` | yes | `3` | Payload schema version. |
+| `source` | yes | `onesignal-agent-plugin` | The discriminator every query starts from. |
 | `run_id` | yes | `73832ff7632b0476` | Stable for one funnel run. |
 | `seq` | yes | `1` | Position in the run. See below. |
 | `skill` | yes | `setup` | |
@@ -284,7 +278,7 @@ Because the server also reads RFC 3339, the plugin can send the ISO 8601 `ts` va
 
 Do not send `severity`. The server always writes INFO, so the value only repeats `status`.
 
-#### The `platform` vocabulary
+### The `platform` vocabulary
 
 `platform` is a filter key for every funnel query, so it holds a closed set of 9 tokens:
 
@@ -301,7 +295,7 @@ Do not send `sdk_base`. `platform` holds the same value.
 An absent `failure_class` is deliberate. An empty value creates an attribute that holds an
 empty string, which every count of failure classes must then exclude.
 
-#### `seq` — the position of a report inside a run
+### `seq` — the position of a report inside a run
 
 `seq` counts the milestone reports of one run. The `timestamp` parameter does not remove
 the need for it. There are 3 reasons:
@@ -327,42 +321,15 @@ the need for it. There are 3 reasons:
   `timestamp`.
 - `seq=0` on the wire means one thing only: the plugin could not read or write the counter.
 
-**Order a schema 3 run by `seq`.**
+**Order a run by `seq`.** The counter never reads a clock, so it holds the order even when
+the times are wrong or equal.
 
-#### Field mapping
+### Where the keys land in GCP
 
-| Schema 2 | Schema 3 |
-|---|---|
-| `labels."ossdk.app_id"` | unchanged |
-| `labels.scope_name` | removed — the value does not carry across, see below |
-| `labels.scope_version` | `jsonPayload."os_agent.skill_version"` |
-| `labels."service.name"` | removed |
-| `labels."agent.source"` | `jsonPayload."os_agent.source"` |
-| `labels."agent.platform"` | `jsonPayload."os_agent.platform"` |
-| `labels."agent.skill"` | `jsonPayload."os_agent.skill"` |
-| `labels."agent.runtime"` | `jsonPayload."os_agent.runtime"` |
-| `labels."agent.skill.version"` | `jsonPayload."os_agent.skill_version"` |
-| `labels."os.name"` | `jsonPayload."os_agent.os"` |
-| `labels."ossdk.sdk_base"` | `jsonPayload."os_agent.platform"` |
-| `jsonPayload."agent.milestone"` | `jsonPayload."os_agent.milestone"` |
-| `jsonPayload."agent.status"` | `jsonPayload."os_agent.status"` |
-| `jsonPayload."agent.failure_class"` | `jsonPayload."os_agent.failure_class"` |
-| `jsonPayload."agent.run_id"` | `jsonPayload."os_agent.run_id"` |
-| `jsonPayload."agent.schema"` | `jsonPayload."os_agent.schema"` |
-| severity INFO / WARNING / ERROR | `jsonPayload."os_agent.status"` |
-| the record timestamp | set from the `timestamp` parameter |
-| `jsonPayload.message` | unchanged — the `message` parameter becomes the body |
-
-Only `ossdk.app_id` survives as a label. Every other filter moves into `jsonPayload`, which
-costs more to query. Keep `labels."ossdk.app_id"` in a query when the app is known.
-
-**`scope_name` is not a rename of `os_agent.source`.** Both name the sender, but the 2 keys
-hold different values. `scope_name` is always the literal `onesignal-agent-skill`, which
-`otlp_encode.py` hardcodes. `os_agent.source` holds `onesignal-agent-plugin`, the same value
-that schema 2 puts in `labels."agent.source"`. So a filter of
-`labels.scope_name="onesignal-agent-skill"` becomes
-`jsonPayload."os_agent.source"="onesignal-agent-plugin"`. A rewrite that keeps the old value
-matches no rows.
+`app_id` is the one key that stays an indexed GCP label, as `labels."ossdk.app_id"`. Every
+other key becomes `jsonPayload."os_agent.<key>"`, which costs more to query, so keep
+`labels."ossdk.app_id"` in a query when the app is known. `message` is the exception: it
+becomes the log body and reaches GCP as `jsonPayload.message`.
 
 ## App ID ordering, and buffering
 
@@ -373,7 +340,7 @@ The ingestion endpoint requires the App ID as a query parameter, but
 - Once Step 2 resolves it, run `bash scripts/checkpoint.sh flush` — each pending event is
   sent as its own request, carrying the now-known App ID and every field as recorded:
   milestone, status, failure class, skill, timestamp, platform, source, run_id, runtime,
-  os, and `seq` from schema 3. Nothing is re-derived at flush time.
+  os, and `seq`. Nothing is re-derived at flush time.
 - Everything after that sends as it happens. A failed send is held for a later flush or
   dropped, according to the retry matrix below.
 - Run `flush` one final time at `setup.complete`, so events re-buffered mid-run get a
@@ -440,7 +407,7 @@ treat their absence as a floor, not a measurement.
 ## Local state
 
 Everything lands in `.onesignal/` at the repo root: `run_id`, `run_last_seen` (the epoch
-time of the last checkpoint, which rule 2 reads), `seq` (the counter schema 3 sends),
+time of the last checkpoint, which rule 2 reads), `seq` (the position counter),
 `checkpoints.jsonl` (every payload, sent or not), `transport.log` (what happened to each
 attempt), `pending.jsonl`.
 
@@ -449,36 +416,19 @@ The two logs answer different questions, and the distinction is what makes them 
 holds one row per delivery attempt. A buffered event that is later flushed therefore
 appears once in `checkpoints.jsonl` and twice in `transport.log` (`buffered`, then `sent`).
 
-Both schemas put the **event time** on the wire, not the send time. Schema 2 stamps the
-record in `otlp_encode.py` from the payload's own `ts`; schema 3 sends the same value as
-the `timestamp` parameter and the server stamps the record. A flush re-send carries the
-buffered event's original `ts` either way, so a milestone that waited in the buffer reports
-the moment it happened. Under schema 2 the send moment travels separately in
-`observed_time_unix_nano`.
+The wire carries the **event time**, not the send time. The plugin sends the payload's own
+`ts` as the `timestamp` parameter, and the server stamps the record with it. A flush re-send
+carries the buffered event's original `ts`, so a milestone that waited in the buffer reports
+the moment it happened.
 
-**Do not read the event time from the log entry timestamp, under either schema.** The
-consumer writes the event time as an ISO 8601 string under `jsonPayload.timestamp`. Nobody
-has confirmed that GCP promotes the value to the log entry timestamp — the column the Logs
-Explorer sorts by. Google's agent documents the promotion only for `timestamp` as an object
-of `seconds` and `nanos`, for `timestampSeconds` with `timestampNanos`, or for a string
-under the key `time`. One production sample agrees with the pessimistic reading: the entry
-timestamp held the time of receipt while `jsonPayload.timestamp` kept the event time. That
-sample is a schema 2 row, because schema 3 is not in production yet, so the finding covers
-both schemas.
-
-**Order a schema 3 run by `seq`.** The counter never reads a clock, so it holds the order
-even when the times are wrong or equal.
-
-**Order a schema 2 run by `jsonPayload.timestamp`.** Schema 2 sends no `seq`, so the counter
-is not available for those rows. An ISO 8601 string in this format sorts correctly as text.
-The value has a resolution of 1 second, so 2 milestones in the same second tie, and the tie
-has no answer under schema 2.
-
-Warning: do not trust a schema 2 event time between the deploy of the new service and the
-flip of `TIME_FIELD_IS_SECONDS`. `otlp_encode.py` writes seconds into `time_unix_nano`, and
-the new consumer divides by 1e9, so every schema 2 event time moves to 1970. The order
-should survive, because the scale change keeps the sequence, but a gap of 60 seconds
-becomes a gap of 60 nanoseconds.
+**Do not read the event time from the log entry timestamp.** The consumer writes the event
+time as an ISO 8601 string under `jsonPayload.timestamp`. Nobody has confirmed that GCP
+promotes the value to the log entry timestamp — the column the Logs Explorer sorts by.
+Google's agent documents the promotion only for `timestamp` as an object of `seconds` and
+`nanos`, for `timestampSeconds` with `timestampNanos`, or for a string under the key `time`.
+One production sample agrees with the pessimistic reading: the entry timestamp held the time
+of receipt while `jsonPayload.timestamp` kept the event time. One record through staging
+would settle it. Order a run by `seq` instead.
 
 Because skills declare a file allow-list before writing (safety contract §4, §10),
 **`.onesignal/` must appear in that declared list and be added to `.gitignore`.** It is
@@ -486,40 +436,21 @@ run state, not project content, and must never be committed.
 
 ## Querying it
 
-Both queries start from the same 2 lines:
-
 ```
 resource.type="k8s_container"
 resource.labels.namespace_name="log-ingestion-service-production"
-```
-
-### Schema 2
-
-```
-labels.scope_name="onesignal-agent-skill"
-```
-
-Then slice by `labels."agent.platform"`, `labels."agent.skill"`,
-`jsonPayload."agent.milestone"`, `jsonPayload."agent.status"`. Group by
-`jsonPayload."agent.run_id"` for funnel analysis — use `=` and not `=~`, since a regex
-silently merges runs. Order each run by `jsonPayload.timestamp`, because schema 2 sends no
-`seq`.
-
-### Schema 3
-
-```
 jsonPayload."os_agent.source"="onesignal-agent-plugin"
 ```
 
 Then slice by `jsonPayload."os_agent.platform"`, `jsonPayload."os_agent.skill"`,
 `jsonPayload."os_agent.milestone"` and `jsonPayload."os_agent.status"`. Group by
-`jsonPayload."os_agent.run_id"`, and order each run by `jsonPayload."os_agent.seq"`.
-Add `labels."ossdk.app_id"` when the app is known: it is the one field that stays an
-indexed label.
+`jsonPayload."os_agent.run_id"` for funnel analysis — use `=` and not `=~`, since a regex
+silently merges runs. Order each run by `jsonPayload."os_agent.seq"`. Add
+`labels."ossdk.app_id"` when the app is known: it is the one field that stays an indexed
+label.
 
-Severity no longer separates outcomes, because the server writes INFO for every record.
-Read `jsonPayload."os_agent.status"` instead. Any saved view or alert that reads severity
-needs the same change.
+Severity does not separate outcomes, because the server writes INFO for every record. Read
+`jsonPayload."os_agent.status"` instead.
 
 ### De-duplication
 
@@ -529,17 +460,16 @@ the event is held and re-sent — duplicate delivery is a designed trade-off (ne
 event to avoid a duplicate). Every count, funnel step, and completion rate MUST first
 de-duplicate, keeping one row per key.
 
-**Schema 3:** de-duplicate on `run_id` + `seq`. Both values survive a re-send unchanged, so
-duplicates collapse and separate reports stay separate.
+**De-duplicate on `run_id` + `seq`.** Both values survive a re-send unchanged, so duplicates
+collapse and separate reports stay separate.
 
-**Schema 2** has no `seq`, so it needs a compound key: `run_id` + milestone + status +
-failure class, keeping the earliest timestamp. **Do not use `run_id` + milestone alone.**
-A milestone repeats inside one run by design: `setup.preflight` reports
-`fail platform_ambiguous`, the user answers, and the skill reports `ok`. The shorter key
-keeps only the failure and deletes the recovery, which is the exact friction the funnel
-exists to measure.
+**Do not use `run_id` + milestone.** A milestone repeats inside one run by design:
+`setup.preflight` reports `fail platform_ambiguous`, the user answers, and the skill reports
+`ok`. That key holds 1 row for the 2 reports and deletes the recovery, which is the exact
+friction the funnel exists to measure.
 
-Where `seq` is `0`, the counter was unavailable. Treat those rows as schema 2 and use the
-compound key.
+Where `seq` is `0` the counter was unavailable, so those rows need a fallback key: `run_id` +
+milestone + status + failure class, keeping the earliest timestamp. The fallback still merges
+2 reports that agree on all 4 values, so it is a floor and not an equal substitute.
 
 A query that skips this step overcounts whatever it measures.
