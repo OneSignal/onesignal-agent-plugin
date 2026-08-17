@@ -39,14 +39,12 @@
 # This JSON is the internal representation. It is encoded into an OTLP LogsData
 # protobuf by otlp_encode.py before sending — the endpoint accepts nothing else.
 # `ts` is the EVENT time and is what the encoder stamps onto the wire record, so
-# a buffered event flushed minutes later still lands in GCP at the moment it
-# happened. The send moment is carried separately in observed_time_unix_nano.
+# a buffered event flushed minutes later still reports the moment it happened.
+# The send moment is carried separately in observed_time_unix_nano.
 #
 # "source" exists so these events can be separated from real SDK traffic on the
-# shared ingestion endpoint. In GCP Logs Explorer:
-#     labels."agent.source"="onesignal-agent-plugin"
-# Override the value with $ONESIGNAL_SKILL_SOURCE if the ingestion service wants a
-# different discriminator.
+# shared ingestion endpoint. Override it with $ONESIGNAL_SKILL_SOURCE if the
+# ingestion service wants a different discriminator.
 #
 # Set ONESIGNAL_SKILL_DRY_RUN=1 to print the exact request without sending.
 
