@@ -327,14 +327,14 @@ the need for it. There are 3 reasons:
   `timestamp`.
 - `seq=0` on the wire means one thing only: the plugin could not read or write the counter.
 
-**Order a run by `seq`.**
+**Order a schema 3 run by `seq`.**
 
 #### Field mapping
 
 | Schema 2 | Schema 3 |
 |---|---|
 | `labels."ossdk.app_id"` | unchanged |
-| `labels.scope_name` | `jsonPayload."os_agent.source"` |
+| `labels.scope_name` | removed — the value does not carry across, see below |
 | `labels.scope_version` | `jsonPayload."os_agent.skill_version"` |
 | `labels."service.name"` | removed |
 | `labels."agent.source"` | `jsonPayload."os_agent.source"` |
@@ -355,6 +355,14 @@ the need for it. There are 3 reasons:
 
 Only `ossdk.app_id` survives as a label. Every other filter moves into `jsonPayload`, which
 costs more to query. Keep `labels."ossdk.app_id"` in a query when the app is known.
+
+**`scope_name` is not a rename of `os_agent.source`.** Both name the sender, but the 2 keys
+hold different values. `scope_name` is always the literal `onesignal-agent-skill`, which
+`otlp_encode.py` hardcodes. `os_agent.source` holds `onesignal-agent-plugin`, the same value
+that schema 2 puts in `labels."agent.source"`. So a filter of
+`labels.scope_name="onesignal-agent-skill"` becomes
+`jsonPayload."os_agent.source"="onesignal-agent-plugin"`. A rewrite that keeps the old value
+matches no rows.
 
 ## App ID ordering, and buffering
 
@@ -448,15 +456,29 @@ buffered event's original `ts` either way, so a milestone that waited in the buf
 the moment it happened. Under schema 2 the send moment travels separately in
 `observed_time_unix_nano`.
 
-**Order a run by `seq`, not by a timestamp.** The event time reaches GCP as
-`jsonPayload.timestamp`, and it is **not confirmed** that GCP promotes the value to the log
-entry timestamp — the column the Logs Explorer sorts by. The consumer writes the value as
-an ISO 8601 string under the key `timestamp`, and Google's agent documents the promotion
-only for `timestamp` as an object of `seconds` and `nanos`, for `timestampSeconds` with
-`timestampNanos`, or for a string under the key `time`. One production sample agrees with
-the pessimistic reading: the entry timestamp held the time of receipt while
-`jsonPayload.timestamp` kept the event time. Until somebody checks one record end to end,
-read the event time from `jsonPayload.timestamp` and order by `seq`.
+**Do not read the event time from the log entry timestamp, under either schema.** The
+consumer writes the event time as an ISO 8601 string under `jsonPayload.timestamp`. Nobody
+has confirmed that GCP promotes the value to the log entry timestamp — the column the Logs
+Explorer sorts by. Google's agent documents the promotion only for `timestamp` as an object
+of `seconds` and `nanos`, for `timestampSeconds` with `timestampNanos`, or for a string
+under the key `time`. One production sample agrees with the pessimistic reading: the entry
+timestamp held the time of receipt while `jsonPayload.timestamp` kept the event time. That
+sample is a schema 2 row, because schema 3 is not in production yet, so the finding covers
+both schemas.
+
+**Order a schema 3 run by `seq`.** The counter never reads a clock, so it holds the order
+even when the times are wrong or equal.
+
+**Order a schema 2 run by `jsonPayload.timestamp`.** Schema 2 sends no `seq`, so the counter
+is not available for those rows. An ISO 8601 string in this format sorts correctly as text.
+The value has a resolution of 1 second, so 2 milestones in the same second tie, and the tie
+has no answer under schema 2.
+
+Warning: do not trust a schema 2 event time between the deploy of the new service and the
+flip of `TIME_FIELD_IS_SECONDS`. `otlp_encode.py` writes seconds into `time_unix_nano`, and
+the new consumer divides by 1e9, so every schema 2 event time moves to 1970. The order
+should survive, because the scale change keeps the sequence, but a gap of 60 seconds
+becomes a gap of 60 nanoseconds.
 
 Because skills declare a file allow-list before writing (safety contract §4, §10),
 **`.onesignal/` must appear in that declared list and be added to `.gitignore`.** It is
@@ -480,7 +502,8 @@ labels.scope_name="onesignal-agent-skill"
 Then slice by `labels."agent.platform"`, `labels."agent.skill"`,
 `jsonPayload."agent.milestone"`, `jsonPayload."agent.status"`. Group by
 `jsonPayload."agent.run_id"` for funnel analysis — use `=` and not `=~`, since a regex
-silently merges runs.
+silently merges runs. Order each run by `jsonPayload.timestamp`, because schema 2 sends no
+`seq`.
 
 ### Schema 3
 
