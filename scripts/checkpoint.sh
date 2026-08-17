@@ -392,8 +392,7 @@ note() {
 # run_id with a real install and cannot corrupt completion-rate counting.
 #
 # Otherwise the id is cached in .onesignal/run_id so the milestones of one
-# install share it. Two rules end a run — see "When a run ends" in
-# references/telemetry-contract.md:
+# install share it. Two rules end a run:
 #
 #   1. A second entry into setup: this checkpoint is setup.preflight AND the
 #      cached run already passed preflight. One run passes preflight at most
