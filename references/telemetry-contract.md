@@ -33,8 +33,7 @@ The prototype used `preflight` / `dependency_added` / `build_passed`. Those don'
   nothing in the prototype measured it.
 
 So the vocabulary is rebuilt around this funnel. What ports unchanged is the machinery:
-`scripts/checkpoint.sh`, `scripts/otlp_encode.py`, the payload schema, and the degradation
-behaviour.
+`scripts/checkpoint.sh`, the payload schema, and the degradation behaviour.
 
 ## The unit of analysis is a funnel run, not an install
 
@@ -119,9 +118,11 @@ reported as `ok` and nearly lost.
 
 ## What is sent
 
-Per event: milestone, status, failure class, `run_id`, platform, skill name, plugin
-version, agent runtime, OS, timestamp, and the **OneSignal App ID**. Safety contract §16
-lists the fixed constants that also go out.
+Per event: milestone, status, failure class, `run_id`, the position of the report in the
+run, platform, skill name, plugin version, agent runtime, OS, timestamp, and the
+**OneSignal App ID**. One more field, `message`, carries a readable line that
+`checkpoint.sh` builds from that same list. Safety contract §16 lists the fixed constants
+that also go out.
 
 Never sent: source code, file contents, file paths, project or package names, repo
 metadata, and — per the safety contract's "Never" rules and its "The setup key" section —
@@ -184,7 +185,8 @@ nothing. That holds both before the App ID exists and after it.
 ## Local state
 
 `checkpoint.sh` keeps its run state in `.onesignal/` at the repo root: the run id, the
-buffer of held events, and a record of every checkpoint and delivery attempt.
+position counter, the buffer of held events, and a record of every checkpoint and delivery
+attempt.
 
 Because skills declare a file allow-list before writing (safety contract §4, §10),
 **`.onesignal/` must appear in that declared list and be added to `.gitignore`.** It is

@@ -19,28 +19,35 @@
 #      and is false now; any description given to a user must say so.
 #   3. Honours ONESIGNAL_SKILL_TELEMETRY=0 as a full opt-out.
 #
-# Payload (exactly this, nothing more):
-#   {
-#     "schema": 2,
-#     "source":         "onesignal-agent-plugin",   <- discriminator, see below
-#     "run_id":         "<random hex, stable for one funnel run>",
-#     "skill_version":  "0.3.0",
-#     "milestone":      "credentials_gate",
-#     "status":         "ok" | "ok_after_fix" | "fail",
-#     "failure_class":  "kotlin_stdlib_floor" | ... | null,
-#     "runtime":        "claude-code" | "codex" | ... | "unknown",
-#     "os":             "darwin" | "linux" | ...,
-#     "ts":             "2026-07-27T12:00:00Z",
-#     "app_id":         "<uuid>",
-#     "platform":       "android" | "web" | ...,
-#     "skill":          "setup"
-#   }
+# Request (exactly this, nothing more): a GET carrying one query parameter per
+# field. There is no body and no header beyond what curl sends by default.
 #
-# This JSON is the internal representation. It is encoded into an OTLP LogsData
-# protobuf by otlp_encode.py before sending — the endpoint accepts nothing else.
-# `ts` is the EVENT time and is what the encoder stamps onto the wire record, so
-# a buffered event flushed minutes later still reports the moment it happened.
-# The send moment is carried separately in observed_time_unix_nano.
+#   schema=3
+#   app_id=<uuid>          <- required; the endpoint answers 400 without it
+#   source=onesignal-agent-plugin   <- discriminator, see below
+#   run_id=<random hex, stable for one funnel run>
+#   seq=<position of this report inside the run, counting from 1>
+#   skill=setup
+#   milestone=credentials_gate
+#   status=ok | ok_after_fix | fail
+#   failure_class=kotlin_stdlib_floor | ...   <- the key is absent when there is none
+#   platform=android | web | ...
+#   runtime=claude-code | codex | ... | unknown
+#   os=darwin | linux | ...
+#   skill_version=0.3.0
+#   timestamp=2026-07-27T12:00:00Z
+#   message=<one readable line built from the fields above>
+#
+# The server reserves 2 of those names: `message` becomes the log body and
+# `timestamp` becomes the record time. Every other key is stored as sent.
+#
+# `timestamp` is the EVENT time, so a buffered event flushed minutes later still
+# reports the moment it happened rather than the moment it was sent.
+#
+# The same event is also written locally as one JSON line in
+# .onesignal/checkpoints.jsonl. That line is the internal record, not the wire
+# format: it names the event time `ts` and carries a null `failure_class` where
+# the request omits the key.
 #
 # "source" exists so these events can be separated from real SDK traffic on the
 # shared ingestion endpoint. Override it with $ONESIGNAL_SKILL_SOURCE if the
@@ -52,6 +59,7 @@ set -uo pipefail
 
 PLUGIN_VERSION="0.3.0"
 SKILL_VERSION="$PLUGIN_VERSION"
+SCHEMA_VERSION=3
 SOURCE_TAG="${ONESIGNAL_SKILL_SOURCE:-onesignal-agent-plugin}"
 DEFAULT_ENDPOINT="https://example.invalid/skill-checkpoints"
 TIMEOUT="${ONESIGNAL_SKILL_TIMEOUT:-5}"
@@ -152,6 +160,21 @@ if [ "$RAW_MILESTONE" = "flush" ]; then
     printf '%s' "${out//\\\\/\\}"
   }
 
+  # seq is a JSON number, so it has no surrounding quotes for buffered_field to
+  # find. An empty result — a row buffered before the counter existed — leaves
+  # the child to report position 0, which is what an unknown position means.
+  buffered_number() {
+    local line="$1" key="$2" rest
+    case "$line" in
+      *"\"$key\":"*) rest="${line#*\"$key\":}" ;;
+      *) return 0 ;;
+    esac
+    rest="${rest%%,*}"
+    rest="${rest%%\}*}"
+    case "$rest" in ''|*[!0-9]*) return 0 ;; esac
+    printf '%s' "$rest"
+  }
+
   COUNT=$(grep -c . "$PENDING" 2>/dev/null || echo 0)
   echo "checkpoint: flushing $COUNT buffered event(s) as app_id=$FLUSH_APP_ID"
 
@@ -197,8 +220,9 @@ if [ "$RAW_MILESTONE" = "flush" ]; then
     BRUN_ID=$(buffered_field "$line" run_id)
     BRUNTIME=$(buffered_field "$line" runtime)
     BOS=$(buffered_field "$line" os)
+    BSEQ=$(buffered_number "$line" seq)
     # Re-qualify as "<skill>.<milestone>". Passing the bare milestone made the child
-    # derive skill="unknown", erasing the agent.skill label for every buffered event.
+    # derive skill="unknown", erasing the skill of every buffered event.
     case "$SK" in
       ""|unknown) QUALIFIED="$M" ;;
       *)          QUALIFIED="$SK.$M" ;;
@@ -227,6 +251,7 @@ if [ "$RAW_MILESTONE" = "flush" ]; then
     ONESIGNAL_SKILL_RUN_ID="$BRUN_ID" \
     ONESIGNAL_SKILL_RUNTIME="$BRUNTIME" \
     ONESIGNAL_SKILL_OS="$BOS" \
+    ONESIGNAL_SKILL_SEQ="$BSEQ" \
       bash "$0" "$QUALIFIED" "$S" "$FC" 2>/dev/null
     if [ "$(cat "$RESULT_FILE" 2>/dev/null)" = "sent" ]; then
       SENT=$((SENT + 1))
@@ -438,6 +463,8 @@ run_is_idle() {
   [ $(( NOW_EPOCH - last )) -gt "$RUN_IDLE_LIMIT" ]
 }
 
+RUN_IS_NEW=0
+
 if [ -n "${ONESIGNAL_SKILL_RUN_ID:-}" ]; then
   RUN_ID="$ONESIGNAL_SKILL_RUN_ID"
 else
@@ -455,6 +482,7 @@ else
     fi
   fi
   if [ -z "${RUN_ID:-}" ]; then
+    RUN_IS_NEW=1
     RUN_ID="$(new_id)"
     RUN_ID="${RUN_ID:-$(date +%s)-$$}"
     # Say so when the cache write fails: this event still sends with the fresh
@@ -473,6 +501,56 @@ fi
 # earlier, so it must not extend the session.
 if [ "${ONESIGNAL_SKILL_SKIP_LOCAL_RECORD:-0}" != "1" ] && [ "$NOW_EPOCH" -gt 0 ]; then
   printf '%s' "$NOW_EPOCH" > "$LAST_SEEN_FILE" 2>/dev/null || true
+fi
+
+# ---------------------------------------------------------------------------
+# seq — where this report sits inside the run. run_id says which run, seq says
+# the position in it, and the pair is what a query de-duplicates on. The event
+# time cannot do that job: two checkpoints can share a whole second, and a
+# buffered event reports a time from long before it arrives.
+#
+# The counter advances once per milestone RECORDED, never per send attempt. A
+# flush re-send therefore carries the number the event was given when it was
+# buffered, which is what makes the pair stable across a retry.
+#
+# seq=0 on the wire means exactly one thing: this position is unknown. A row
+# from a buffer written before this counter existed reports 0, and so does a
+# run whose counter file cannot be read or written.
+# ---------------------------------------------------------------------------
+SEQ_FILE="$STATE_DIR/seq"
+
+if [ -n "${ONESIGNAL_SKILL_SEQ:-}" ]; then
+  SEQ="$ONESIGNAL_SKILL_SEQ"
+  case "$SEQ" in ''|*[!0-9]*) SEQ=0 ;; esac
+elif [ "${ONESIGNAL_SKILL_SKIP_LOCAL_RECORD:-0}" = "1" ]; then
+  SEQ=0
+else
+  SEQ=0
+  SEQ_PREV=0
+  SEQ_READABLE=1
+  # A new run restarts at 1, so the previous value is deliberately not read.
+  if [ "$RUN_IS_NEW" -eq 0 ] && [ -f "$SEQ_FILE" ]; then
+    if SEQ_PREV="$(cat "$SEQ_FILE" 2>/dev/null)"; then
+      case "$SEQ_PREV" in ''|*[!0-9]*) SEQ_PREV=0 ;; esac
+    else
+      note "seq_read_failed" "cannot read $SEQ_FILE"
+      SEQ_READABLE=0
+    fi
+  fi
+  if [ "$SEQ_READABLE" -eq 1 ]; then
+    SEQ=$(( SEQ_PREV + 1 ))
+    # A dry run shows the number this event would take without taking it. Storing
+    # it here would leave a gap in the sequence of the run that follows.
+    if [ "${ONESIGNAL_SKILL_DRY_RUN:-0}" = "1" ]; then
+      :
+    elif ! printf '%s' "$SEQ" > "$SEQ_FILE" 2>/dev/null; then
+      # Reporting the number without storing it would give the next checkpoint
+      # the same one, which reads as a duplicate of this event rather than a
+      # missing position.
+      note "seq_write_failed" "cannot write $SEQ_FILE"
+      SEQ=0
+    fi
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -539,35 +617,76 @@ else
 fi
 
 PAYLOAD=$(cat <<JSON
-{"schema":2,"source":"$E_SOURCE","run_id":"$E_RUN_ID","skill_version":"$SKILL_VERSION","milestone":"$E_MILESTONE","status":"$E_STATUS","failure_class":$FC_JSON,"runtime":"$E_RUNTIME","os":"$E_OS","ts":"$E_TS","app_id":"$E_APP_ID","platform":"$E_PLATFORM","skill":"$E_SKILL"}
+{"schema":$SCHEMA_VERSION,"source":"$E_SOURCE","run_id":"$E_RUN_ID","seq":$SEQ,"skill_version":"$SKILL_VERSION","milestone":"$E_MILESTONE","status":"$E_STATUS","failure_class":$FC_JSON,"runtime":"$E_RUNTIME","os":"$E_OS","ts":"$E_TS","app_id":"$E_APP_ID","platform":"$E_PLATFORM","skill":"$E_SKILL"}
 JSON
 )
 
+# The one free-text field, and it is not free text: it is built from values this
+# script already validated, so it cannot carry anything the query parameters do
+# not carry. The server turns it into the log body, which is the column a person
+# reads first when scanning these events.
+MESSAGE="onesignal onboarding [$PLATFORM/$SKILL_NAME]: $MILESTONE $STATUS"
+if [ -n "$FAILURE_CLASS" ]; then
+  MESSAGE="$MESSAGE $FAILURE_CLASS"
+fi
+
+# ---------------------------------------------------------------------------
+# The request, defined once. The dry run prints this array and the send passes
+# it to curl, so what you inspect is what goes out.
+#
+# curl percent-encodes each value: `message` holds spaces and brackets, and a
+# `platform` or `source` override is not otherwise constrained. Building the
+# query string by hand here would put that encoding in shell, where a missed
+# character silently truncates a value at the server.
+#
+# An absent failure class omits the KEY. Sending an empty one would create a
+# class named "" that every count of failure classes then has to exclude.
+# ---------------------------------------------------------------------------
+QUERY_ARGS=(
+  --data-urlencode "app_id=$APP_ID"
+  --data-urlencode "schema=$SCHEMA_VERSION"
+  --data-urlencode "source=$SOURCE_TAG"
+  --data-urlencode "run_id=$RUN_ID"
+  --data-urlencode "seq=$SEQ"
+  --data-urlencode "skill=$SKILL_NAME"
+  --data-urlencode "milestone=$MILESTONE"
+  --data-urlencode "status=$STATUS"
+  --data-urlencode "platform=$PLATFORM"
+  --data-urlencode "runtime=$RUNTIME"
+  --data-urlencode "os=$OS_NAME"
+  --data-urlencode "skill_version=$SKILL_VERSION"
+  --data-urlencode "timestamp=$PAYLOAD_TS"
+  --data-urlencode "message=$MESSAGE"
+)
+if [ -n "$FAILURE_CLASS" ]; then
+  QUERY_ARGS+=( --data-urlencode "failure_class=$FAILURE_CLASS" )
+fi
+
 # ---------------------------------------------------------------------------
 # Dry run: print the exact request and stop. Nothing is sent, nothing is logged.
-# For comparing this payload against a target endpoint's expected schema.
+# For comparing this request against what the endpoint expects.
 # ---------------------------------------------------------------------------
 if [ "${ONESIGNAL_SKILL_DRY_RUN:-0}" = "1" ]; then
-  echo "POST ${ENDPOINT}?app_id=${APP_ID:-<UNSET>}"
+  echo "GET $ENDPOINT"
   echo "  [endpoint from $ENDPOINT_SRC]"
-  # Content-Type is the ONLY header sent. Do not print others here either — an
-  # earlier version advertised an X-OneSignal-Skill header that the real request
+  # No custom header is sent, and none may be added here either. An earlier
+  # version advertised an X-OneSignal-Skill header that the real request
   # deliberately omits, which reads as license to add it back. Doing so trips a
   # Cloudflare WAF rule and returns a 403 HTML block page.
-  echo "Content-Type: application/x-protobuf"
+  echo "  no request body, and no header beyond curl's own"
   echo
-  echo "--- checkpoint fields (encoded into OTLP LogsData) ---"
-  if command -v python3 >/dev/null 2>&1; then
-    printf '%s' "$PAYLOAD" | python3 -m json.tool 2>/dev/null || printf '%s\n' "$PAYLOAD"
-    ENC="$SCRIPT_DIR/otlp_encode.py"
-    if [ -f "$ENC" ]; then
-      SIZE=$(printf '%s' "$PAYLOAD" | python3 "$ENC" 2>/dev/null | wc -c | tr -d ' ')
-      echo
-      echo "--- encoded body: ${SIZE} bytes of application/x-protobuf ---"
-    fi
-  else
-    printf '%s\n' "$PAYLOAD"
+  echo "--- query parameters, before curl percent-encodes each value ---"
+  for arg in "${QUERY_ARGS[@]}"; do
+    [ "$arg" = "--data-urlencode" ] && continue
+    printf '  %s\n' "$arg"
+  done
+  if [ -z "$APP_ID" ]; then
+    echo
+    echo "  NOTE: no App ID yet, so a real run would buffer this event instead of sending it."
   fi
+  echo
+  echo "--- the same event as it is recorded locally ---"
+  printf '%s\n' "$PAYLOAD"
   echo
   echo "(dry run — nothing sent, nothing logged)"
   exit 0
@@ -590,9 +709,8 @@ fi
 # a blocked network dropped every event with exit 0 while the contract promised
 # a later flush "loses nothing". Which outcomes hold and which drop is decided in
 # the `case "$HTTP_CODE"` arms below: a transient failure is held, and a request
-# the service already rejected is not. An encoder error, or a 4xx that is not 429,
-# rejects this exact payload, so a re-send would fail in the same way on every
-# future flush.
+# the service already rejected is not. A 4xx that is not 429 rejects this exact
+# request, so a re-send would fail in the same way on every future flush.
 #
 # A flush child must NOT re-append: the parent collects the rows that failed and
 # rewrites the buffer, so appending here would duplicate the row.
@@ -677,54 +795,23 @@ if [ -z "$APP_ID" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Body must be an OTLP LogsData protobuf. curl cannot build that, so shell out
-# to the dependency-free encoder. python3 is the one external requirement for
-# reporting; without it we degrade to local logging like any other failure.
-# ---------------------------------------------------------------------------
-ENCODER="$SCRIPT_DIR/otlp_encode.py"
-
-if ! command -v python3 >/dev/null 2>&1; then
-  note "no_python3" "python3 required to encode OTLP protobuf"
-  echo "checkpoint: $MILESTONE=$STATUS (not sent: python3 unavailable; logged locally)"
-  echo "  The endpoint accepts only OTLP protobuf, which needs python3 to encode."
-  exit 0
-fi
-if [ ! -f "$ENCODER" ]; then
-  note "no_encoder" "otlp_encode.py missing at $ENCODER"
-  echo "checkpoint: $MILESTONE=$STATUS (not sent: encoder missing; logged locally)"
-  exit 0
-fi
-
-BODY_FILE="$STATE_DIR/last_body.pb"
-if ! printf '%s' "$PAYLOAD" | python3 "$ENCODER" > "$BODY_FILE" 2>"$STATE_DIR/last_encode_error"; then
-  note "encode_failed" "otlp_encode.py returned nonzero"
-  echo "checkpoint: $MILESTONE=$STATUS (not sent: protobuf encoding failed; logged locally)"
-  echo "  see $STATE_DIR/last_encode_error"
-  exit 0
-fi
-
-# app_id goes in the query string, not the body. Preserve any existing query.
-case "$ENDPOINT" in
-  *\?*) URL="${ENDPOINT}&app_id=${APP_ID}" ;;
-  *)    URL="${ENDPOINT}?app_id=${APP_ID}" ;;
-esac
-
-# Content-Type is compared with strict equality server-side; anything other than
-# exactly "application/x-protobuf" returns 415.
-# Send ONLY Content-Type. Adding an X-OneSignal-Skill identification header here
-# caused Cloudflare to return a 403 HTML block page before the request reached the
-# service, while a byte-identical request without it returned 202. Unrecognised
-# custom headers on this path trip a WAF rule.
+# Send. Every field rides in the query string, so curl alone can build the whole
+# request: -G moves the --data-urlencode values into the URL and sends a GET.
 #
-# Nothing is lost: the payload already carries source, skill_version, runtime and
-# run_id, so identification does not need to live in a header. Match the shape of
-# a real SDK request as closely as possible and add nothing.
+# Add NO header. Adding an X-OneSignal-Skill identification header caused
+# Cloudflare to return a 403 HTML block page before the request reached the
+# service, while a byte-identical request without it returned 202. Unrecognised
+# custom headers on this path trip a WAF rule. Nothing is lost by leaving them
+# out: source, skill_version, runtime and run_id are parameters already.
+#
+# The endpoint keeps any query the URL already carries, so an endpoint override
+# that includes one still works.
+# ---------------------------------------------------------------------------
 RESP_FILE="$STATE_DIR/last_response"
 HTTP_CODE=$(curl -sS -o "$RESP_FILE" -w '%{http_code}' \
   --max-time "$TIMEOUT" \
-  -X POST "$URL" \
-  -H 'Content-Type: application/x-protobuf' \
-  --data-binary "@$BODY_FILE" 2>"$STATE_DIR/last_curl_error" )
+  -G "$ENDPOINT" \
+  "${QUERY_ARGS[@]}" 2>"$STATE_DIR/last_curl_error" )
 CURL_RC=$?
 
 # ---------------------------------------------------------------------------
@@ -792,15 +879,15 @@ explain_http_error() {
   if head -c 200 "$RESP_FILE" 2>/dev/null | grep -qiE '<!DOCTYPE|<html'; then
     echo "  ^ an HTML error page, so a CDN or WAF blocked this before it reached any"
     echo "    application. Triggered by request SHAPE, not content — the known cause"
-    echo "    here is an unexpected custom header. Send only Content-Type."
-  elif grep -qiE 'status (Enabled|Disabled|Unknown)|Missing required parameter: app_id|Invalid UUID format' "$RESP_FILE" 2>/dev/null; then
+    echo "    here is an unexpected custom header. Send no header at all."
+  elif grep -qiE 'status (Enabled|Disabled|Unknown)|Missing required parameter: app_id|Invalid UUID format|Missing query parameters' "$RESP_FILE" 2>/dev/null; then
     echo "  ^ this is the ingestion service responding. Its codes: 202 accepted;"
-    echo "    400 = missing or malformed app_id query param; 415 = Content-Type"
-    echo "    is not exactly application/x-protobuf."
+    echo "    400 = the app_id query parameter is missing or is not a UUID;"
+    echo "    403 = the app exists but is not Enabled."
   elif grep -qiE 'parse JSON|Authorization|API key' "$RESP_FILE" 2>/dev/null; then
     echo "  ^ NOT the ingestion service. A JSON-parse or API-key error means the"
     echo "    general OneSignal JSON API handled it, i.e. nothing is routed at this"
-    echo "    path. The real path is /sdk/log — check the URL."
+    echo "    path. The real path is /sdk/agent-progress — check the URL."
   fi
 }
 
