@@ -31,7 +31,7 @@
 #   milestone=credentials_gate
 #   status=ok | ok_after_fix | fail
 #   failure_class=kotlin_stdlib_floor | ...   <- the key is absent when there is none
-#   failure_detail=buildconfig_disabled       <- only when class is unknown; else absent
+#   failure_detail=foo_bar_missing            <- only when class is unknown; else absent
 #   platform=android | web | ...
 #   runtime=claude-code | codex | ... | unknown
 #   os=darwin | linux | ...
@@ -308,16 +308,20 @@ if [ -n "$FAILURE_CLASS" ] && ! printf '%s' "$FAILURE_CLASS" | grep -qE '^[a-z][
   FAILURE_CLASS="unknown"
 fi
 
-# failure_detail segments the unknown bucket. Privacy control lives here, not
-# in the agent: a slug that is not unknown, that holds 4 digits in a row, or
-# that is empty after sanitization never leaves the machine. The wire omits
-# the key in those cases, the same as an absent failure_class.
+# failure_detail segments the unknown bucket. Replacing `/` with `_` would
+# still name the file (`src/App.tsx` → `src_app_tsx`), so a path separator
+# in the raw argument drops the value. LC_ALL=C keeps `[a-z]` as ASCII.
 FAILURE_DETAIL=""
 if [ -n "$RAW_FAILURE_DETAIL" ] && [ "$FAILURE_CLASS" = "unknown" ]; then
-  FAILURE_DETAIL="$(printf '%s' "$RAW_FAILURE_DETAIL" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_]/_/g')"
-  FAILURE_DETAIL="${FAILURE_DETAIL:0:30}"
-  case "$FAILURE_DETAIL" in
-    *[0-9][0-9][0-9][0-9]*) FAILURE_DETAIL="" ;;
+  case "$RAW_FAILURE_DETAIL" in
+    */*|*\\*) ;;
+    *)
+      FAILURE_DETAIL="$(LC_ALL=C printf '%s' "$RAW_FAILURE_DETAIL" | LC_ALL=C tr '[:upper:]' '[:lower:]' | LC_ALL=C sed 's/[^a-z0-9_]/_/g')"
+      FAILURE_DETAIL="${FAILURE_DETAIL:0:30}"
+      case "$FAILURE_DETAIL" in
+        *[0-9][0-9][0-9][0-9]*) FAILURE_DETAIL="" ;;
+      esac
+      ;;
   esac
 fi
 

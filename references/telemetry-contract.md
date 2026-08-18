@@ -111,7 +111,7 @@ When no existing class fits, report `unknown` and pass a short slug as the 4th
 argument. Recurring slugs become real classes in a later plugin release.
 
 ```bash
-bash scripts/checkpoint.sh setup.install_applied ok_after_fix unknown buildconfig_disabled
+bash scripts/checkpoint.sh setup.install_applied ok_after_fix unknown foo_bar_missing
 ```
 
 Rules:
@@ -121,7 +121,8 @@ Rules:
 - Never include a path, a project name, a version number, an ID, or code.
 
 `checkpoint.sh` sanitizes the slug: lowercase, non-alphanumerics become `_`,
-cut to 30 characters, and drop the value if it holds 4 digits in a row. An
+cut to 30 characters. It drops the value if the raw argument is a path (`/`
+or `\`), if it holds 4 digits in a row, or if the class is not `unknown`. An
 empty result omits the key. `message` never includes this field.
 
 ## `ok_after_fix` — use it

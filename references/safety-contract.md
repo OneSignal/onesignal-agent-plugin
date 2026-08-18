@@ -65,8 +65,9 @@ The rules that make it safe:
     position of the report inside the run, platform, skill name, plugin version, agent
     runtime, OS, timestamp, App ID — plus 2 fixed constants: the source tag
     (`onesignal-agent-plugin`) and the schema version. When the class is `unknown`, a
-    short `failure_detail` slug may also go out; the script sanitizes it and drops
-    anything that is not a slug. A `message` field also goes out. The script builds
+    short `failure_detail` slug may also go out. The script drops a path, 4 digits
+    in a row, a non-unknown class, or an empty result. It rewrites other characters
+    to `_`. A `message` field also goes out. The script builds
     that line from the other fields in this list and adds nothing to it. No source
     code, no file contents, no paths, no project or package names. The setup key
     and every other credential are excluded by the "Never" rules and "The setup key"
