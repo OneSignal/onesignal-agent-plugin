@@ -2,7 +2,7 @@
 # checkpoint.sh — report one onboarding milestone for the OneSignal agent plugin.
 #
 # Usage:
-#   bash scripts/checkpoint.sh <skill.milestone> <ok|ok_after_fix|fail> [class]
+#   bash scripts/checkpoint.sh <skill.milestone> <ok|ok_after_fix|fail> [class] [detail]
 #   bash scripts/checkpoint.sh flush        # send events buffered before the App ID existed
 #
 # Milestone vocabulary, failure classes and the funnel model:
@@ -31,6 +31,7 @@
 #   milestone=credentials_gate
 #   status=ok | ok_after_fix | fail
 #   failure_class=kotlin_stdlib_floor | ...   <- the key is absent when there is none
+#   failure_detail=buildconfig_disabled       <- only when class is unknown; else absent
 #   platform=android | web | ...
 #   runtime=claude-code | codex | ... | unknown
 #   os=darwin | linux | ...
@@ -46,8 +47,8 @@
 #
 # The same event is also written locally as one JSON line in
 # .onesignal/checkpoints.jsonl. That line is the internal record, not the wire
-# format: it names the event time `ts` and carries a null `failure_class` where
-# the request omits the key.
+# format: it names the event time `ts` and carries a null `failure_class` or
+# `failure_detail` where the request omits the key.
 #
 # "source" exists so these events can be separated from real SDK traffic on the
 # shared ingestion endpoint. Override it with $ONESIGNAL_SKILL_SOURCE if the
@@ -68,6 +69,7 @@ UUID_RE='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F
 RAW_MILESTONE="${1:-unknown}"
 STATUS="${2:-unknown}"
 FAILURE_CLASS="${3:-}"
+RAW_FAILURE_DETAIL="${4:-}"
 
 # Milestones are named "<skill>.<milestone>" so one funnel run can be followed across
 # every skill. Derive the skill rather than taking it as another argument the agent
@@ -221,6 +223,7 @@ if [ "$RAW_MILESTONE" = "flush" ]; then
     BRUNTIME=$(buffered_field "$line" runtime)
     BOS=$(buffered_field "$line" os)
     BSEQ=$(buffered_number "$line" seq)
+    BFD=$(buffered_field "$line" failure_detail)
     # Re-qualify as "<skill>.<milestone>". Passing the bare milestone made the child
     # derive skill="unknown", erasing the skill of every buffered event.
     case "$SK" in
@@ -252,7 +255,7 @@ if [ "$RAW_MILESTONE" = "flush" ]; then
     ONESIGNAL_SKILL_RUNTIME="$BRUNTIME" \
     ONESIGNAL_SKILL_OS="$BOS" \
     ONESIGNAL_SKILL_SEQ="$BSEQ" \
-      bash "$0" "$QUALIFIED" "$S" "$FC" 2>/dev/null
+      bash "$0" "$QUALIFIED" "$S" "$FC" "$BFD" 2>/dev/null
     if [ "$(cat "$RESULT_FILE" 2>/dev/null)" = "sent" ]; then
       SENT=$((SENT + 1))
     else
@@ -294,7 +297,7 @@ case "$STATUS" in
   *)
     echo "checkpoint: INVALID STATUS '$STATUS' — nothing recorded, nothing sent."
     echo "  Valid statuses: ok | ok_after_fix | fail. Re-run:"
-    echo "    bash scripts/checkpoint.sh $RAW_MILESTONE <ok|ok_after_fix|fail> [failure_class]"
+    echo "    bash scripts/checkpoint.sh $RAW_MILESTONE <ok|ok_after_fix|fail> [failure_class] [failure_detail]"
     exit 0 ;;
 esac
 
@@ -303,6 +306,19 @@ if [ -n "$FAILURE_CLASS" ] && ! printf '%s' "$FAILURE_CLASS" | grep -qE '^[a-z][
   echo "  Classes are lowercase snake_case from references/telemetry-contract.md."
   echo "  Free text (paths, error messages) must never reach the wire."
   FAILURE_CLASS="unknown"
+fi
+
+# failure_detail segments the unknown bucket. Privacy control lives here, not
+# in the agent: a slug that is not unknown, that holds 4 digits in a row, or
+# that is empty after sanitization never leaves the machine. The wire omits
+# the key in those cases, the same as an absent failure_class.
+FAILURE_DETAIL=""
+if [ -n "$RAW_FAILURE_DETAIL" ] && [ "$FAILURE_CLASS" = "unknown" ]; then
+  FAILURE_DETAIL="$(printf '%s' "$RAW_FAILURE_DETAIL" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_]/_/g')"
+  FAILURE_DETAIL="${FAILURE_DETAIL:0:30}"
+  case "$FAILURE_DETAIL" in
+    *[0-9][0-9][0-9][0-9]*) FAILURE_DETAIL="" ;;
+  esac
 fi
 
 # ---------------------------------------------------------------------------
@@ -616,8 +632,14 @@ else
   FC_JSON="null"
 fi
 
+if [ -n "$FAILURE_DETAIL" ]; then
+  FD_JSON="\"$(json_escape "$FAILURE_DETAIL")\""
+else
+  FD_JSON="null"
+fi
+
 PAYLOAD=$(cat <<JSON
-{"schema":$SCHEMA_VERSION,"source":"$E_SOURCE","run_id":"$E_RUN_ID","seq":$SEQ,"skill_version":"$SKILL_VERSION","milestone":"$E_MILESTONE","status":"$E_STATUS","failure_class":$FC_JSON,"runtime":"$E_RUNTIME","os":"$E_OS","ts":"$E_TS","app_id":"$E_APP_ID","platform":"$E_PLATFORM","skill":"$E_SKILL"}
+{"schema":$SCHEMA_VERSION,"source":"$E_SOURCE","run_id":"$E_RUN_ID","seq":$SEQ,"skill_version":"$SKILL_VERSION","milestone":"$E_MILESTONE","status":"$E_STATUS","failure_class":$FC_JSON,"failure_detail":$FD_JSON,"runtime":"$E_RUNTIME","os":"$E_OS","ts":"$E_TS","app_id":"$E_APP_ID","platform":"$E_PLATFORM","skill":"$E_SKILL"}
 JSON
 )
 
@@ -641,6 +663,8 @@ fi
 #
 # An absent failure class omits the KEY. Sending an empty one would create a
 # class named "" that every count of failure classes then has to exclude.
+# failure_detail follows the same rule: the key is absent unless a sanitized
+# slug survived, and `message` never includes it.
 # ---------------------------------------------------------------------------
 QUERY_ARGS=(
   --data-urlencode "app_id=$APP_ID"
@@ -660,6 +684,9 @@ QUERY_ARGS=(
 )
 if [ -n "$FAILURE_CLASS" ]; then
   QUERY_ARGS+=( --data-urlencode "failure_class=$FAILURE_CLASS" )
+fi
+if [ -n "$FAILURE_DETAIL" ]; then
+  QUERY_ARGS+=( --data-urlencode "failure_detail=$FAILURE_DETAIL" )
 fi
 
 # ---------------------------------------------------------------------------

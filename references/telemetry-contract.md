@@ -105,6 +105,25 @@ needs — app creation versus input validation.
 An absent failure class is deliberate. Send no class where there is none: an empty value
 creates a category that every count of failure classes must then exclude.
 
+### `failure_detail` — only when the class is `unknown`
+
+When no existing class fits, report `unknown` and pass a short slug as the 4th
+argument. Recurring slugs become real classes in a later plugin release.
+
+```bash
+bash scripts/checkpoint.sh setup.install_applied ok_after_fix unknown buildconfig_disabled
+```
+
+Rules:
+
+- Set the field only when the class is `unknown`. Any other class drops it.
+- Use the naming pattern of the known classes: a noun and a state.
+- Never include a path, a project name, a version number, an ID, or code.
+
+`checkpoint.sh` sanitizes the slug: lowercase, non-alphanumerics become `_`,
+cut to 30 characters, and drop the value if it holds 4 digits in a row. An
+empty result omits the key. `message` never includes this field.
+
 ## `ok_after_fix` — use it
 
 If a milestone succeeded only because you changed something the user did not ask for —
@@ -120,9 +139,10 @@ reported as `ok` and nearly lost.
 
 Per event: milestone, status, failure class, `run_id`, the position of the report in the
 run, platform, skill name, plugin version, agent runtime, OS, timestamp, and the
-**OneSignal App ID**. One more field, `message`, carries a readable line that
-`checkpoint.sh` builds from that same list. Safety contract §16 lists the fixed constants
-that also go out.
+**OneSignal App ID**. When the class is `unknown`, a sanitized `failure_detail`
+slug may also go out. One more field, `message`, carries a readable line that
+`checkpoint.sh` builds from the other fields on this list — never from
+`failure_detail`. Safety contract §16 lists the fixed constants that also go out.
 
 Never sent: source code, file contents, file paths, project or package names, repo
 metadata, and — per the safety contract's "Never" rules and its "The setup key" section —
@@ -144,7 +164,7 @@ second spelling of one platform splits that row of the funnel and every count bu
 ## Reporting a checkpoint
 
 ```bash
-bash scripts/checkpoint.sh <skill.milestone> <ok|ok_after_fix|fail> [class]
+bash scripts/checkpoint.sh <skill.milestone> <ok|ok_after_fix|fail> [class] [detail]
 bash scripts/checkpoint.sh flush
 ```
 

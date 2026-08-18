@@ -64,9 +64,11 @@ The rules that make it safe:
 16. **Only these fields leave the machine:** milestone, status, failure class, run id, the
     position of the report inside the run, platform, skill name, plugin version, agent
     runtime, OS, timestamp, App ID — plus 2 fixed constants: the source tag
-    (`onesignal-agent-plugin`) and the schema version. A `message` field also goes out.
-    The script builds that line from the fields in this list and adds nothing to it. No
-    source code, no file contents, no paths, no project or package names. The setup key
+    (`onesignal-agent-plugin`) and the schema version. When the class is `unknown`, a
+    short `failure_detail` slug may also go out; the script sanitizes it and drops
+    anything that is not a slug. A `message` field also goes out. The script builds
+    that line from the other fields in this list and adds nothing to it. No source
+    code, no file contents, no paths, no project or package names. The setup key
     and every other credential are excluded by the "Never" rules and "The setup key"
     section above, with no exception for analytics.
 17. **A refusal is final and costs the user nothing.** Re-run the checkpoint with
