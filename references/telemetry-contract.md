@@ -44,7 +44,8 @@ through `conversions` and see exactly which step they stopped at. A per-skill id
 throw that away.
 
 `checkpoint.sh` owns the id. A skill never reads it, writes it, or decides when a run ends.
-A second pass through `setup.preflight`, or a gap of more than 8 hours, starts a new run.
+A new run starts in 2 cases: this checkpoint is `setup.preflight` and the run already
+reported a successful preflight, or the run was idle for more than 8 hours.
 `ONESIGNAL_SKILL_RUN_ID` overrides the id and is never persisted, which is how a CI smoke
 test keeps its own.
 
@@ -118,9 +119,9 @@ reported as `ok` and nearly lost.
 
 ## What is sent
 
-Per event: milestone, status, failure class, `run_id`, the position of the report in the
-run, platform, skill name, plugin version, agent runtime, OS, timestamp, and the
-**OneSignal App ID**.
+Per event: milestone, status, failure class, `run_id`, platform, skill name, plugin
+version, agent runtime, OS, timestamp, and the **OneSignal App ID**. Safety contract §16
+lists the fixed constants that also go out.
 
 Never sent: source code, file contents, file paths, project or package names, repo
 metadata, and — per the safety contract's "Never" rules and its "The setup key" section —

@@ -588,9 +588,11 @@ fi
 # Hold this event for a later flush after a TRANSPORT failure. Buffering used to
 # be gated only on a missing App ID, so once Step 2 wrote it (5 of 7 milestones),
 # a blocked network dropped every event with exit 0 while the contract promised
-# a later flush "loses nothing". Scope: the outcomes marked as held in the retry
-# matrix. An encoder error, or a 4xx that is not 429, rejects this exact payload,
-# so a re-send would fail in the same way on every future flush.
+# a later flush "loses nothing". Which outcomes hold and which drop is decided in
+# the `case "$HTTP_CODE"` arms below: a transient failure is held, and a request
+# the service already rejected is not. An encoder error, or a 4xx that is not 429,
+# rejects this exact payload, so a re-send would fail in the same way on every
+# future flush.
 #
 # A flush child must NOT re-append: the parent collects the rows that failed and
 # rewrites the buffer, so appending here would duplicate the row.
@@ -803,8 +805,8 @@ explain_http_error() {
 }
 
 case "$HTTP_CODE" in
-  # "Sent" means the ingestion service accepted it, and the service answers 202
-  # (INGESTION_CONTRACT.md) — 200 is tolerated as its likeliest drift. A blanket
+  # "Sent" means the ingestion service accepted it, and its handler answers 202
+  # (StatusCode::ACCEPTED) — 200 is tolerated as its likeliest drift. A blanket
   # 2* match counted captive portals and proxy interstitials as delivered: a
   # portal answers 200 with an HTML sign-in page having ingested nothing, and in
   # exactly the networks where sends fail. HTML from a 2xx is therefore treated
