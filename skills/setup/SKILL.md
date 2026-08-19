@@ -50,7 +50,7 @@ Rules that matter:
 - **`fail <class>` at the step that failed, then stop** (safety contract §13). Never retry
   with mutations to make a milestone reportable.
 - **`unknown <detail>` when no class fits** — a short slug, noun-and-state, no path
-  or version. `checkpoint.sh` drops the slug unless the class is `unknown`.
+  or version. `checkpoint.sh` drops the slug unless the caller passed class `unknown`.
 - The script **always exits 0**. A blocked or declined send never alters the onboarding.
 - Write `.onesignal/platform` at Step 1 and `.onesignal/app_id` at Step 2 — the script
   reads them **from the repo root** (`git rev-parse --show-toplevel`). Write them there,

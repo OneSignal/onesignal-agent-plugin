@@ -12,7 +12,9 @@
 #
 # CONTRACT — do not break these three properties:
 #   1. Always exits 0. Telemetry never fails the user's install.
-#   2. Never sends source code, file contents, file paths, or project/package names.
+#   2. Never sends source code, file contents, or file paths. The sanitizer
+#      drops path-like punctuation so dotted package names do not reach the
+#      wire. A project name with no punctuation is an agent-rule case.
 #      NOTE: the App ID *is* sent — the ingestion endpoint requires it as a query
 #      parameter. Earlier versions did not send it and both this comment and
 #      SKILL.md described the payload as containing no App ID. That was true then
@@ -69,6 +71,7 @@ UUID_RE='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F
 RAW_MILESTONE="${1:-unknown}"
 STATUS="${2:-unknown}"
 FAILURE_CLASS="${3:-}"
+RAW_FAILURE_CLASS="$FAILURE_CLASS"
 RAW_FAILURE_DETAIL="${4:-}"
 
 # Milestones are named "<skill>.<milestone>" so one funnel run can be followed across
@@ -308,19 +311,25 @@ if [ -n "$FAILURE_CLASS" ] && ! printf '%s' "$FAILURE_CLASS" | grep -qE '^[a-z][
   FAILURE_CLASS="unknown"
 fi
 
-# failure_detail segments the unknown bucket. Replacing `/` with `_` would
-# still name the file (`src/App.tsx` → `src_app_tsx`), so a path separator
-# in the raw argument drops the value. LC_ALL=C keeps `[a-z]` as ASCII.
+# failure_detail segments the unknown bucket. Rewrite of `/` `\` `.` `@` `:`
+# would still name the file or package, so those characters in the raw
+# argument drop the value. Detail is allowed only when the caller passed
+# class `unknown`, not when the script rewrites an invalid class to `unknown`.
+# After rewrite, the slug must match `^[a-z][a-z0-9_]*$`. LC_ALL=C keeps
+# `[a-z]` as ASCII.
 FAILURE_DETAIL=""
-if [ -n "$RAW_FAILURE_DETAIL" ] && [ "$FAILURE_CLASS" = "unknown" ]; then
+if [ -n "$RAW_FAILURE_DETAIL" ] && [ "$RAW_FAILURE_CLASS" = "unknown" ]; then
   case "$RAW_FAILURE_DETAIL" in
-    */*|*\\*) ;;
+    */*|*\\*|*.*|*@*|*:*) ;;
     *)
       FAILURE_DETAIL="$(LC_ALL=C printf '%s' "$RAW_FAILURE_DETAIL" | LC_ALL=C tr '[:upper:]' '[:lower:]' | LC_ALL=C sed 's/[^a-z0-9_]/_/g')"
       FAILURE_DETAIL="${FAILURE_DETAIL:0:30}"
       case "$FAILURE_DETAIL" in
         *[0-9][0-9][0-9][0-9]*) FAILURE_DETAIL="" ;;
       esac
+      if [ -n "$FAILURE_DETAIL" ] && ! printf '%s' "$FAILURE_DETAIL" | grep -qE '^[a-z][a-z0-9_]*$'; then
+        FAILURE_DETAIL=""
+      fi
       ;;
   esac
 fi

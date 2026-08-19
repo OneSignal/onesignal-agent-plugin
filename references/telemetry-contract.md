@@ -116,14 +116,17 @@ bash scripts/checkpoint.sh setup.install_applied ok_after_fix unknown foo_bar_mi
 
 Rules:
 
-- Set the field only when the class is `unknown`. Any other class drops it.
+- Set the field only when the caller passes class `unknown`. Any other class drops it.
 - Use the naming pattern of the known classes: a noun and a state.
 - Never include a path, a project name, a version number, an ID, or code.
 
-`checkpoint.sh` sanitizes the slug: lowercase, non-alphanumerics become `_`,
-cut to 30 characters. It drops the value if the raw argument is a path (`/`
-or `\`), if it holds 4 digits in a row, or if the class is not `unknown`. An
-empty result omits the key. `message` never includes this field.
+`checkpoint.sh` rewrites the slug to lowercase. Other characters become `_`.
+The script cuts the result to 30 characters. The script drops the value if
+the caller did not pass class `unknown`. It also drops a raw argument that
+holds `/`, `\`, `.`, `@`, or `:`. It drops 4 digits in a row. It drops a
+result that does not match `^[a-z][a-z0-9_]*$`. An empty result omits the
+key. `message` never includes this field. The script is a structural
+backstop. A name with no punctuation is an agent-rule case.
 
 ## `ok_after_fix` — use it
 
@@ -147,8 +150,9 @@ slug may also go out. One more field, `message`, carries a readable line that
 
 Never sent: source code, file contents, file paths, project or package names, repo
 metadata, and — per the safety contract's "Never" rules and its "The setup key" section —
-**the setup key or any other credential**. The App ID is public (safety contract, "Never"
-section) and is the only identifier included.
+**the setup key or any other credential**. The script cannot tell a bare name from a
+valid slug; agent rules still forbid project and package names. The App ID is public
+(safety contract, "Never" section) and is the only identifier included.
 
 ## The `platform` vocabulary
 
