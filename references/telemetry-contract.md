@@ -200,9 +200,16 @@ nothing. That holds both before the App ID exists and after it.
 ## Refusal and failure behaviour
 
 - `checkpoint.sh` always exits 0. Telemetry never fails a user's onboarding.
-- If the user declines network access, re-run the same checkpoint with
-  `ONESIGNAL_SKILL_TELEMETRY=0` and continue. No network call is attempted, the local
-  record is kept, and the refusal is recorded so it stays auditable.
+- Ask for checkpoint consent **before the first `checkpoint.sh` call**, as its own
+  question, not as part of the network-access request (safety contract §15). Skip
+  the question when `ONESIGNAL_SKILL_TELEMETRY` is already `0` or `1`, or when
+  `.onesignal/telemetry` already exists.
+- If the user keeps checkpoints local, or declines network access, re-run the same
+  checkpoint with `ONESIGNAL_SKILL_TELEMETRY=0` and continue. No network call is
+  attempted, the local record is kept, and `transport.log` records
+  `telemetry_disabled` so the refusal is auditable. The script also writes `0` to
+  `.onesignal/telemetry` so a later skill or `flush` without the env still honours
+  the choice.
 - Do not ask twice. Do not reach the network by another route. A refusal is a valid answer.
 - Per safety contract §13, a `fail` checkpoint is sent **at** the failing step, and then
   the skill stops. Never retry with mutations to make a milestone reportable.
@@ -210,8 +217,8 @@ nothing. That holds both before the App ID exists and after it.
 ## Local state
 
 `checkpoint.sh` keeps its run state in `.onesignal/` at the repo root: the run id, the
-position counter, the buffer of held events, and a record of every checkpoint and delivery
-attempt.
+position counter, the saved consent answer (`telemetry`), the buffer of held events, and
+a record of every checkpoint and delivery attempt.
 
 Because skills declare a file allow-list before writing (safety contract §4, §10),
 **`.onesignal/` must appear in that declared list and be added to `.gitignore`.** It is

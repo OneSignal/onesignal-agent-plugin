@@ -19,7 +19,8 @@
 #      parameter. Earlier versions did not send it and both this comment and
 #      SKILL.md described the payload as containing no App ID. That was true then
 #      and is false now; any description given to a user must say so.
-#   3. Honours ONESIGNAL_SKILL_TELEMETRY=0 as a full opt-out.
+#   3. Honours ONESIGNAL_SKILL_TELEMETRY=0, and a 0 in .onesignal/telemetry,
+#      as a full opt-out.
 #
 # Request (exactly this, nothing more): a GET carrying one query parameter per
 # field. There is no body and no header beyond what curl sends by default.
@@ -95,6 +96,28 @@ else
 fi
 mkdir -p "$STATE_DIR" 2>/dev/null || true
 
+# Opt-out lives in two places. The env var is the session answer; the file
+# keeps it for later skills and for a flush that no longer has the env.
+# An explicit 0 or 1 in the env is copied to the file. Unset env reads the
+# file. No file and no env means send, which is the historical default.
+TELEMETRY_FILE="$STATE_DIR/telemetry"
+if [ "${ONESIGNAL_SKILL_TELEMETRY+x}" = "x" ]; then
+  case "$ONESIGNAL_SKILL_TELEMETRY" in
+    0|1) printf '%s\n' "$ONESIGNAL_SKILL_TELEMETRY" > "$TELEMETRY_FILE" 2>/dev/null || true ;;
+  esac
+fi
+
+telemetry_disabled() {
+  if [ "${ONESIGNAL_SKILL_TELEMETRY+x}" = "x" ]; then
+    [ "$ONESIGNAL_SKILL_TELEMETRY" = "0" ]
+    return $?
+  fi
+  [ -f "$TELEMETRY_FILE" ] || return 1
+  local val
+  val="$(grep -vE '^[[:space:]]*(#|$)' "$TELEMETRY_FILE" 2>/dev/null | head -1 | tr -d '[:space:]')"
+  [ "$val" = "0" ]
+}
+
 # Resolve our own directory using only bash builtins. Deliberately avoids
 # `dirname`: if that binary is missing, an external-command failure here would
 # cascade into misdiagnosing the endpoint as unconfigured.
@@ -121,6 +144,10 @@ fi
 # and appended it to the buffer it was meant to drain.
 # ---------------------------------------------------------------------------
 if [ "$RAW_MILESTONE" = "flush" ]; then
+  if telemetry_disabled; then
+    echo "checkpoint: flush skipped (reporting disabled)"
+    exit 0
+  fi
   PENDING="$STATE_DIR/pending.jsonl"
   if [ ! -s "$PENDING" ]; then
     echo "checkpoint: nothing buffered"
@@ -770,8 +797,8 @@ rebuffer() {
 # was even defined, so a declined checkpoint left no trace in transport.log —
 # indistinguishable from the agent skipping the checkpoint altogether. Anyone
 # auditing whether a refusal was honoured needs to see it.
-if [ "${ONESIGNAL_SKILL_TELEMETRY:-1}" = "0" ]; then
-  note "telemetry_disabled" "ONESIGNAL_SKILL_TELEMETRY=0 — no network call attempted"
+if telemetry_disabled; then
+  note "telemetry_disabled" "no network call attempted"
   echo "checkpoint: $MILESTONE=$STATUS (reporting disabled; logged locally)"
   exit 0
 fi
