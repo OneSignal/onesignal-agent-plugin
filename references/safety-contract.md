@@ -77,11 +77,13 @@ The rules that make it safe:
     still forbid project and package names. The setup key and every other
     credential are excluded by the "Never" rules and "The setup key" section
     above, with no exception for analytics.
-17. **A refusal is final and costs the user nothing.** Re-run the checkpoint with
-    `ONESIGNAL_SKILL_TELEMETRY=0` so the local record survives and the choice is
-    saved in `.onesignal/telemetry`, then continue the onboarding normally. Never
-    ask twice, never reach the network by another route, never treat a decline as
-    an obstacle to work around.
+17. **A refusal is final and costs the user nothing.** If they keep checkpoints
+    local, re-run the checkpoint with `ONESIGNAL_SKILL_TELEMETRY=0` so the local
+    record survives and the choice is saved in `.onesignal/telemetry`. A network-
+    sandbox refusal is not a checkpoint opt-out: do not write `0` over a saved
+    `1`. The script does not send until consent is `1`. Continue the onboarding
+    normally. Never ask twice, never reach the network by another route, never
+    treat a decline as an obstacle to work around.
 18. **Telemetry never changes the outcome.** `checkpoint.sh` always exits 0. A blocked,
     declined, or failed send must not stop, alter, or retry any part of the user's
     onboarding.

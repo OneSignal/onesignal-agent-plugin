@@ -247,9 +247,10 @@ The essentials:
 
 - **Setup checkpoints are optional.** The setup skill asks, separately from any
   network-access prompt, before it reports milestone outcomes (step name, success
-  or fail, platform, OS, App ID) to OneSignal. Source code, paths, and credentials
-  never leave the machine. Choose "Keep checkpoints on this machine only", or set
-  `ONESIGNAL_SKILL_TELEMETRY=0`.
+  or fail, failure class, run ID, platform, OS, App ID) to OneSignal. Source code,
+  paths, and credentials never leave the machine. Nothing is sent until you
+  consent, or until `ONESIGNAL_SKILL_TELEMETRY=1` is set. Choose "Keep checkpoints
+  on this machine only", or set `ONESIGNAL_SKILL_TELEMETRY=0`.
 - **Secrets never touch your code or chat.** The REST API key and org key live in environment variables
   only. The plugin writes `.env` (gitignored — it verifies) and `.env.example` with empty placeholders,
   and scans its own diff for secret-shaped strings before finishing. It will never write a key into

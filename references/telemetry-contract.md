@@ -203,13 +203,15 @@ nothing. That holds both before the App ID exists and after it.
 - Ask for checkpoint consent **before the first `checkpoint.sh` call**, as its own
   question, not as part of the network-access request (safety contract §15). Skip
   the question when `ONESIGNAL_SKILL_TELEMETRY` is already `0` or `1`, or when
-  `.onesignal/telemetry` already exists.
-- If the user keeps checkpoints local, or declines network access, re-run the same
-  checkpoint with `ONESIGNAL_SKILL_TELEMETRY=0` and continue. No network call is
-  attempted, the local record is kept, and `transport.log` records
-  `telemetry_disabled` so the refusal is auditable. The script also writes `0` to
-  `.onesignal/telemetry` so a later skill or `flush` without the env still honours
-  the choice.
+  `.onesignal/telemetry` is exactly `0` or `1`.
+- The script does not send until consent is `1` (`ONESIGNAL_SKILL_TELEMETRY=1` or
+  `.onesignal/telemetry`). No file and no env means do not send. A saved answer
+  is not overwritten by a later env value.
+- If the user keeps checkpoints local, re-run the same checkpoint with
+  `ONESIGNAL_SKILL_TELEMETRY=0` and continue. No network call is attempted, the
+  local record is kept, and `transport.log` records `telemetry_disabled` so the
+  refusal is auditable. The first `0` or `1` is saved in `.onesignal/telemetry`.
+  A network-sandbox refusal is not a checkpoint opt-out.
 - Do not ask twice. Do not reach the network by another route. A refusal is a valid answer.
 - Per safety contract §13, a `fail` checkpoint is sent **at** the failing step, and then
   the skill stops. Never retry with mutations to make a milestone reportable.

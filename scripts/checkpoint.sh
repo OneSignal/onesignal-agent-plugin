@@ -19,8 +19,9 @@
 #      parameter. Earlier versions did not send it and both this comment and
 #      SKILL.md described the payload as containing no App ID. That was true then
 #      and is false now; any description given to a user must say so.
-#   3. Honours ONESIGNAL_SKILL_TELEMETRY=0, and a 0 in .onesignal/telemetry,
-#      as a full opt-out.
+#   3. Sends only after consent is recorded as 1 (ONESIGNAL_SKILL_TELEMETRY=1
+#      or .onesignal/telemetry). 0 is a full opt-out. No file and no env
+#      means do not send. A later env must not overwrite a saved answer.
 #
 # Request (exactly this, nothing more): a GET carrying one query parameter per
 # field. There is no body and no header beyond what curl sends by default.
@@ -96,14 +97,26 @@ else
 fi
 mkdir -p "$STATE_DIR" 2>/dev/null || true
 
-# Opt-out lives in two places. The env var is the session answer; the file
-# keeps it for later skills and for a flush that no longer has the env.
-# An explicit 0 or 1 in the env is copied to the file. Unset env reads the
-# file. No file and no env means send, which is the historical default.
+# Consent lives in two places. The env var is this invocation; the file is
+# the saved answer. Env 0 or 1 writes the file only when no answer is saved
+# yet, so a network-sandbox decline cannot overwrite a prior "send".
+# Unset env reads the file. Send only when the answer is 1.
 TELEMETRY_FILE="$STATE_DIR/telemetry"
+
+telemetry_file_value() {
+  [ -f "$TELEMETRY_FILE" ] || return 1
+  grep -vE '^[[:space:]]*(#|$)' "$TELEMETRY_FILE" 2>/dev/null | head -1 | tr -d '[:space:]'
+}
+
 if [ "${ONESIGNAL_SKILL_TELEMETRY+x}" = "x" ]; then
   case "$ONESIGNAL_SKILL_TELEMETRY" in
-    0|1) printf '%s\n' "$ONESIGNAL_SKILL_TELEMETRY" > "$TELEMETRY_FILE" 2>/dev/null || true ;;
+    0|1)
+      existing="$(telemetry_file_value || true)"
+      case "$existing" in
+        0|1) : ;;
+        *) printf '%s\n' "$ONESIGNAL_SKILL_TELEMETRY" > "$TELEMETRY_FILE" 2>/dev/null || true ;;
+      esac
+      ;;
   esac
 fi
 
@@ -112,10 +125,9 @@ telemetry_disabled() {
     [ "$ONESIGNAL_SKILL_TELEMETRY" = "0" ]
     return $?
   fi
-  [ -f "$TELEMETRY_FILE" ] || return 1
   local val
-  val="$(grep -vE '^[[:space:]]*(#|$)' "$TELEMETRY_FILE" 2>/dev/null | head -1 | tr -d '[:space:]')"
-  [ "$val" = "0" ]
+  val="$(telemetry_file_value || true)"
+  [ "$val" != "1" ]
 }
 
 # Resolve our own directory using only bash builtins. Deliberately avoids

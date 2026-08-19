@@ -27,14 +27,15 @@ host is `api.onesignal.com`.
 Skip the question only when one of these is already true:
 
 - `ONESIGNAL_SKILL_TELEMETRY` is `0` or `1` in the environment
-- `.onesignal/telemetry` exists at the repo root (a prior run recorded the answer)
+- `.onesignal/telemetry` at the repo root is exactly `0` or `1`
 
 Otherwise ask via the harness's native structured-question tool (safety contract §14)
 and **end the turn**. Do not run Step 0, do not request network access, and do not run
 `checkpoint.sh` until the user answers.
 
-Question: "OneSignal can record setup checkpoints (step name, success or fail, platform,
-OS, App ID). No source code, paths, or credentials. Send these to OneSignal?"
+Question: "OneSignal can record setup checkpoints (step name, success or fail, failure
+class, run ID, platform, OS, App ID). No source code, paths, or credentials. Send these
+to OneSignal?"
 
 Choices:
 
@@ -45,7 +46,8 @@ If they keep them local, prefix **every** `checkpoint.sh` call in this run with
 `ONESIGNAL_SKILL_TELEMETRY=0` (including `flush`). Setup continues normally.
 
 If they send them, prefix the **first** `checkpoint.sh` call with
-`ONESIGNAL_SKILL_TELEMETRY=1` so the choice is saved. Later calls need no prefix.
+`ONESIGNAL_SKILL_TELEMETRY=1` so the choice is saved. The script does not send until
+that `1` is recorded. Later calls need no prefix.
 
 Do not ask again. Do not reach the network by another route.
 
@@ -62,8 +64,12 @@ question already happened. A request made in advance can be granted; a syscall d
 part-way through a command cannot.
 
 If the user declines network access, everything still runs: Step 4 falls back to asking
-them to confirm a version, Step 3 falls back to a dashboard check, and checkpoints run
-with `ONESIGNAL_SKILL_TELEMETRY=0`. Ask once. Never route around a refusal.
+them to confirm a version, and Step 3 falls back to a dashboard check. Checkpoints
+follow the consent answer, not this refusal: if they kept them local, prefix
+`ONESIGNAL_SKILL_TELEMETRY=0`; if they consented to send, still prefix
+`ONESIGNAL_SKILL_TELEMETRY=1` on the first call so the choice is saved. Blocked
+sends stay local and wait for a later flush. Do not treat a network refusal as a
+checkpoint opt-out. Ask once. Never route around a refusal.
 
 ## Reporting milestones (do this as you go, not at the end)
 
@@ -85,9 +91,11 @@ Rules that matter:
   with mutations to make a milestone reportable.
 - **`unknown <detail>` when no class fits** — a short slug, noun-and-state, no path
   or version. `checkpoint.sh` drops the slug unless the caller passed class `unknown`.
-- Honour checkpoint consent: if the user kept checkpoints local, prefix every
-  call (including `flush`) with `ONESIGNAL_SKILL_TELEMETRY=0`. The script
-  **always exits 0**. A blocked or declined send never alters the onboarding.
+- Honour checkpoint consent. Keep-local → prefix every call (including `flush`)
+  with `ONESIGNAL_SKILL_TELEMETRY=0`. Send → prefix the first call with
+  `ONESIGNAL_SKILL_TELEMETRY=1`. The script does not send until that `1` is
+  recorded. The script **always exits 0**. A blocked or declined send never
+  alters the onboarding.
 - Write `.onesignal/platform` at Step 1 and `.onesignal/app_id` at Step 2 — the script
   reads them **from the repo root** (`git rev-parse --show-toplevel`). Write them there,
   not relative to your current directory: in a monorepo run from a package folder, a
