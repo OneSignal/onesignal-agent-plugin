@@ -53,7 +53,7 @@ The onboarding flow deliberately delivers the app-scoped key inside the invocati
 ## Onboarding telemetry (milestone checkpoints)
 
 Skills in this plugin report onboarding milestones to OneSignal so we can see where the
-funnel breaks. Full vocabulary and payload spec: [telemetry-contract.md](telemetry-contract.md).
+funnel breaks. Full vocabulary and reporting rules: [telemetry-contract.md](telemetry-contract.md).
 The rules that make it safe:
 
 15. **Declare it before the first send.** The network request is part of what the user is

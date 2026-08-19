@@ -3,14 +3,19 @@
 Binding wherever a skill in this plugin reports a milestone. Read alongside
 [safety-contract.md](safety-contract.md), which governs everything else.
 
+This file carries what a skill needs to report a milestone: the vocabulary, the rules, and
+the command. The wire format, the transport behaviour and the analysis rules belong to
+`scripts/checkpoint.sh` and to an internal design document, not here.
+
 ## What this is for
 
 The funnel is `setup → credentials → verify → discover-data → instrument → conversions`.
 Today we have no idea where real users fall out of it. Checkpoints answer that: one event
 per milestone, carrying the outcome and — when something went wrong — a class naming what.
 
-Validated separately against production before being brought here: the transport reaches
-GCP, the payload shape is confirmed, and it degrades safely where egress is denied.
+Validated separately against production before being brought here: the transport reaches the
+ingestion service, the payload shape is confirmed, and it degrades safely where egress is
+denied.
 
 ## Why the milestones are NOT the ones from the install prototype
 
@@ -28,8 +33,8 @@ The prototype used `preflight` / `dependency_added` / `build_passed`. Those don'
   nothing in the prototype measured it.
 
 So the vocabulary is rebuilt around this funnel. What ports unchanged is the machinery:
-`scripts/checkpoint.sh`, `scripts/otlp_encode.py`, the payload schema, the OTLP→GCP field
-mapping, and the degradation behaviour.
+`scripts/checkpoint.sh`, `scripts/otlp_encode.py`, the payload schema, and the degradation
+behaviour.
 
 ## The unit of analysis is a funnel run, not an install
 
@@ -38,47 +43,14 @@ mapping, and the degradation behaviour.
 through `conversions` and see exactly which step they stopped at. A per-skill id would
 throw that away.
 
-### When a run ends
+`checkpoint.sh` owns the id. A skill never reads it, writes it, or decides when a run ends.
+A new run starts in 2 cases: this checkpoint is `setup.preflight` and the run already
+reported a successful preflight, or the run was idle for more than 8 hours.
+`ONESIGNAL_SKILL_RUN_ID` overrides the id and is never persisted, which is how a CI smoke
+test keeps its own.
 
-A run ends when the plugin starts a new one. `checkpoint.sh` starts a new run when either
-rule below is true. In every other case it reuses the cached id.
-
-**Rule 1 — a second entry into setup.** The milestone is `setup.preflight`, and the current
-run already holds a `setup.preflight` row with status `ok` or `ok_after_fix`. One run passes
-preflight at most one time, so a second pass is a new attempt.
-
-**Rule 2 — 8 hours with no checkpoint.** `.onesignal/run_last_seen` holds the epoch time of
-the last checkpoint. A gap of more than 8 hours starts a new run.
-
-Rule 1 keeps every `fail` → `ok` recovery pair inside one run. Setup reports
-`setup.preflight fail dirty_tree`, stops to ask the user, then reports `setup.preflight ok`
-in the same session. The run holds no successful preflight when the failure is reported, so
-the pair stays together. A reset at every `setup.preflight` would split the pair. The
-milestone alone is therefore not the rule.
-
-Rule 2 covers the case rule 1 cannot see. A user can stop at `fail dirty_tree` and never
-reach a successful preflight. Rule 1 finds no successful preflight in that run, so a later
-attempt would merge into the abandoned one. The 8 hour limit separates them. The value is a
-judgment: a recovery inside one conversation takes minutes, and a user who returns the next
-morning starts a new attempt.
-
-Both rules fail safe. The plugin keeps the cached id if `run_last_seen` is absent, if the
-value is unreadable, or if it cannot read the local record. A merged run under-counts one
-dropout. A wrong reset invents a run that never happened, which is worse.
-
-Two behaviours do not change. `ONESIGNAL_SKILL_RUN_ID` always wins and is never persisted,
-so CI smoke tests keep their own id. Deletion of `.onesignal/` still starts a new run, which
-is how each eval fixture gets one run.
-
-A reset does not touch `pending.jsonl`. A held event carries the `run_id` it was recorded
-with, so it still flushes into the run it belongs to.
-
-One run can hold more than one `setup.preflight` row, by design. A de-duplication key of
-`run_id` + milestone is therefore not enough. The "De-duplication" section defines the full
-key. A reset also sets the `seq` counter back to 0.
-
-A second value, `seq`, gives the position of each milestone inside the run. `run_id` says
-which run, and `seq` says where in that run. Together they identify one milestone report.
+One run can hold more than one row for the same milestone, by design: a `fail` and the `ok`
+that follows it are the recovery story, and both belong to the run.
 
 ## Milestones
 
@@ -131,6 +103,9 @@ OneSignal app yet, the second means they supplied an ID that does not parse as a
 (a truncated paste, most likely). Conflating them hides which fix the onboarding flow
 needs — app creation versus input validation.
 
+An absent failure class is deliberate. Send no class where there is none: an empty value
+creates a category that every count of failure classes must then exclude.
+
 ## `ok_after_fix` — use it
 
 If a milestone succeeded only because you changed something the user did not ask for —
@@ -144,141 +119,16 @@ reported as `ok` and nearly lost.
 
 ## What is sent
 
-Per event: milestone, status, failure class, `run_id`, `seq`, platform, skill name, plugin
-version, agent runtime, OS, timestamp, and the **OneSignal App ID** — plus the source tag
-(`onesignal-agent-plugin`) and the payload schema version.
+Per event: milestone, status, failure class, `run_id`, platform, skill name, plugin
+version, agent runtime, OS, timestamp, and the **OneSignal App ID**. Safety contract §16
+lists the fixed constants that also go out.
 
 Never sent: source code, file contents, file paths, project or package names, repo
 metadata, and — per the safety contract's "Never" rules and its "The setup key" section —
 **the setup key or any other credential**. The App ID is public (safety contract, "Never"
 section) and is the only identifier included.
 
-## Wire format — payload schema 3, REST to `/sdk/agent-progress`
-
-**The scripts do not send this yet.** `checkpoint.sh` and `otlp_encode.py` still send OTLP
-protobuf to `/sdk/log`, which carries `schema=2`. The port is a separate change, and 2 other
-things have to land with it:
-
-1. The edge route below. Without a mapping the endpoint is unreachable.
-2. The flip of `TIME_FIELD_IS_SECONDS` to `False` in `otlp_encode.py`. The file writes
-   **seconds** into `time_unix_nano`, and the new service divides that field by 1e9, so
-   every schema 2 row reports a date in 1970 once the service deploys. The failure is
-   silent.
-
-This document specifies schema 3 only. Schema 2 has no specification here, and it needs
-none: the plugin has no external release, so no saved query, dashboard, or alert reads the
-old shape, and nothing has to survive the cutover. Read `otlp_encode.py` for what the code
-sends until the port lands.
-
-The full path is `https://api.onesignal.com/sdk/agent-progress`. The service nests every
-per-app route under `/sdk` (`nest_service("/sdk", …)` in `router.rs`), which is why the
-current OTLP path is `/sdk/log`. The handler file names the route `/agent-progress`, so read
-the nest before you copy a path out of that file.
-
-The server builds the OTLP record from a flat key/value map. The endpoint accepts 2
-methods, and the behaviour below is identical for both:
-
-- **GET** carries every key in the query string, `app_id` included. The plugin sends this
-  form with `curl -G --data-urlencode`, so curl encodes every value and the request needs
-  no header.
-- **POST** carries `app_id` in the query string and the rest as a JSON object in the body.
-  A JSON value may be a number or a boolean, but the server flattens every value to a
-  string, so the stored shape is the same.
-
-**Use GET.** Nothing in this contract depends on the method, and the query string has room
-to spare.
-
-The longest possible request measures 494 bytes, with the longest value from every enum.
-`message` is the only free-text field, and the plugin builds it from the other fields, so it
-cannot grow without bound. jlbelmonte reports that Cloudflare accepts a URL up to 32 KB, so
-the request uses about 1.5% of the budget. No setting in `OneSignal/infra` or
-`OneSignal/infra-foundation` bounds a URL, a query string, or a request header for this
-service, so the remaining hops (the GCP load balancer and Envoy) apply their own defaults.
-Neither default is measured, and neither is plausibly below 494 bytes.
-
-The one other size limit on the path is a Cloudflare rule that blocks a `POST /sdk/log` body
-above 64 KB, and no GET request meets it.
-
-**So size is not a reason to prefer POST.** The only reason to choose POST is the edge route
-below. A new field costs about 25 bytes, so the budget is not a constraint on the schema
-either.
-
-### The edge route does not exist yet
-
-`api.onesignal.com` reaches this service through 1 Emissary mapping, in
-`kubernetes/helmfiles/apps/emissary/production/mappings-production.yml`. The mapping matches
-`prefix: "/sdk/log"` with `method: "POST"`, and it covers no other path. No mapping matches
-`/sdk/agent-progress`, and the string `agent-progress` appears nowhere in `OneSignal/infra`.
-The only other `/sdk` prefix in the file is `/sdks/`, plural, which belongs to a different
-service. So a new mapping has to land in that repo, and it has to allow GET. The repo already
-uses that form for other routes, so the shape is settled:
-
-```yaml
-- service: log-ingestion-http.log-ingestion-service-production
-  hostname: api.onesignal.com
-  auth: { bypass: true }
-  routes:
-    - name: agent-progress-production
-      spec:
-        prefix: "/sdk/agent-progress"
-        method: "(GET|POST)"
-        method_regex: true
-```
-
-`auth: { bypass: true }` matches the existing route. The endpoint carries no header, and
-`app_id` is the whole gate. `method_regex` is needed because `method` holds 1 method
-otherwise, and a copy of the current mapping would reject a GET at the edge. The staging file
-needs the same route, for a test before the cutover.
-
-The merged server code is necessary but not enough. Confirm the mapping before you read an
-empty dashboard as an empty funnel.
-
-The server changes the map in 4 ways:
-
-1. It removes `app_id` and writes it as the resource attribute `ossdk.app_id`. The value
-   stays a GCP label, and it is the only key that does.
-2. It reserves `message` and writes it as the log record body, **not** as an attribute. So
-   `message` reaches GCP as `jsonPayload.message`, which is the line the Logs Explorer
-   shows for the row. Keep sending it: it is what makes a row readable without a query.
-3. It reserves `timestamp` and writes it as the record time, then drops the key. So there
-   is no `os_agent.timestamp`. The server reads epoch seconds, milliseconds, microseconds,
-   nanoseconds, or an RFC 3339 string, and picks the unit from the magnitude. A missing or
-   unreadable value falls back to the time of receipt.
-4. It adds the prefix `os_agent.` to every remaining key and writes those as log record
-   attributes. They land in `jsonPayload`, not in `labels`.
-
-It also writes severity INFO for every record, so severity cannot separate outcomes. That is
-why `status` below carries the outcome as a field of its own.
-
-The reserved keys and the prefix live in `src/log/agent_progress.rs` in
-`log-ingestion-service`. Check that file before you assume any other key is special.
-
-### Keys
-
-| Key | Always sent | Example | Notes |
-|---|---|---|---|
-| `app_id` | yes | `6a1b2c3d-…` | The server consumes it. It is the only gate on the endpoint. |
-| `schema` | yes | `3` | Payload schema version. |
-| `source` | yes | `onesignal-agent-plugin` | The discriminator every query starts from. |
-| `run_id` | yes | `73832ff7632b0476` | Stable for one funnel run. |
-| `seq` | yes | `1` | Position in the run. See below. |
-| `skill` | yes | `setup` | |
-| `milestone` | yes | `credentials_gate` | The bare milestone, without the skill. |
-| `status` | yes | `fail` | `ok`, `ok_after_fix` or `fail`. |
-| `failure_class` | no | `credentials_missing` | The key is absent when there is no class. |
-| `timestamp` | yes | `1786000000` | The event time. The server consumes the key, so it never becomes an attribute. Epoch seconds, or any unit down to nanoseconds, or RFC 3339. |
-| `platform` | yes | `android` | A closed set. See below. |
-| `runtime` | yes | `claude-code` | |
-| `os` | yes | `darwin` | |
-| `skill_version` | yes | `0.3.0` | |
-| `message` | yes | `onesignal onboarding [android/setup]: …` | Becomes the log body, so GCP shows it as the row's own line. |
-
-Because the server also reads RFC 3339, the plugin can send the ISO 8601 `ts` value that
-`checkpoints.jsonl` already holds, with no conversion step. Either form is valid.
-
-Do not send `severity`. The server always writes INFO, so the value only repeats `status`.
-
-### The `platform` vocabulary
+## The `platform` vocabulary
 
 `platform` is a filter key for every funnel query, so it holds a closed set of 9 tokens:
 
@@ -290,186 +140,52 @@ only when `checkpoint.sh` finds no readable file. Never add a spelling outside t
 second spelling of one platform splits that row of the funnel and every count built on it.
 `capacitor` covers Ionic, because an Ionic app is a Capacitor app or a Cordova app.
 
-Do not send `sdk_base`. `platform` holds the same value.
+## Reporting a checkpoint
 
-An absent `failure_class` is deliberate. An empty value creates an attribute that holds an
-empty string, which every count of failure classes must then exclude.
+```bash
+bash scripts/checkpoint.sh <skill.milestone> <ok|ok_after_fix|fail> [class]
+bash scripts/checkpoint.sh flush
+```
 
-### `seq` — the position of a report inside a run
+The script builds and sends the event. A skill never builds a request, and never needs to
+know the endpoint, the keys, or the encoding.
 
-`seq` counts the milestone reports of one run. The `timestamp` parameter does not remove
-the need for it. There are 3 reasons:
+### App ID ordering, and buffering
 
-1. **A milestone repeats inside one run, by design.** The `setup` skill reports
-   `setup.preflight fail platform_ambiguous`, asks the user, then reports
-   `setup.preflight ok`. The pair is the recovery story. A key of `run_id` + milestone
-   holds 1 row for the 2 reports and deletes the recovery. A key of `run_id` + `seq` keeps
-   both, because a re-send of one report carries the same `seq`.
-2. **The timestamp holds whole seconds, so 2 reports can tie.** `checkpoint.sh` writes
-   whole seconds. Eval runs and CI runs report several milestones inside one second. The
-   server accepts sub-second units, so the plugin could break most ties by sending
-   milliseconds — but a tie stays possible, and reasons 1 and 3 hold either way.
-3. **The clock belongs to the user.** A machine with a wrong clock gives a wrong order and
-   a wrong absolute time. The counter never reads the clock.
-
-- The plugin keeps the counter in `.onesignal/seq`, next to `run_id`.
-- A new run sets the file back to 0, under either rule in "When a run ends".
-- The first checkpoint of a run sends `seq=1`. The counter increments before the send, so
-  no event ever carries 0 because of a reset.
-- The counter increments one time for each milestone recorded, not for each send attempt.
-  A flush re-send carries the original number, exactly as it carries the original
-  `timestamp`.
-- `seq=0` on the wire means one thing only: the plugin could not read or write the counter.
-
-**Order a run by `seq`.** The counter never reads a clock, so it holds the order even when
-the times are wrong or equal.
-
-### Where the keys land in GCP
-
-`app_id` is the one key that stays an indexed GCP label, as `labels."ossdk.app_id"`. Every
-other key becomes `jsonPayload."os_agent.<key>"`, which costs more to query, so keep
-`labels."ossdk.app_id"` in a query when the app is known. `message` is the exception: it
-becomes the log body and reaches GCP as `jsonPayload.message`.
-
-## App ID ordering, and buffering
-
-The ingestion endpoint requires the App ID as a query parameter, but
-`setup.preflight` fires before Step 2 has one. So:
+The ingestion endpoint requires the App ID, but `setup.preflight` fires before Step 2 has
+one. So:
 
 - Milestones before the App ID is known are **written locally and held**.
 - Once Step 2 resolves it, run `bash scripts/checkpoint.sh flush` — each pending event is
-  sent as its own request, carrying the now-known App ID and every field as recorded:
-  milestone, status, failure class, skill, timestamp, platform, source, run_id, runtime,
-  os, and `seq`. Nothing is re-derived at flush time.
-- Everything after that sends as it happens. A failed send is held for a later flush or
-  dropped, according to the retry matrix below.
+  sent carrying the now-known App ID and every field as recorded. Nothing is re-derived at
+  flush time, so a milestone that waited in the buffer still reports the moment it happened.
+- Everything after that sends as it happens. A failed send is held for a later flush, unless
+  the failure is one that an identical retry cannot fix.
 - Run `flush` one final time at `setup.complete`, so events re-buffered mid-run get a
   second attempt before the session ends.
-
-A flush sends each row as its own request and keeps **only the rows that failed**. An event
-confirmed as accepted is never sent again, so a single bad row no longer forces the whole
-buffer to be re-delivered. A partial flush reports `<n> of <total> sent — <k> kept for a
-later flush`, and the buffer file is rewritten with those `k` rows.
-
-If egress is blocked, events stay in `pending.jsonl` and a run that later gains network
-access loses nothing. That holds both before the App ID exists and after it.
-
-### Retry matrix
-
-The rule is whether an identical retry could plausibly succeed. Anything transient is held;
-anything that rejects **this** payload is dropped, because a permanent failure re-queued
-forever would also block every row behind it.
-
-| Outcome | `transport.log` | Held for a retry? |
-| --- | --- | --- |
-| `202` (or `200`) with an empty body | `sent` | Delivered, nothing to hold |
-| `2xx` with an HTML body (captive portal) | `http_2xx_html` | Yes — never reached the service |
-| `2xx` otherwise unexpected | `http_2xx_unexpected` | Yes — delivery unconfirmed |
-| `curl` never got a reply | `dns_unresolved`, `connection_refused`, `timeout`, `tls_error`, `connection_killed`, `curl_rc_<n>` | Yes |
-| `curl` succeeded but sent no status line | `no_response` | Yes |
-| `429` — rate limited | `http_retryable` | Yes |
-| `5xx` — server or gateway error | `http_retryable` | Yes |
-| Any other `4xx`, including `400` and `415` | `http_rejected` | **No** — same payload fails again |
-| `1xx` or `3xx` | `http_other` | **No** — the endpoint is misconfigured, not busy |
-| Encoder error before any request | `encode_failed` | **No** — deterministic |
-
-`429` is the one 4xx that is held: it is an instruction to slow down, not a verdict on the
-payload. `408` and `425` are treated as permanent, because the ingestion service does not
-emit them — a gateway that does would cost one dropped checkpoint, not a retry loop.
-
-**Delivery is at-least-once, so de-duplication stays mandatory.** Per-row bookkeeping
-removes the *bulk* duplicate source, but not every one: a request whose response is lost
-after the server accepted it is indistinguishable from a request that never arrived, so it
-is held and re-sent. Never drop an event to avoid a duplicate.
 
 **Never substitute a placeholder or demo App ID to make an early send work.** Setup Step 2
 already forbids hardcoded fallback App IDs, and attributing a real user's onboarding to a
 OneSignal test app would corrupt the data it is meant to produce.
 
-**Known measurement limit that follows from this:** a run that ends before an App ID exists
-never reaches GCP — its events stay buffered forever, because the endpoint's only gate is
-the App ID. The funnel's earliest failures (`dirty_tree`, `platform_ambiguous`, `no_app_id`,
-`invalid_app_id`) are therefore visible only in the local `.onesignal/` record unless the
-user returns and the buffer flushes. Production dashboards undercount pre-App-ID dropouts;
-treat their absence as a floor, not a measurement.
+If egress is blocked, events stay buffered and a run that later gains network access loses
+nothing. That holds both before the App ID exists and after it.
 
 ## Refusal and failure behaviour
 
 - `checkpoint.sh` always exits 0. Telemetry never fails a user's onboarding.
 - If the user declines network access, re-run the same checkpoint with
   `ONESIGNAL_SKILL_TELEMETRY=0` and continue. No network call is attempted, the local
-  record is kept, and `transport.log` records `telemetry_disabled` so the refusal is
-  auditable.
+  record is kept, and the refusal is recorded so it stays auditable.
 - Do not ask twice. Do not reach the network by another route. A refusal is a valid answer.
 - Per safety contract §13, a `fail` checkpoint is sent **at** the failing step, and then
   the skill stops. Never retry with mutations to make a milestone reportable.
 
 ## Local state
 
-Everything lands in `.onesignal/` at the repo root: `run_id`, `run_last_seen` (the epoch
-time of the last checkpoint, which rule 2 reads), `seq` (the position counter),
-`checkpoints.jsonl` (every payload, sent or not), `transport.log` (what happened to each
-attempt), `pending.jsonl`.
-
-The two logs answer different questions, and the distinction is what makes them assertable:
-**`checkpoints.jsonl` holds exactly one row per milestone reported**, and `transport.log`
-holds one row per delivery attempt. A buffered event that is later flushed therefore
-appears once in `checkpoints.jsonl` and twice in `transport.log` (`buffered`, then `sent`).
-
-The wire carries the **event time**, not the send time. The plugin sends the payload's own
-`ts` as the `timestamp` parameter, and the server stamps the record with it. A flush re-send
-carries the buffered event's original `ts`, so a milestone that waited in the buffer reports
-the moment it happened.
-
-**Do not read the event time from the log entry timestamp.** The consumer writes the event
-time as an ISO 8601 string under `jsonPayload.timestamp`. Nobody has confirmed that GCP
-promotes the value to the log entry timestamp — the column the Logs Explorer sorts by.
-Google's agent documents the promotion only for `timestamp` as an object of `seconds` and
-`nanos`, for `timestampSeconds` with `timestampNanos`, or for a string under the key `time`.
-One production sample agrees with the pessimistic reading: the entry timestamp held the time
-of receipt while `jsonPayload.timestamp` kept the event time. One record through staging
-would settle it. Order a run by `seq` instead.
+`checkpoint.sh` keeps its run state in `.onesignal/` at the repo root: the run id, the
+buffer of held events, and a record of every checkpoint and delivery attempt.
 
 Because skills declare a file allow-list before writing (safety contract §4, §10),
 **`.onesignal/` must appear in that declared list and be added to `.gitignore`.** It is
 run state, not project content, and must never be committed.
-
-## Querying it
-
-```
-resource.type="k8s_container"
-resource.labels.namespace_name="log-ingestion-service-production"
-jsonPayload."os_agent.source"="onesignal-agent-plugin"
-```
-
-Then slice by `jsonPayload."os_agent.platform"`, `jsonPayload."os_agent.skill"`,
-`jsonPayload."os_agent.milestone"` and `jsonPayload."os_agent.status"`. Group by
-`jsonPayload."os_agent.run_id"` for funnel analysis — use `=` and not `=~`, since a regex
-silently merges runs. Order each run by `jsonPayload."os_agent.seq"`. Add
-`labels."ossdk.app_id"` when the app is known: it is the one field that stays an indexed
-label.
-
-Severity does not separate outcomes, because the server writes INFO for every record. Read
-`jsonPayload."os_agent.status"` instead.
-
-### De-duplication
-
-**De-duplication is mandatory, not optional.** Delivery is at-least-once: a response lost
-after the server accepted the request cannot be told apart from one that never arrived, so
-the event is held and re-sent — duplicate delivery is a designed trade-off (never drop an
-event to avoid a duplicate). Every count, funnel step, and completion rate MUST first
-de-duplicate, keeping one row per key.
-
-**De-duplicate on `run_id` + `seq`.** Both values survive a re-send unchanged, so duplicates
-collapse and separate reports stay separate.
-
-**Do not use `run_id` + milestone.** A milestone repeats inside one run by design:
-`setup.preflight` reports `fail platform_ambiguous`, the user answers, and the skill reports
-`ok`. That key holds 1 row for the 2 reports and deletes the recovery, which is the exact
-friction the funnel exists to measure.
-
-Where `seq` is `0` the counter was unavailable, so those rows need a fallback key: `run_id` +
-milestone + status + failure class, keeping the earliest timestamp. The fallback still merges
-2 reports that agree on all 4 values, so it is a floor and not an equal substitute.
-
-A query that skips this step overcounts whatever it measures.

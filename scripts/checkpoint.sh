@@ -39,14 +39,12 @@
 # This JSON is the internal representation. It is encoded into an OTLP LogsData
 # protobuf by otlp_encode.py before sending — the endpoint accepts nothing else.
 # `ts` is the EVENT time and is what the encoder stamps onto the wire record, so
-# a buffered event flushed minutes later still lands in GCP at the moment it
-# happened. The send moment is carried separately in observed_time_unix_nano.
+# a buffered event flushed minutes later still reports the moment it happened.
+# The send moment is carried separately in observed_time_unix_nano.
 #
 # "source" exists so these events can be separated from real SDK traffic on the
-# shared ingestion endpoint. In GCP Logs Explorer:
-#     labels."agent.source"="onesignal-agent-plugin"
-# Override the value with $ONESIGNAL_SKILL_SOURCE if the ingestion service wants a
-# different discriminator.
+# shared ingestion endpoint. Override it with $ONESIGNAL_SKILL_SOURCE if the
+# ingestion service wants a different discriminator.
 #
 # Set ONESIGNAL_SKILL_DRY_RUN=1 to print the exact request without sending.
 
@@ -392,8 +390,7 @@ note() {
 # run_id with a real install and cannot corrupt completion-rate counting.
 #
 # Otherwise the id is cached in .onesignal/run_id so the milestones of one
-# install share it. Two rules end a run — see "When a run ends" in
-# references/telemetry-contract.md:
+# install share it. Two rules end a run:
 #
 #   1. A second entry into setup: this checkpoint is setup.preflight AND the
 #      cached run already passed preflight. One run passes preflight at most
@@ -591,9 +588,11 @@ fi
 # Hold this event for a later flush after a TRANSPORT failure. Buffering used to
 # be gated only on a missing App ID, so once Step 2 wrote it (5 of 7 milestones),
 # a blocked network dropped every event with exit 0 while the contract promised
-# a later flush "loses nothing". Scope: the outcomes marked as held in the retry
-# matrix. An encoder error, or a 4xx that is not 429, rejects this exact payload,
-# so a re-send would fail in the same way on every future flush.
+# a later flush "loses nothing". Which outcomes hold and which drop is decided in
+# the `case "$HTTP_CODE"` arms below: a transient failure is held, and a request
+# the service already rejected is not. An encoder error, or a 4xx that is not 429,
+# rejects this exact payload, so a re-send would fail in the same way on every
+# future flush.
 #
 # A flush child must NOT re-append: the parent collects the rows that failed and
 # rewrites the buffer, so appending here would duplicate the row.
@@ -806,8 +805,8 @@ explain_http_error() {
 }
 
 case "$HTTP_CODE" in
-  # "Sent" means the ingestion service accepted it, and the service answers 202
-  # (INGESTION_CONTRACT.md) — 200 is tolerated as its likeliest drift. A blanket
+  # "Sent" means the ingestion service accepted it, and its handler answers 202
+  # (StatusCode::ACCEPTED) — 200 is tolerated as its likeliest drift. A blanket
   # 2* match counted captive portals and proxy interstitials as delivered: a
   # portal answers 200 with an HTML sign-in page having ingested nothing, and in
   # exactly the networks where sends fail. HTML from a 2xx is therefore treated
