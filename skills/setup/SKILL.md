@@ -36,7 +36,7 @@ version, Step 3 falls back to a dashboard check, and checkpoints run with
 After each step below, record its outcome:
 
 ```bash
-bash <plugin>/scripts/checkpoint.sh setup.<milestone> <ok|ok_after_fix|fail> [class]
+bash <plugin>/scripts/checkpoint.sh setup.<milestone> <ok|ok_after_fix|fail> [class] [detail]
 ```
 
 `<plugin>` is this plugin's root — the directory containing `references/` and `skills/`.
@@ -49,6 +49,8 @@ Rules that matter:
   a dependency conflict. A bare `ok` there erases the friction this exists to surface.
 - **`fail <class>` at the step that failed, then stop** (safety contract §13). Never retry
   with mutations to make a milestone reportable.
+- **`unknown <detail>` when no class fits** — a short slug, noun-and-state, no path
+  or version. `checkpoint.sh` drops the slug unless the caller passed class `unknown`.
 - The script **always exits 0**. A blocked or declined send never alters the onboarding.
 - Write `.onesignal/platform` at Step 1 and `.onesignal/app_id` at Step 2 — the script
   reads them **from the repo root** (`git rev-parse --show-toplevel`). Write them there,

@@ -105,6 +105,29 @@ needs — app creation versus input validation.
 An absent failure class is deliberate. Send no class where there is none: an empty value
 creates a category that every count of failure classes must then exclude.
 
+### `failure_detail` — only when the class is `unknown`
+
+When no existing class fits, report `unknown` and pass a short slug as the 4th
+argument. Recurring slugs become real classes in a later plugin release.
+
+```bash
+bash scripts/checkpoint.sh setup.install_applied ok_after_fix unknown foo_bar_missing
+```
+
+Rules:
+
+- Set the field only when the caller passes class `unknown`. Any other class drops it.
+- Use the naming pattern of the known classes: a noun and a state.
+- Never include a path, a project name, a version number, an ID, or code.
+
+`checkpoint.sh` rewrites the slug to lowercase. Other characters become `_`.
+The script cuts the result to 30 characters. The script drops the value if
+the caller did not pass class `unknown`. It also drops a raw argument that
+holds `/`, `\`, `.`, `@`, or `:`. It drops 4 digits in a row. It drops a
+result that does not match `^[a-z][a-z0-9_]*$`. An empty result omits the
+key. `message` never includes this field. The script is a structural
+backstop. A name with no punctuation is an agent-rule case.
+
 ## `ok_after_fix` — use it
 
 If a milestone succeeded only because you changed something the user did not ask for —
@@ -120,14 +143,16 @@ reported as `ok` and nearly lost.
 
 Per event: milestone, status, failure class, `run_id`, the position of the report in the
 run, platform, skill name, plugin version, agent runtime, OS, timestamp, and the
-**OneSignal App ID**. One more field, `message`, carries a readable line that
-`checkpoint.sh` builds from that same list. Safety contract §16 lists the fixed constants
-that also go out.
+**OneSignal App ID**. When the class is `unknown`, a sanitized `failure_detail`
+slug may also go out. One more field, `message`, carries a readable line that
+`checkpoint.sh` builds from the other fields on this list — never from
+`failure_detail`. Safety contract §16 lists the fixed constants that also go out.
 
 Never sent: source code, file contents, file paths, project or package names, repo
 metadata, and — per the safety contract's "Never" rules and its "The setup key" section —
-**the setup key or any other credential**. The App ID is public (safety contract, "Never"
-section) and is the only identifier included.
+**the setup key or any other credential**. The script cannot tell a bare name from a
+valid slug; agent rules still forbid project and package names. The App ID is public
+(safety contract, "Never" section) and is the only identifier included.
 
 ## The `platform` vocabulary
 
@@ -144,7 +169,7 @@ second spelling of one platform splits that row of the funnel and every count bu
 ## Reporting a checkpoint
 
 ```bash
-bash scripts/checkpoint.sh <skill.milestone> <ok|ok_after_fix|fail> [class]
+bash scripts/checkpoint.sh <skill.milestone> <ok|ok_after_fix|fail> [class] [detail]
 bash scripts/checkpoint.sh flush
 ```
 
