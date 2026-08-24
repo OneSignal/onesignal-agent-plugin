@@ -19,9 +19,12 @@
 #      parameter. Earlier versions did not send it and both this comment and
 #      SKILL.md described the payload as containing no App ID. That was true then
 #      and is false now; any description given to a user must say so.
-#   3. Sends only after consent is recorded as 1 (ONESIGNAL_SKILL_TELEMETRY=1
-#      or .onesignal/telemetry). 0 is a full opt-out. No file and no env
-#      means do not send. A later env must not overwrite a saved answer.
+#   3. Sends only when consent resolves to exactly 1: ONESIGNAL_SKILL_TELEMETRY
+#      set to 1, or .onesignal/telemetry recorded as 1. 0 is an opt-out. Any
+#      other env value is ignored and the file decides — junk must not read as
+#      a yes. No answer from either source means do not send. This script never
+#      writes the consent file; the setup skill records the answer once, after
+#      asking, so a stray env value on an invalid or dry-run call cannot pin it.
 #
 # Request (exactly this, nothing more): a GET carrying one query parameter per
 # field. There is no body and no header beyond what curl sends by default.
@@ -97,10 +100,13 @@ else
 fi
 mkdir -p "$STATE_DIR" 2>/dev/null || true
 
-# Consent lives in two places. The env var is this invocation; the file is
-# the saved answer. Env 0 or 1 writes the file only when no answer is saved
-# yet, so a network-sandbox decline cannot overwrite a prior "send".
-# Unset env reads the file. Send only when the answer is 1.
+# Consent resolves once, from two sources, into one fail-closed state. The env
+# var is a per-invocation override (a CI run, or the fallback when the file
+# cannot be written) and is never persisted, like ONESIGNAL_SKILL_RUN_ID. The
+# file is the durable answer the setup skill records after asking. An env
+# value other than exactly 0 or 1 — empty from a wrapper's unset var, "true",
+# a typo — is ignored and the file decides: junk must not read as a yes, and
+# it must not shadow a recorded opt-out.
 TELEMETRY_FILE="$STATE_DIR/telemetry"
 
 telemetry_file_value() {
@@ -108,26 +114,23 @@ telemetry_file_value() {
   grep -vE '^[[:space:]]*(#|$)' "$TELEMETRY_FILE" 2>/dev/null | head -1 | tr -d '[:space:]'
 }
 
-if [ "${ONESIGNAL_SKILL_TELEMETRY+x}" = "x" ]; then
-  case "$ONESIGNAL_SKILL_TELEMETRY" in
-    0|1)
-      existing="$(telemetry_file_value || true)"
-      case "$existing" in
-        0|1) : ;;
-        *) printf '%s\n' "$ONESIGNAL_SKILL_TELEMETRY" > "$TELEMETRY_FILE" 2>/dev/null || true ;;
-      esac
-      ;;
+# TELEMETRY_STATE: 0 (opt-out), 1 (consented), or "" (never answered).
+# TELEMETRY_SOURCE names where the answer came from, so the local audit log
+# can tell an env opt-out, a recorded opt-out, and a missing answer apart.
+TELEMETRY_STATE=""
+TELEMETRY_SOURCE="unset"
+case "${ONESIGNAL_SKILL_TELEMETRY:-}" in
+  0|1) TELEMETRY_STATE="$ONESIGNAL_SKILL_TELEMETRY"; TELEMETRY_SOURCE="env" ;;
+esac
+if [ -z "$TELEMETRY_STATE" ]; then
+  _file_answer="$(telemetry_file_value || true)"
+  case "$_file_answer" in
+    0|1) TELEMETRY_STATE="$_file_answer"; TELEMETRY_SOURCE="file" ;;
   esac
 fi
 
 telemetry_disabled() {
-  if [ "${ONESIGNAL_SKILL_TELEMETRY+x}" = "x" ]; then
-    [ "$ONESIGNAL_SKILL_TELEMETRY" = "0" ]
-    return $?
-  fi
-  local val
-  val="$(telemetry_file_value || true)"
-  [ "$val" != "1" ]
+  [ "$TELEMETRY_STATE" != "1" ]
 }
 
 # Resolve our own directory using only bash builtins. Deliberately avoids
@@ -808,9 +811,15 @@ rebuffer() {
 # Opt-out is recorded, not silent. Previously this branch returned before note()
 # was even defined, so a declined checkpoint left no trace in transport.log —
 # indistinguishable from the agent skipping the checkpoint altogether. Anyone
-# auditing whether a refusal was honoured needs to see it.
+# auditing whether a refusal was honoured needs to see it, and needs the source:
+# an env opt-out, a recorded opt-out, and an answer nobody gave are three
+# different findings, and only the middle one is a durable refusal.
 if telemetry_disabled; then
-  note "telemetry_disabled" "no network call attempted"
+  case "$TELEMETRY_SOURCE" in
+    env)  note "telemetry_disabled" "ONESIGNAL_SKILL_TELEMETRY=0 for this invocation — no network call attempted" ;;
+    file) note "telemetry_disabled" "opt-out recorded in $TELEMETRY_FILE — no network call attempted" ;;
+    *)    note "telemetry_unset" "no usable consent answer in env or file — no network call attempted" ;;
+  esac
   echo "checkpoint: $MILESTONE=$STATUS (reporting disabled; logged locally)"
   exit 0
 fi

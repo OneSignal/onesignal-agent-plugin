@@ -202,15 +202,18 @@ nothing. That holds both before the App ID exists and after it.
 - `checkpoint.sh` always exits 0. Telemetry never fails a user's onboarding.
 - Ask for checkpoint consent **before the first `checkpoint.sh` call**, as its own
   question, not as part of the network-access request (safety contract §15). Skip
-  the question when `ONESIGNAL_SKILL_TELEMETRY` is already `0` or `1`, or when
-  `.onesignal/telemetry` is exactly `0` or `1`.
-- The script does not send until consent is `1` (`ONESIGNAL_SKILL_TELEMETRY=1` or
-  `.onesignal/telemetry`). No file and no env means do not send. A saved answer
-  is not overwritten by a later env value.
-- If the user keeps checkpoints local, re-run the same checkpoint with
-  `ONESIGNAL_SKILL_TELEMETRY=0` and continue. No network call is attempted, the
-  local record is kept, and `transport.log` records `telemetry_disabled` so the
-  refusal is auditable. The first `0` or `1` is saved in `.onesignal/telemetry`.
+  the question when `ONESIGNAL_SKILL_TELEMETRY` is already exactly `0` or `1`, or
+  when the first non-comment line of `.onesignal/telemetry` is `0` or `1`.
+- The asking skill records the answer by writing `0` or `1` to
+  `.onesignal/telemetry` at the repo root. The script never writes that file.
+  `ONESIGNAL_SKILL_TELEMETRY` set to exactly `0` or `1` overrides the file for one
+  invocation and is never persisted; any other env value is ignored and the file
+  decides.
+- The script does not send until the resolved answer is `1`. No file and no env
+  means do not send.
+- If the user keeps checkpoints local, no network call is attempted, the local
+  record is kept, and `transport.log` records `telemetry_disabled` with its source
+  so the refusal is auditable (`telemetry_unset` marks a run that was never asked).
   A network-sandbox refusal is not a checkpoint opt-out.
 - Do not ask twice. Do not reach the network by another route. A refusal is a valid answer.
 - Per safety contract §13, a `fail` checkpoint is sent **at** the failing step, and then
