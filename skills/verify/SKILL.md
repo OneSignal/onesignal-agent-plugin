@@ -81,10 +81,12 @@ Send to ONLY the subscription from step 2 — never a broadcast. **Ask before se
 
 **Pre-send heads-up (say it with the ask):** if the device is in **Focus/Do Not Disturb** — or browser/OS notifications are muted for the app/site — a successfully delivered push won't visibly appear. Have the user check now so a delivered send isn't misread as a failure.
 
-**Ask for the message in chat (fold it into the same consent ask):** "What message do you want to send?" Use the answer as the notification body (`<BODY>` below). The send happens from this session via the MCP or the REST API — never from code inside the user's app.
+**Ask for the message in chat (fold it into the same consent ask):** "What message do you want to send?" Use the answer as the notification body (`<BODY>` below). If the user has no preference, use the default body: `Congrats on successfully setting up the OneSignal SDK`. The send happens from this session via the MCP or the REST API — never from code inside the user's app.
 
-- **Preferred — MCP:** `send_message` targeting that subscription id with `<BODY>`. MCP keeps the key server-side.
-- **Fallback — REST:** `POST https://api.onesignal.com/notifications` with `Authorization: Key <KEY>`, body `{ "app_id": "<APP_ID>", "include_subscription_ids": ["<SUB_ID>"], "contents": { "en": "<BODY>" } }`.
+**The title is fixed:** every test push carries `headings: { "en": "Successful test via OneSignal plugin" }`. Do not offer to change it and do not accept an override — the user's message only sets the body. The title must never be absent: Huawei rejects a push without one, so a missing title is a silent blocker.
+
+- **Preferred — MCP:** `send_message` targeting that subscription id, with the fixed title and `<BODY>`. MCP keeps the key server-side.
+- **Fallback — REST:** `POST https://api.onesignal.com/notifications` with `Authorization: Key <KEY>`, body `{ "app_id": "<APP_ID>", "include_subscription_ids": ["<SUB_ID>"], "headings": { "en": "Successful test via OneSignal plugin" }, "contents": { "en": "<BODY>" } }`.
 - **Unauthenticated create path:** an unauth path exists behind the `permit_unauth_notif_create` flag and is confirmed only for apps created via the AI integration flow — **UNVERIFIED for arbitrary apps.** Do NOT rely on it here. Default to the key-expression or MCP path. If the user has no key source and no MCP, say the send cannot be verified rather than assert the unauth path will work.
 - Capture the returned notification `id`. If the POST returns `errored` / an empty-recipients error, that itself is a finding → step 7.
 

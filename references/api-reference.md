@@ -45,7 +45,7 @@ App-scoped tokens can be created/rotated/revoked: `POST/PATCH/DELETE /api/v1/app
 
 ## Messaging & verification (public v1)
 
-- Send: `POST /notifications` (`app_id`, targeting, contents). Test-send-to-self: target `include_subscription_ids: [<id>]`. An **unauthenticated** create path exists behind the `permit_unauth_notif_create` app flag — confirmed for apps created via the AI integration flow, UNVERIFIED for arbitrary apps. Fall back to REST-key send.
+- Send: `POST /notifications` (`app_id`, targeting, `contents` = body, `headings` = title). Test-send-to-self: target `include_subscription_ids: [<id>]`. Always set `headings` — Huawei rejects a push without a title, so a missing title is a silent blocker. An **unauthenticated** create path exists behind the `permit_unauth_notif_create` app flag — confirmed for apps created via the AI integration flow, UNVERIFIED for arbitrary apps. Fall back to REST-key send.
 - Delivery stats: `GET /notifications/{id}?app_id=` → `successful` (dispatched), `errored` (delivery errors — what the dashboard calls "Failed"), `failed` (**counts UNSUBSCRIBED targets, not errors** — do not treat as a dispatch failure), `converted` (clicks), `received` (confirmed delivery — paid plans, SDK subscriptions only). List: `GET /notifications?app_id=`.
 - Outcomes read: `GET /apps/{app_id}/outcomes?outcome_names=os__click.count` (+ `.sum`, attribution, time ranges 1h/1d/1mo).
 - Subscriber presence poll (the signup wizard's own pattern): fetch players/subscriptions with `limit:1` — non-empty ⇒ first subscriber exists.
