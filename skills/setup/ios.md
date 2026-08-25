@@ -68,11 +68,11 @@ Use the template [assets/ios/OneSignalManager.swift.tmpl](assets/ios/OneSignalMa
 Use the verified template [assets/ios/OneSignalSetupVerification.swift.tmpl](assets/ios/OneSignalSetupVerification.swift.tmpl) — write it as-is (no substitution needed). Do NOT hand-write this file. It works for both UIKit and SwiftUI apps; call `OneSignalSetupVerification.install()` once from your launch context right after `OneSignal.initialize(...)`. Every API in it is validated against the iOS SDK source and the file is **compile-verified** against the real iOS SDK + a faithful OneSignal stub by `scripts/compile_check_ios.sh` (which also proves the check rejects the fabricated call shapes below). **Use the real observer API** — do NOT wire verification to a `NotificationCenter` event (an eval fabrication: agents listened for a OneSignal registration notification the SDK never posts; it compiles and is functionally dead). The correct surface:
 - conform to `OSPushSubscriptionObserver` and implement `func onPushSubscriptionDidChange(state: OSPushSubscriptionChangedState)`; read `state.current.id` (type `String?`).
 - register with `OneSignal.User.pushSubscription.addObserver(self)`; also read `OneSignal.User.pushSubscription.id` immediately (race guard).
-- `requestPermission` on iOS DOES take a completion block: `OneSignal.Notifications.requestPermission({ accepted in ... }, fallbackToSettings: true)` (unlike Android's suspend form).
+- `requestPermission` on iOS DOES take a completion block: `OneSignal.Notifications.requestPermission({ accepted in ... }, fallbackToSettings: false)` (unlike Android's suspend form).
 
 The Step-8 structural self-check (`verify_integration.py --platform ios`) enforces `#if DEBUG`, the real push observer (not NotificationCenter), and init in a launch context. Non-negotiable properties (SKILL.md Step 6):
 - Guard on `#if DEBUG` so it never ships.
-- `OneSignal.Notifications.requestPermission(..., fallbackToSettings: true)` at install — the ONLY permission prompt.
+- `OneSignal.Notifications.requestPermission(..., fallbackToSettings: false)` at install — the ONLY permission prompt. `fallbackToSettings` stays `false`: the call runs at launch with no user gesture, and `true` would send a previously-denied user to the Settings app on every debug start.
 - Register the observer AND call `evaluate(OneSignal.User.pushSubscription.id)` immediately (race guard).
 - `isRegistered` = non-empty AND not `hasPrefix("local-")`.
 - `hasLogged` guard; print the subscription ID exactly once, then remove the observer.

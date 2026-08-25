@@ -75,9 +75,9 @@ The upstream file also offers Context-Provider and custom-hook patterns — use 
 
 ## Debug-only verification helper
 
-The APIs below are validated against the `react-native-onesignal` source: `OneSignal.User.pushSubscription.getIdAsync(): Promise<string|null>`, `.addEventListener('change', ...)`, and `OneSignal.Notifications.requestPermission(fallbackToSettings): Promise<boolean>` (so `requestPermission(true)` is correct). The Step-8 structural self-check (`verify_integration.py --platform expo`) enforces the config plugin is registered (and first), the packages and init are present, and the verification helper is `__DEV__`-guarded. Non-negotiable properties (SKILL.md Step 6):
+The APIs below are validated against the `react-native-onesignal` source: `OneSignal.User.pushSubscription.getIdAsync(): Promise<string|null>`, `.addEventListener('change', ...)`, and `OneSignal.Notifications.requestPermission(fallbackToSettings): Promise<boolean>` (a single boolean argument is the correct call shape — there is no callback overload). The Step-8 structural self-check (`verify_integration.py --platform expo`) enforces the config plugin is registered (and first), the packages and init are present, and the verification helper is `__DEV__`-guarded. Non-negotiable properties (SKILL.md Step 6):
 - Guard so it runs only in dev (`__DEV__`).
-- `OneSignal.Notifications.requestPermission(true)` at install — the ONLY permission prompt.
+- `OneSignal.Notifications.requestPermission(false)` at install — the ONLY permission prompt. `fallbackToSettings` stays `false`: the call runs at launch with no user gesture, and `true` would send a previously-denied user to the OS Settings screen on every dev start.
 - Register `OneSignal.User.pushSubscription.addEventListener('change', ...)` AND immediately resolve `OneSignal.User.pushSubscription.getIdAsync()` (race guard).
 - `isRegistered` = truthy AND not `startsWith('local-')`.
 - Log the subscription ID exactly once (a logged-once guard) — no `Alert`, no in-app prompt, no network call. The verify skill confirms the subscription server-side and sends the test push from chat.

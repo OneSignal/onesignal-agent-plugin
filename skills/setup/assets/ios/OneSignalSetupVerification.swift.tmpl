@@ -26,7 +26,10 @@ final class OneSignalSetupVerification: NSObject, OSPushSubscriptionObserver {
         // Race guard: the subscription id may already be present before the
         // observer fires, so evaluate the current value immediately too.
         verifier.evaluate(OneSignal.User.pushSubscription.id)
-        OneSignal.Notifications.requestPermission({ _ in }, fallbackToSettings: true)
+        // fallbackToSettings must be false here: this call runs at launch with
+        // no user gesture, and `true` would bounce a previously-denied user
+        // into the Settings app on every debug start.
+        OneSignal.Notifications.requestPermission({ _ in }, fallbackToSettings: false)
     }
 
     func onPushSubscriptionDidChange(state: OSPushSubscriptionChangedState) {

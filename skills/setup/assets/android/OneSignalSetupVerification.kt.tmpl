@@ -46,28 +46,30 @@ object OneSignalSetupVerification {
     // the observer and the permission request exactly once per process.
     private val installed = AtomicBoolean(false)
     private val logged = AtomicBoolean(false)
-    // @Volatile: written on the caller's thread but read from the SDK's
-    // observer callback, whose thread is not documented as main.
-    @Volatile private var observer: IPushSubscriptionObserver? = null
 
     fun installIfDebug() {
         if (!BuildConfig.DEBUG) return // never runs in release
         if (!installed.compareAndSet(false, true)) return
 
-        val obs = object : IPushSubscriptionObserver {
+        // The observer stays registered for the process lifetime. This object
+        // holds no Activity reference, so there is nothing to leak, and a
+        // removeObserver call from inside the observer callback could race the
+        // SDK's own iteration over its observer list.
+        OneSignal.User.pushSubscription.addObserver(object : IPushSubscriptionObserver {
             override fun onPushSubscriptionChange(state: PushSubscriptionChangedState) {
                 report(state.current.id)
             }
-        }
-        observer = obs
-        OneSignal.User.pushSubscription.addObserver(obs)
+        })
 
         // Race guard: the ID may already be assigned before the observer attaches.
         report(OneSignal.User.pushSubscription.id)
 
         // requestPermission is a suspend fun — call it from a coroutine.
+        // fallbackToSettings must be false here: this call runs at launch with
+        // no user gesture, and `true` would bounce a previously-denied user
+        // into the OS Settings screen on every debug start.
         CoroutineScope(Dispatchers.Main).launch {
-            OneSignal.Notifications.requestPermission(true)
+            OneSignal.Notifications.requestPermission(false)
         }
     }
 
@@ -77,8 +79,5 @@ object OneSignalSetupVerification {
         if (subscriptionId.isEmpty() || subscriptionId.startsWith("local-")) return
         if (!logged.compareAndSet(false, true)) return
         Log.i("OneSignalVerify", "Push subscription registered: $subscriptionId")
-        // Done: stop observing so the SDK drops its strong reference.
-        observer?.let { OneSignal.User.pushSubscription.removeObserver(it) }
-        observer = null
     }
 }
