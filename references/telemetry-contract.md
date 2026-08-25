@@ -25,7 +25,7 @@ The prototype used `preflight` / `dependency_added` / `build_passed`. Those don'
   running is `verify`'s job. Keeping it here would mean reporting a milestone this skill
   cannot observe.
 - **`dependency_added` is too narrow.** Setup applies one reviewed change set — manifest,
-  init, wrapper, platform config, verification file — as a single approved unit. Splitting
+  init, wrapper, platform config, verification helper — as a single approved unit. Splitting
   that into "dependency" understates what happened.
 - **The most valuable milestone in this skill has no prototype equivalent.** `setup`
   Step 3 states plainly: *"The single worst onboarding failure is installing the SDK before
@@ -64,7 +64,7 @@ Each is `skill.milestone`. Status is `ok`, `ok_after_fix`, or `fail`.
 | `setup.credentials_gate` | Step 3 resolves | **the headline metric.** `ok` = configured, `ok_after_fix` = uploaded during the run, `fail` = missing, class `deferred` when the user chose to skip |
 | `setup.sdk_pinned` | exact version resolved from releases.json (Step 4) | catches releases.json being unreachable |
 | `setup.install_applied` | change set approved and written (Step 5) | how often users reject the diff |
-| `setup.verification_added` | verification file written (Step 6) | — |
+| `setup.verification_added` | verification helper written (Step 6) | — |
 | `setup.complete` | handing off (Step 7) | setup's own completion rate |
 
 ### Other skills
@@ -86,11 +86,11 @@ the call site. Current set:
 `unknown`.
 
 `buildconfig_disabled`: AGP 8+ stopped generating `BuildConfig` by default, so the
-verification file's `BuildConfig.DEBUG` guard needs `buildFeatures { buildConfig = true }`
+verification helper's `BuildConfig.DEBUG` guard needs `buildFeatures { buildConfig = true }`
 added to the app module — this will hit most modern Android projects (android.md documents
 the alternative that avoids it).
 
-`coroutines_missing`: the verification file calls the suspend `requestPermission` from a
+`coroutines_missing`: the verification helper calls the suspend `requestPermission` from a
 coroutine, but the app has no `kotlinx-coroutines` on its compile classpath — the OneSignal
 SDK ships it only as a runtime (`implementation`) dependency, not `api`, so a bare app fails
 to compile until it declares coroutines (the `android_coroutines_on_classpath` check flags

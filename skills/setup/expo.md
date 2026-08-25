@@ -18,7 +18,7 @@ or use EAS Build. Do not tell them push will work in Expo Go.
 
 ## What the agent does vs. the human (matrix)
 
-- **Agent:** install packages; add the config plugin to `app.json` (**plugin FIRST in the plugins array**, set `mode`, `smallIcons`); init in `App.tsx`/`_layout.tsx`; wrapper + verification file.
+- **Agent:** install packages; add the config plugin to `app.json` (**plugin FIRST in the plugins array**, set `mode`, `smallIcons`); init in `App.tsx`/`_layout.tsx`; wrapper + verification helper.
 - **Human:** procure Apple **`.p8`** + Firebase **service-account JSON**; ensure EAS credentials match; run the dev build. Push credentials → **credentials** skill.
 
 ## Install
@@ -73,15 +73,16 @@ export const OneSignalWrapper = { // onesignal:managed v1
 ```
 The upstream file also offers Context-Provider and custom-hook patterns — use one only if it matches the app's existing state architecture.
 
-## Deletable verification file
+## Debug-only verification helper
 
-Use the verified JS/TS observer from `sdk-ai-prompts/docs/react-native-expo/integrate.md`. The APIs below are validated against the `react-native-onesignal` source: `OneSignal.User.pushSubscription.getIdAsync(): Promise<string|null>`, `.addEventListener('change', ...)`, and `OneSignal.Notifications.requestPermission(fallbackToSettings): Promise<boolean>` (so `requestPermission(true)` is correct). The Step-8 structural self-check (`verify_integration.py --platform expo`) enforces the config plugin is registered (and first), the packages and init are present, and the verification file is `__DEV__`-guarded. Non-negotiable properties (SKILL.md Step 6):
-- `isRegistered` = truthy AND not `startsWith('local-')`.
+The APIs below are validated against the `react-native-onesignal` source: `OneSignal.User.pushSubscription.getIdAsync(): Promise<string|null>`, `.addEventListener('change', ...)`, and `OneSignal.Notifications.requestPermission(fallbackToSettings): Promise<boolean>` (so `requestPermission(true)` is correct). The Step-8 structural self-check (`verify_integration.py --platform expo`) enforces the config plugin is registered (and first), the packages and init are present, and the verification helper is `__DEV__`-guarded. Non-negotiable properties (SKILL.md Step 6):
+- Guard so it runs only in dev (`__DEV__`).
+- `OneSignal.Notifications.requestPermission(true)` at install — the ONLY permission prompt.
 - Register `OneSignal.User.pushSubscription.addEventListener('change', ...)` AND immediately resolve `OneSignal.User.pushSubscription.getIdAsync()` (race guard).
-- `dialogShown` once-guard; `Alert.alert` "Your OneSignal SDK integration is complete!" with a single **"Got it"** button.
-- On tap → `OneSignal.Notifications.requestPermission(true)` (the ONLY permission prompt) → prompt/body → unauthenticated `POST https://api.onesignal.com/notifications` with `include_subscription_ids` (no Authorization header; on 401 fall back to a dashboard/REST-key send).
-- Guard so it runs only in dev (`__DEV__`) and top-of-file comment naming the file + call site to delete.
-Import the installer once from the root component and note the exact call site for the cleanup summary.
+- `isRegistered` = truthy AND not `startsWith('local-')`.
+- Log the subscription ID exactly once (a logged-once guard) — no `Alert`, no in-app prompt, no network call. The verify skill confirms the subscription server-side and sends the test push from chat.
+- Top-of-file comment naming the file + call site, and saying the file is dev-only and safe to keep.
+Import the installer once from the root component and note the exact call site in the summary.
 
 ## Handoffs
 

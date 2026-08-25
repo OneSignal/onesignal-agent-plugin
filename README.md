@@ -20,7 +20,7 @@ skill directly, and the `status` skill will tell you which one you need.
 
 | # | Skill | Invoke as | What it does |
 |---|-------|-----------|--------------|
-| 1 | **setup** | `/onesignal:setup` | Detects your platform/framework, installs and initializes the OneSignal SDK, and drops a deletable verification file. The entry point for "add push notifications" / "integrate OneSignal". |
+| 1 | **setup** | `/onesignal:setup` | Detects your platform/framework, installs and initializes the OneSignal SDK, and adds a debug-only verification helper. The entry point for "add push notifications" / "integrate OneSignal". |
 | 2 | **credentials** | `/onesignal:credentials` | Walks you through the human-only console steps to procure push credentials (Apple APNs `.p8`, Firebase FCM v1 service-account JSON, web Site URL / Safari certs, email SPF/DKIM/DMARC, SMS sender), then uploads the API-uploadable ones for you. |
 | 3 | **verify** | `/onesignal:verify` | Confirms a real message is actually **delivered** to an identified subscriber — the true "activated" milestone — not just that code compiles. |
 | 4 | **discover-data** | `/onesignal:discover-data` | Read-only scan of your codebase for instrumentable data (tracking plans, analytics call sites, ORM models, auth providers) and proposes a mapping to OneSignal identity, tags, and events. |

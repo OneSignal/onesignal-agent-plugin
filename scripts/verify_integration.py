@@ -256,7 +256,7 @@ class Checks:
     def android_verification_debug_guarded(self):
         vfiles = [fp for fp in walk_files(self.root) if "verification" in os.path.basename(fp).lower()]
         if not vfiles:
-            self.add("android_verification_debug_guarded", False, "warn", "no verification file found (deletable proof step)")
+            self.add("android_verification_debug_guarded", False, "warn", "no verification helper found (debug-only proof step)")
             return
         guarded = any(re.search(r"BuildConfig\.DEBUG", read(fp)) for fp in vfiles)
         self.add("android_verification_debug_guarded", guarded, "error",
@@ -282,7 +282,7 @@ class Checks:
     def ios_verification_debug_guarded(self):
         vfiles = [fp for fp in walk_files(self.root) if "verification" in os.path.basename(fp).lower() and fp.endswith(".swift")]
         if not vfiles:
-            self.add("ios_verification_debug_guarded", False, "warn", "no Swift verification file found (deletable proof step)")
+            self.add("ios_verification_debug_guarded", False, "warn", "no Swift verification helper found (debug-only proof step)")
             return
         guarded = any("#if DEBUG" in read(fp) for fp in vfiles)
         self.add("ios_verification_debug_guarded", guarded, "error",
@@ -322,7 +322,7 @@ class Checks:
         vfiles = [fp for fp in walk_files(self.root)
                   if "verif" in os.path.basename(fp).lower() and os.path.splitext(fp)[1] in (".ts", ".tsx", ".js", ".jsx")]
         if not vfiles:
-            self.add("rn_verification_dev_guarded", False, "warn", "no JS/TS verification file found (deletable proof step)")
+            self.add("rn_verification_dev_guarded", False, "warn", "no JS/TS verification helper found (debug-only proof step)")
             return
         guarded = any("__DEV__" in read(fp) for fp in vfiles)
         self.add("rn_verification_dev_guarded", guarded, "error",
@@ -383,7 +383,7 @@ class Checks:
     def flutter_verification_debug_guarded(self):
         vfiles = self._flutter_verification_files()
         if not vfiles:
-            self.add("flutter_verification_debug_guarded", False, "warn", "no Dart verification file found (deletable proof step)")
+            self.add("flutter_verification_debug_guarded", False, "warn", "no Dart verification helper found (debug-only proof step)")
             return
         guarded = any("kDebugMode" in read(fp) for fp in vfiles)
         self.add("flutter_verification_debug_guarded", guarded, "error",

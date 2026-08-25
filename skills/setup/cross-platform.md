@@ -2,7 +2,7 @@
 
 Reference for the `setup` skill. Follow [SKILL.md](SKILL.md) Steps 0–8; this file covers the wrapper frameworks. All of these wrap the native iOS + Android SDKs, so **the iOS-native human column applies in full** (Apple portal `.p8` + Xcode capabilities/NSE for rich features) and Android needs the FCM v1 service-account JSON — see [../../references/platform-matrix.md](../../references/platform-matrix.md), and cross-reference [ios.md](ios.md) / [android.md](android.md) for the native details. Do not contradict the matrix.
 
-Common to all: pin exact versions from https://onesignal.github.io/sdk-releases/releases.json (`channels.stable.version` per SDK entry — never guess, never the human-readable page, never a range/caret); detect the package manager from the lockfile; mark generated blocks `onesignal:managed v1`; init once at app entry; route all calls through one wrapper; drop ONE deletable verification file; then hand off to **credentials** then **verify**. The verified verification-file shape (debug-only guard, observer + immediate ID check, `local-` exclusion, once-guard, "Got it" dialog, unauthenticated self-send with 401 fallback) is identical to the mobile flows in `sdk-ai-prompts/docs/*/integrate.md` — reuse it per framework.
+Common to all: pin exact versions from https://onesignal.github.io/sdk-releases/releases.json (`channels.stable.version` per SDK entry — never guess, never the human-readable page, never a range/caret); detect the package manager from the lockfile; mark generated blocks `onesignal:managed v1`; init once at app entry; route all calls through one wrapper; add ONE debug-only verification helper; then hand off to **credentials** then **verify**. The verified helper shape (debug-only guard, permission request at install, observer + immediate ID check, `local-` exclusion, logged-once subscription ID, no dialog, no network call) is identical across the mobile frameworks — reuse it per framework. The verify skill confirms the subscription server-side and sends the test push from chat.
 
 ---
 
@@ -36,7 +36,7 @@ Detected by `pubspec.yaml`. Full detail: `sdk-ai-prompts/docs/flutter/integrate.
   OneSignal.initialize('YOUR_ONESIGNAL_APP_ID'); // onesignal:managed v1
   ```
 - Wrapper: a single `OneSignalService` class (async methods). Signatures per api-reference "SDK data surface"; tag values are strings; `login()` before tags/email/sms.
-- Verification file (deletable): guard the whole thing on `kDebugMode` (from `package:flutter/foundation.dart`); register `OneSignal.User.pushSubscription.addObserver((state) {...})` reading `state.current.id`, and read `OneSignal.User.pushSubscription.id` immediately (race guard); `await OneSignal.Notifications.requestPermission(true)` returns `Future<bool>` (like web/RN — NOT iOS's completion block or Android's suspend form). A notification-received listener is not proof of registration — key off the push subscription. The Step-8 self-check (`verify_integration.py --platform flutter`) enforces init in `main()`, the `kDebugMode` guard, and the real push-subscription observer.
+- Verification helper (debug-only): guard the whole thing on `kDebugMode` (from `package:flutter/foundation.dart`); register `OneSignal.User.pushSubscription.addObserver((state) {...})` reading `state.current.id`, and read `OneSignal.User.pushSubscription.id` immediately (race guard); `await OneSignal.Notifications.requestPermission(true)` returns `Future<bool>` (like web/RN — NOT iOS's completion block or Android's suspend form). A notification-received listener is not proof of registration — key off the push subscription. The Step-8 self-check (`verify_integration.py --platform flutter`) enforces init in `main()`, the `kDebugMode` guard, and the real push-subscription observer.
 - iOS side: same native Xcode human steps as ios.md (Flutter's `ios/` subproject). Android side: the plugin handles Gradle/manifest; do NOT add `google-services.json`. Flutter 3.29+ recommended (matrix).
 
 ## Cordova (`onesignal-cordova-plugin`)
@@ -79,7 +79,7 @@ Detected by a Unity project (`ProjectSettings/`, `Assets/`, `.csproj`). **Low ag
   OneSignal.Initialize("YOUR_ONESIGNAL_APP_ID"); // onesignal:managed v1 — in a MonoBehaviour Awake/Start
   ```
 - Human: Package Manager/Asset Store install, Player Settings (Android gradle template, min API 33+, Unity 2022.3+), plus the usual Apple portal `.p8` and Firebase service-account JSON.
-- The debug verification dialog is impractical in Unity's native-UI model — instead have the human confirm a subscription in the dashboard and use a dashboard test send. Be explicit that you cannot fully automate Unity.
+- A debug verification helper is impractical in Unity's native-UI model — instead have the human confirm a subscription in the dashboard, then run the verify skill for the test push. Be explicit that you cannot fully automate Unity.
 
 ---
 

@@ -7,7 +7,7 @@ Any skill that reads or writes the user's repository MUST follow all of this. It
 1. `git status --porcelain` — if the tree is dirty, STOP and ask (stash / proceed / abort). No `.git`? Fall back to `.onesignal.bak` sibling backups and say there's no VCS net.
 2. Detect prior installation FIRST: existing OneSignal dependency line, existing init call, or our marker comment. Found → propose update/repair, never a duplicate. Different App ID already present → ask which is correct; never silently overwrite.
 3. Default to a new `onesignal-integration` branch (user may opt into current branch).
-4. Declare the complete file allow-list up front (dependency manifest, init/lifecycle file, one wrapper module, platform config files, one deletable verification file, `.gitignore`, web service-worker, `.onesignal/` checkpoint run state). Touching anything else requires re-confirmation.
+4. Declare the complete file allow-list up front (dependency manifest, init/lifecycle file, one wrapper module, platform config files, one debug-only verification helper, `.gitignore`, web service-worker, `.onesignal/` checkpoint run state). Touching anything else requires re-confirmation.
 
 ## Writing
 
@@ -34,7 +34,7 @@ The onboarding flow deliberately delivers the app-scoped key inside the invocati
 
 ## After
 
-9. Emit a summary: files changed, SDK version + source, verification steps, cleanup steps (the verification file is deletable — name it), and exact rollback commands (`git checkout -- <files>` / delete branch / restore backups).
+9. Emit a summary: files changed, SDK version + source, verification steps, the verification helper's name (debug-only; safe to keep), and exact rollback commands (`git checkout -- <files>` / delete branch / restore backups).
 10. Do NOT auto-commit or auto-open a PR. Offer the commands; the user runs them.
 
 ## Read-only skills (discovery/status)

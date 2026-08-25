@@ -4,7 +4,7 @@ Reference for the `setup` skill. Follow [SKILL.md](SKILL.md) Steps 0–8; this f
 
 ## What the agent does vs. the human (matrix)
 
-- **Agent:** injects the SDK page script + `OneSignal.init` via `OneSignalDeferred`; creates the service-worker file; wires the wrapper + verification file.
+- **Agent:** injects the SDK page script + `OneSignal.init` via `OneSignalDeferred`; creates the service-worker file; wires the wrapper + verification helper.
 - **Human (dashboard, you cannot do it):** configure the web platform in the OneSignal dashboard — the **Site URL must EXACTLY match the deployed origin** (scheme + host, no trailing path; avoid `www.` unless the site actually serves `www.`). Then confirm the deployed site serves the worker same-origin over HTTPS with `Content-Type: application/javascript`.
 
 **⚠️ The signup/onboarding flow does NOT provision the web platform.** Until the dashboard step above happens (or the credentials skill provisions it via the write-once endpoint's `chrome_web_origin`), the SDK fails at init with `App not configured for web push` — the single most common web onboarding wall. Definitive check (free, unauthenticated): `GET https://api.onesignal.com/sync/<APP_ID>/web` → `success: true` = configured; `{"code":2,...}` = not provisioned. Responses are CDN-cached ~1 h — append `?fresh=<timestamp>` to read current state, and don't probe before the config exists (it primes the cache with the error). Details: api-reference "Web platform config probe".
@@ -72,7 +72,7 @@ One module isolating all OneSignal calls (signatures verified in api-reference "
 
 ```js
 // onesignal-wrapper.js  // onesignal:managed v1
-// All OneSignal SDK access goes through here (except the deletable verification file).
+// All OneSignal SDK access goes through here (except the verification helper).
 export const OneSignalWrapper = {
   login: (externalId) => window.OneSignalDeferred.push((os) => os.login(externalId)),
   logout: () => window.OneSignalDeferred.push((os) => os.logout()),
@@ -84,46 +84,38 @@ export const OneSignalWrapper = {
 
 Call `login()` BEFORE tags/email/sms or data attaches to the anonymous user (api-reference, data-mapping-rules ordering rule).
 
-## Deletable verification file (Web)
+## Debug-only verification helper (Web)
 
-Web has no `local-` placeholder gate identical to mobile, but the same shape applies: confirm a real subscription, then let the user self-send. Requesting permission is the ONLY permission prompt; do NOT prompt on page load. Gate on a debug/dev signal (e.g. `location.hostname === "localhost"` or a build env flag) so it never ships to production.
+Web has no `local-` placeholder gate identical to mobile, but the same shape applies: request permission, confirm a real subscription, and log its ID — the verify skill sends the test push from chat. Gate on a debug/dev signal (e.g. `location.hostname === "localhost"` or a build env flag) so it never runs in production. Browsers require a user gesture for the native permission prompt (Firefox and Safari enforce it), so request permission on the first click — do NOT prompt on page load. No dialog, no `confirm()`/`prompt()`, and no `fetch` to `api.onesignal.com` — the helper only observes and logs.
 
 ```js
-// onesignal-verify.js — TEMPORARY SCAFFOLDING. Delete this file and remove its
-// import/call from <root> once you've confirmed a self-sent web push arrives.
-// Runs in dev only — the guard below early-returns in production.
+// onesignal-verify.js — debug-only verification helper (onesignal:managed v1).
+// Runs in local dev only — the guard below early-returns everywhere else — so
+// the file is safe to keep. Delete it and its import/call only if you want to.
 export function installOneSignalVerify() {
   const isDev = location.hostname === "localhost" || location.hostname === "127.0.0.1";
   if (!isDev) return;
-  let shown = false;
+  let logged = false;
   window.OneSignalDeferred = window.OneSignalDeferred || [];
   window.OneSignalDeferred.push(async function (OneSignal) {
-    const APP_ID = "YOUR_ONESIGNAL_APP_ID";
-    async function maybeShow() {
+    function report() {
       const id = OneSignal.User?.PushSubscription?.id;
-      if (!id || shown) return;
-      shown = true;
-      if (confirm("Your OneSignal SDK integration is complete!\n\nEnable web push and send yourself a test?")) {
-        await OneSignal.Notifications.requestPermission();
-        const subId = OneSignal.User?.PushSubscription?.id;
-        const msg = prompt("Type a test message:") || "Hello from OneSignal";
-        if (subId) {
-          // Unauthenticated self-send relies on permit_unauth_notif_create (enabled for
-          // AI-integration-flow apps; UNVERIFIED otherwise). On 401, use a dashboard test send.
-          await fetch("https://api.onesignal.com/notifications", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              app_id: APP_ID,
-              contents: { en: msg },
-              include_subscription_ids: [subId],
-            }),
-          });
-        }
-      }
+      if (!id || logged) return;
+      logged = true;
+      console.info("[OneSignal] Push subscription registered:", id);
     }
-    OneSignal.User.PushSubscription.addEventListener("change", maybeShow);
-    maybeShow(); // ID may already exist before the listener attaches
+    OneSignal.User.PushSubscription.addEventListener("change", report);
+    report(); // ID may already exist before the listener attaches
+    // The native permission prompt needs a user gesture in Firefox/Safari —
+    // ask on the first click, never on page load.
+    if (Notification.permission === "default") {
+      console.info("[OneSignal] Click anywhere on the page to enable web push.");
+      addEventListener(
+        "click",
+        () => { OneSignal.Notifications.requestPermission(); },
+        { once: true }
+      );
+    }
   });
 }
 ```
