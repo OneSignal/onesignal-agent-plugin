@@ -215,6 +215,12 @@ nothing. That holds both before the App ID exists and after it.
   record is kept, and `transport.log` records `telemetry_disabled` with its source
   so the refusal is auditable (`telemetry_unset` marks a run that was never asked).
   A network-sandbox refusal is not a checkpoint opt-out.
+- `telemetry_unset` is not an opt-out. A skill that meets it mid-funnel may ask the
+  consent question once, record the answer, and run `flush` — the script holds
+  unsent events for exactly that recovery. `consent_env_only` in `transport.log`
+  marks a "send" answer that lives only in the environment; record it in
+  `.onesignal/telemetry` before the session ends, or the next session reads no
+  answer.
 - Do not ask twice. Do not reach the network by another route. A refusal is a valid answer.
 - Per safety contract §13, a `fail` checkpoint is sent **at** the failing step, and then
   the skill stops. Never retry with mutations to make a milestone reportable.

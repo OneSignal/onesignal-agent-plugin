@@ -133,6 +133,27 @@ telemetry_disabled() {
   [ "$TELEMETRY_STATE" != "1" ]
 }
 
+# A "send" answer that lives only in the environment dies with the session: the
+# next session resolves consent to "no answer" and every send silently stops,
+# which turns a recorded "yes" into an opt-out nobody chose. This script must
+# not write the consent file itself (see the contract above), so the one thing
+# it can do is say so, on every send, until the file has the answer.
+CONSENT_ENV_ONLY=0
+if [ "$TELEMETRY_STATE" = "1" ] && [ "$TELEMETRY_SOURCE" = "env" ]; then
+  case "$(telemetry_file_value || true)" in
+    0|1) : ;;
+    *)   CONSENT_ENV_ONLY=1 ;;
+  esac
+fi
+
+warn_consent_env_only() {
+  echo "checkpoint: WARNING — consent came from ONESIGNAL_SKILL_TELEMETRY only."
+  echo "  $TELEMETRY_FILE has no recorded answer, and the env value dies with this"
+  echo "  session: the next session will resolve consent to \"no answer\" and stop"
+  echo "  sending. Record the user's answer now:"
+  echo "    printf '1\n' > $TELEMETRY_FILE   # 0 for keep-local"
+}
+
 # Resolve our own directory using only bash builtins. Deliberately avoids
 # `dirname`: if that binary is missing, an external-command failure here would
 # cascade into misdiagnosing the endpoint as unconfigured.
@@ -160,8 +181,22 @@ fi
 # ---------------------------------------------------------------------------
 if [ "$RAW_MILESTONE" = "flush" ]; then
   if telemetry_disabled; then
-    echo "checkpoint: flush skipped (reporting disabled)"
+    # An unanswered question and a recorded opt-out are different states, and
+    # only one of them is settled. Say which, or the caller reads fail-closed
+    # behaviour as a refusal nobody gave.
+    if [ "$TELEMETRY_SOURCE" = "unset" ]; then
+      echo "checkpoint: flush skipped (no consent answer recorded)"
+      echo "  Fail-closed: nothing sends until an answer exists. If the user already"
+      echo "  answered the consent question, record it and flush again:"
+      echo "    printf '1\n' > $TELEMETRY_FILE   # 0 for keep-local"
+      echo "  If they were never asked, ask once (setup SKILL.md, checkpoint consent)."
+    else
+      echo "checkpoint: flush skipped (reporting disabled)"
+    fi
     exit 0
+  fi
+  if [ "$CONSENT_ENV_ONLY" -eq 1 ]; then
+    warn_consent_env_only
   fi
   PENDING="$STATE_DIR/pending.jsonl"
   if [ ! -s "$PENDING" ]; then
@@ -816,12 +851,34 @@ rebuffer() {
 # different findings, and only the middle one is a durable refusal.
 if telemetry_disabled; then
   case "$TELEMETRY_SOURCE" in
-    env)  note "telemetry_disabled" "ONESIGNAL_SKILL_TELEMETRY=0 for this invocation — no network call attempted" ;;
-    file) note "telemetry_disabled" "opt-out recorded in $TELEMETRY_FILE — no network call attempted" ;;
-    *)    note "telemetry_unset" "no usable consent answer in env or file — no network call attempted" ;;
+    env)  note "telemetry_disabled" "ONESIGNAL_SKILL_TELEMETRY=0 for this invocation — no network call attempted"
+          echo "checkpoint: $MILESTONE=$STATUS (reporting disabled; logged locally)" ;;
+    file) note "telemetry_disabled" "opt-out recorded in $TELEMETRY_FILE — no network call attempted"
+          echo "checkpoint: $MILESTONE=$STATUS (reporting disabled; logged locally)" ;;
+    # "Unset" is not an opt-out: nobody answered. Left as a bare "disabled"
+    # line, this state is indistinguishable from a refusal, so a "send" answer
+    # that was never recorded stays a silent opt-out for the rest of the run.
+    # Direct the caller to the recovery, and HOLD the event: an unanswered
+    # question can still resolve to "send", and a later `flush` under a
+    # recorded 1 then loses nothing. A recorded 0 never reaches this arm, and
+    # a buffer held under an answer of 0 is skipped by `flush` forever.
+    *)    note "telemetry_unset" "no usable consent answer in env or file — no network call attempted"
+          echo "checkpoint: $MILESTONE=$STATUS (no consent answer recorded; logged locally)"
+          echo "  Fail-closed: nothing sends until an answer exists. If the user already"
+          echo "  answered the consent question, record it, then run 'flush':"
+          echo "    printf '1\n' > $TELEMETRY_FILE   # 0 for keep-local"
+          echo "  If they were never asked, ask once (setup SKILL.md, checkpoint consent)."
+          rebuffer ;;
   esac
-  echo "checkpoint: $MILESTONE=$STATUS (reporting disabled; logged locally)"
   exit 0
+fi
+
+# The dangerous state sends fine, which is exactly why it goes unnoticed until
+# the session ends and takes the env value with it. The flush child skips the
+# warning: its parent already printed it once for the whole flush.
+if [ "$CONSENT_ENV_ONLY" -eq 1 ] && [ "${ONESIGNAL_SKILL_SKIP_LOCAL_RECORD:-0}" != "1" ]; then
+  note "consent_env_only" "ONESIGNAL_SKILL_TELEMETRY=1 but $TELEMETRY_FILE has no answer"
+  warn_consent_env_only
 fi
 
 # ---------------------------------------------------------------------------
