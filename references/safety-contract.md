@@ -48,7 +48,7 @@ The onboarding flow deliberately delivers the app-scoped key inside the invocati
 
 ## Asking the user (human gates)
 
-14. A human gate (dirty-tree stash/proceed/abort, missing App ID, no-VCS backup consent, mapping approval, the pre-write diff confirmation, test-send consent) BLOCKS: do not continue, mutate files, or assume an answer until the user responds. Ask via the harness's native structured-question tool when one exists — Claude Code: `AskUserQuestion`; Codex: `request_user_input` — otherwise ask plainly in chat and end the turn. Use structured choices for bounded decisions (stash/proceed/abort, yes/no, pick-a-platform); use plain chat for free-form values (App ID, file paths, bundle IDs, URLs).
+14. A human gate (checkpoint consent, dirty-tree stash/proceed/abort, missing App ID, no-VCS backup consent, mapping approval, the pre-write diff confirmation, test-send consent) BLOCKS: do not continue, mutate files, or assume an answer until the user responds. Ask via the harness's native structured-question tool when one exists — Claude Code: `AskUserQuestion`; Codex: `request_user_input` — otherwise ask plainly in chat and end the turn. Use structured choices for bounded decisions (stash/proceed/abort, yes/no, pick-a-platform, send-or-keep-local checkpoints); use plain chat for free-form values (App ID, file paths, bundle IDs, URLs).
 
 ## Onboarding telemetry (milestone checkpoints)
 
@@ -56,11 +56,12 @@ Skills in this plugin report onboarding milestones to OneSignal so we can see wh
 funnel breaks. Full vocabulary and reporting rules: [telemetry-contract.md](telemetry-contract.md).
 The rules that make it safe:
 
-15. **Declare it before the first send.** The network request is part of what the user is
-    agreeing to, alongside the API calls setup already makes (releases.json, provisioning,
-    test-send). Name the host and say what the payload contains. If the runtime asks the
-    user to approve network access, request it in advance — a request made up front can be
-    granted; a syscall denial mid-command cannot.
+15. **Ask for checkpoint consent before the first send, as its own question.** Do not
+    fold it into the network-access request. Name the host (`api.onesignal.com`) and say
+    what the payload contains (milestone, status, failure class, run ID, platform, OS,
+    App ID — never source, paths, project names, or credentials). Then, if the runtime
+    sandboxes network access, request that approval separately and in advance — a
+    request made up front can be granted; a syscall denial mid-command cannot.
 16. **Only these fields leave the machine:** milestone, status, failure class, run id, the
     position of the report inside the run, platform, skill name, plugin version, agent
     runtime, OS, timestamp, App ID — plus 2 fixed constants: the source tag
@@ -76,10 +77,13 @@ The rules that make it safe:
     still forbid project and package names. The setup key and every other
     credential are excluded by the "Never" rules and "The setup key" section
     above, with no exception for analytics.
-17. **A refusal is final and costs the user nothing.** Re-run the checkpoint with
-    `ONESIGNAL_SKILL_TELEMETRY=0` so the local record survives, then continue the
-    onboarding normally. Never ask twice, never reach the network by another route, never
-    treat a decline as an obstacle to work around.
+17. **A refusal is final and costs the user nothing.** Record either answer once:
+    write `1` (send) or `0` (keep local) as one line to `.onesignal/telemetry` at
+    the repo root. The script never writes that file, and it does not send until
+    it reads a `1`. A network-sandbox refusal is not a checkpoint opt-out: never
+    write `0` over a recorded `1`. Continue the onboarding normally. Never ask
+    twice, never reach the network by another route, never treat a decline as an
+    obstacle to work around.
 18. **Telemetry never changes the outcome.** `checkpoint.sh` always exits 0. A blocked,
     declined, or failed send must not stop, alter, or retry any part of the user's
     onboarding.

@@ -15,21 +15,65 @@ You are integrating the OneSignal SDK into the user's OWN repository, running lo
 - Onboarding milestone checkpoints → [../../references/telemetry-contract.md](../../references/telemetry-contract.md)
 - Data primitives (only if the user asks to wire data now) → [../../references/data-mapping-rules.md](../../references/data-mapping-rules.md)
 
-## Network access — declare it once, up front
+## Checkpoint consent — ask once, before anything else
 
-This skill needs the network for four things: the SDK version endpoint (Step 4), app and
-credential API calls (Steps 2–3), the test-send in the verification file (Step 6), and
-onboarding milestone checkpoints (below). All of them are `api.onesignal.com` or
-`onesignal.github.io`.
+This skill records onboarding milestones so OneSignal can see where setup fails. Each
+checkpoint carries: milestone name, status, failure class, run ID, platform, OS, and
+App ID. It never includes source code, file paths, project names, or credentials. The
+host is `api.onesignal.com`.
 
-**If your runtime sandboxes network access, request approval once, before Step 0**, and say
-what it covers — including that checkpoints report milestone outcomes and the App ID, and
-never source, files, paths, or credentials. A request made in advance can be granted; a
-syscall denial part-way through a command cannot.
+**This is its own question. Do not fold it into the network-access request.**
 
-If the user declines, everything still runs: Step 4 falls back to asking them to confirm a
-version, Step 3 falls back to a dashboard check, and checkpoints run with
-`ONESIGNAL_SKILL_TELEMETRY=0`. Ask once. Never route around a refusal.
+Skip the question only when one of these is already true:
+
+- `ONESIGNAL_SKILL_TELEMETRY` is exactly `0` or `1` in the environment
+- the first non-comment line of `.onesignal/telemetry` at the repo root is `0` or `1`
+  (that is what the script reads; comment and blank lines around it are fine)
+
+Otherwise ask via the harness's native structured-question tool (safety contract §14)
+and **end the turn**. Do not run Step 0, do not request network access, and do not run
+`checkpoint.sh` until the user answers.
+
+Question: "OneSignal can record setup checkpoints (step name, success or fail, failure
+class, run ID, platform, OS, App ID). No source code, paths, or credentials. Send these
+to OneSignal?"
+
+Choices:
+
+- Send checkpoints to OneSignal
+- Keep checkpoints on this machine only
+
+**Record the answer before Step 0.** Write one line to `.onesignal/telemetry` at the
+repo root (`git rev-parse --show-toplevel`) — `1` for "send", `0` for "keep local":
+
+```bash
+mkdir -p .onesignal && printf '1\n' > .onesignal/telemetry   # or 0
+```
+
+The script never writes this file, and it does not send until it reads a `1`, so a
+skipped write turns a "send" answer into a silent opt-out. If the write fails, prefix
+every `checkpoint.sh` call in this run (including `flush`) with
+`ONESIGNAL_SKILL_TELEMETRY=<answer>` instead. Either way setup continues normally.
+
+Do not ask again. Do not reach the network by another route.
+
+## Network access — declare it once, after checkpoint consent
+
+This skill needs the network for the SDK version endpoint (Step 4), app and credential
+API calls (Steps 2–3), and the test-send in the verification file (Step 6). If the user
+consented above, checkpoints also use the network. All of them are `api.onesignal.com`
+or `onesignal.github.io`.
+
+**If your runtime sandboxes network access, request approval once, before Step 0**, and
+say what it covers. Do not use that request as the checkpoint-consent question; that
+question already happened. A request made in advance can be granted; a syscall denial
+part-way through a command cannot.
+
+If the user declines network access, everything still runs: Step 4 falls back to asking
+them to confirm a version, and Step 3 falls back to a dashboard check. Checkpoints
+follow the recorded answer in `.onesignal/telemetry`, not this refusal: blocked sends
+stay local and wait for a later flush. Do not treat a network refusal as a checkpoint
+opt-out — never write `0` over a recorded `1`. Ask once. Never route around a refusal.
 
 ## Reporting milestones (do this as you go, not at the end)
 
@@ -51,7 +95,10 @@ Rules that matter:
   with mutations to make a milestone reportable.
 - **`unknown <detail>` when no class fits** — a short slug, noun-and-state, no path
   or version. `checkpoint.sh` drops the slug unless the caller passed class `unknown`.
-- The script **always exits 0**. A blocked or declined send never alters the onboarding.
+- Honour checkpoint consent. The script reads `.onesignal/telemetry` (or an
+  `ONESIGNAL_SKILL_TELEMETRY` override that is exactly `0` or `1`) and does not
+  send unless the answer is `1`. The script **always exits 0**. A blocked or
+  declined send never alters the onboarding.
 - Write `.onesignal/platform` at Step 1 and `.onesignal/app_id` at Step 2 — the script
   reads them **from the repo root** (`git rev-parse --show-toplevel`). Write them there,
   not relative to your current directory: in a monorepo run from a package folder, a
@@ -74,7 +121,7 @@ The production entry point is **`/onesignal:setup app=<APP_ID> token=<key>`**. I
 
 ---
 
-## Step 0 — Preflight (safety contract §1–4, do this before anything else)
+## Step 0 — Preflight (safety contract §1–4, after checkpoint consent)
 
 1. Run `git status --porcelain`. Dirty tree → STOP and ask: stash / proceed on top / abort. **Report the dropout before ending the turn to ask** — a session that never resumes otherwise leaves no trace of why: `bash <plugin>/scripts/checkpoint.sh setup.preflight fail dirty_tree` (it buffers; no App ID exists yet). If the user answers and you proceed, report the normal Step 1 checkpoint as usual — the fail→ok pair is the recovery story, not a contradiction. No `.git` present → tell the user there is no VCS safety net; you will write `<file>.onesignal.bak` siblings before edits, and proceed only if they accept.
 2. **Detect platform and prior install deterministically.** Run `${CLAUDE_PLUGIN_ROOT}/scripts/detect_platform.py` (defaults to CWD). It returns detected platform(s) + language + package manager per package (monorepo-aware), and a `prior_onesignal` block that greps for the dependency line, init calls (`OneSignal.init`/`initialize`/`initWithContext`), `OneSignalSDKWorker.js`, and our `onesignal:managed` marker. If `prior_onesignal.found` is true → propose **update/repair**, never a duplicate install; if a **different App ID** is already wired in, ask which is correct, never silently overwrite. If `ambiguous` is true (multiple packages / no clear signal) → ASK which package(s) to integrate; do not guess. Read-only; never executes repo code (safety contract §12).
@@ -233,7 +280,7 @@ The verification file is the **only** place a raw `api.onesignal.com` call or a 
 
 ## Step 7 — Handoffs (automatic — announce, don't ask)
 
-The funnel is `setup → credentials → verify → discover-data → instrument → conversions`. After the Step-8 summary, **continue straight into the next skill** — announce the transition in one line ("Setup complete — continuing to verify.") instead of asking "want me to continue?". Pause only at a real human gate (console/portal steps, test-send consent, diff confirmation) or on a failure.
+The funnel is `setup → credentials → verify → discover-data → instrument → conversions`. After the Step-8 summary, **continue straight into the next skill** — announce the transition in one line ("Setup complete — continuing to verify.") instead of asking "want me to continue?". Pause only at a real human gate (checkpoint consent, console/portal steps, test-send consent, diff confirmation) or on a failure.
 
 Decide what is still missing:
 - **Push credentials** should already be closed by the Step-3 gate. If the user deferred them there, restate it now: push will NOT deliver until credentials are set — continue into the **credentials** skill and say so plainly.

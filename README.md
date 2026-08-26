@@ -31,7 +31,7 @@ skill directly, and the `status` skill will tell you which one you need.
 **Recommended path:** `setup → credentials → verify → discover-data → instrument → conversions`, with
 `status` as your compass at any point. Stages chain automatically: when one completes, the agent
 announces the transition and continues into the next — no re-prompting. It pauses only at the true
-human gates: console/portal steps, approving the data mapping, consenting to the real test send, and
+human gates: checkpoint consent, console/portal steps, approving the data mapping, consenting to the real test send, and
 confirming diffs before writes.
 
 > Skills are **model-invoked** — you usually don't type the command. Just describe what you want
@@ -245,6 +245,12 @@ yourself," not a one-click plugin.
 Every skill that touches your repo follows a binding **safety contract** (`references/safety-contract.md`).
 The essentials:
 
+- **Setup checkpoints are optional.** The setup skill asks, separately from any
+  network-access prompt, before it reports milestone outcomes (step name, success
+  or fail, failure class, run ID, platform, OS, App ID) to OneSignal. Source code,
+  paths, and credentials never leave the machine. Nothing is sent until you
+  consent, or until `ONESIGNAL_SKILL_TELEMETRY=1` is set. Choose "Keep checkpoints
+  on this machine only", or set `ONESIGNAL_SKILL_TELEMETRY=0`.
 - **Secrets never touch your code or chat.** The REST API key and org key live in environment variables
   only. The plugin writes `.env` (gitignored — it verifies) and `.env.example` with empty placeholders,
   and scans its own diff for secret-shaped strings before finishing. It will never write a key into
