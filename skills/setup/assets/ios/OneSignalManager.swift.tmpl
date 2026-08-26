@@ -3,7 +3,7 @@ import OneSignalFramework
 // onesignal:managed v1
 // Centralized wrapper — route all OneSignal calls through this type. The only
 // permitted OneSignal calls outside this file are OneSignal.initialize(...) at
-// launch and the deletable verification observer.
+// launch and the debug-only verification helper.
 final class OneSignalManager {
     static let shared = OneSignalManager()
     private init() {}

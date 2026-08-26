@@ -10,7 +10,7 @@ The upstream Android prompt tells you to add `google-services.json` + the Google
 
 ## What the agent does vs. the human (matrix)
 
-- **Agent:** Gradle dependency; `Application` subclass with `OneSignal.initWithContext`; register it in `AndroidManifest`; `requestPermission` call (inside the verification file only); wrapper + verification file.
+- **Agent:** Gradle dependency; `Application` subclass with `OneSignal.initWithContext`; register it in `AndroidManifest`; `requestPermission` call (inside the verification helper only); wrapper + verification helper.
 - **Human (Firebase console):** create a Firebase project if none exists and generate the **service-account JSON** → handed to the **credentials** skill for upload. Push will not deliver until that FCM v1 credential is on the OneSignal app.
 
 ## Dependency (exact pin — NEVER a Gradle version range)
@@ -92,17 +92,18 @@ object OneSignalManager { // onesignal:managed v1
     fun setTag(key: String, value: String) = OneSignal.User.addTag(key, value)
 }
 ```
-A Hilt `@Singleton` variant and a Java variant are in the upstream android/integrate.md; use them only to match an existing pattern. No direct OneSignal calls outside this wrapper (except the verification file).
+A Hilt `@Singleton` variant and a Java variant are in the upstream android/integrate.md; use them only to match an existing pattern. No direct OneSignal calls outside this wrapper (except the verification helper).
 
-## Deletable verification file (`OneSignalSetupVerification.kt`)
+## Debug-only verification helper (`OneSignalSetupVerification.kt`)
 
-Use the verified template [assets/android/OneSignalSetupVerification.kt.tmpl](assets/android/OneSignalSetupVerification.kt.tmpl) — substitute `__PACKAGE__` and `__APP_ID__` and write it as-is. Do NOT hand-write this file: eval trials fabricated `OneSignal.Notifications.requestPermission(true) { ... }` as a callback (it is a `suspend fun` with no callback overload — does not compile) and/or dropped the `BuildConfig.DEBUG` guard (ships to release). The template calls `requestPermission` correctly from a coroutine and carries the guard; every API in it is verified against the SDK source. **`BuildConfig.DEBUG` needs the app module's buildConfig feature** — on AGP 8+ it is off by default, so ensure `android { buildFeatures { buildConfig = true } }` is present in the app's `build.gradle.kts` (add it if missing, or the guard won't compile). **The template also needs `kotlinx.coroutines` on the compile classpath** — the OneSignal SDK ships it only as a runtime (`implementation`) dependency, not `api` (verified against `com.onesignal:core` Gradle module metadata: coroutines is in the `java-runtime` variant, absent from `java-api`), so it is NOT transitively available to the app's own code. If the app doesn't already use coroutines, add `implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")` (the version the SDK resolves at runtime; newer is fine) or the `CoroutineScope`/`launch` calls won't resolve. The self-check flags both gaps (`android_buildconfig_feature_enabled`, `android_coroutines_on_classpath`). The exact dialog strings and behavioral contract are also in [assets/android/verification-dialog-strings.md](assets/android/verification-dialog-strings.md). Non-negotiable properties the template already satisfies (SKILL.md Step 6):
+Use the verified template [assets/android/OneSignalSetupVerification.kt.tmpl](assets/android/OneSignalSetupVerification.kt.tmpl) — substitute `__PACKAGE__` and write it as-is. Do NOT hand-write this file: eval trials fabricated `OneSignal.Notifications.requestPermission(true) { ... }` as a callback (it is a `suspend fun` with no callback overload — does not compile) and/or dropped the `BuildConfig.DEBUG` guard (ships to release). The template calls `requestPermission` correctly from a coroutine and carries the guard; every API in it is verified against the SDK source. **`BuildConfig.DEBUG` needs the app module's buildConfig feature** — on AGP 8+ it is off by default, so ensure `android { buildFeatures { buildConfig = true } }` is present in the app's `build.gradle.kts` (add it if missing, or the guard won't compile). **The template also needs `kotlinx.coroutines` on the compile classpath** — the OneSignal SDK ships it only as a runtime (`implementation`) dependency, not `api` (verified against `com.onesignal:core` Gradle module metadata: coroutines is in the `java-runtime` variant, absent from `java-api`), so it is NOT transitively available to the app's own code. If the app doesn't already use coroutines, add `implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")` (the version the SDK resolves at runtime; newer is fine) or the `CoroutineScope`/`launch` calls won't resolve. The self-check flags both gaps (`android_buildconfig_feature_enabled`, `android_coroutines_on_classpath`). Non-negotiable properties the template already satisfies (SKILL.md Step 6):
 - `if (!BuildConfig.DEBUG) return` guard.
+- `OneSignal.Notifications.requestPermission(false)` called from a coroutine — the ONLY permission prompt. `fallbackToSettings` stays `false`: the call runs at launch with no user gesture, and `true` would send a previously-denied user to the OS Settings screen on every debug start.
 - Register `IPushSubscriptionObserver` AND evaluate `OneSignal.User.pushSubscription.id` immediately (race guard — the ID can be assigned before the observer attaches).
 - `isRegistered` = non-empty AND not `startsWith("local-")`.
-- Shown-once `AtomicBoolean`; native `AlertDialog` titled "Your OneSignal SDK integration is complete!" with a single **"Got it"** button.
-- On tap → `OneSignal.Notifications.requestPermission(true)` (the ONLY permission prompt) → text-input dialog → unauthenticated `POST https://api.onesignal.com/notifications` with `include_subscription_ids` (no Authorization header; relies on `permit_unauth_notif_create` — on HTTP 401 fall back to a dashboard/REST-key send, api-reference).
-- Top-of-file comment naming the file + the `MainActivity.onCreate()` call site to delete.
+- Log the subscription ID exactly once (an `AtomicBoolean` logged-once guard). The observer stays registered — the object holds no Activity reference, and removal from inside the callback could race the SDK's observer iteration.
+- No dialog and no network call — the verify skill confirms the subscription server-side and sends the test push from chat.
+- Top-of-file comment naming the file + the `MainActivity.onCreate()` call site, and saying the file is debug-only and safe to keep.
 
 **Correction — `BuildConfig` on AGP 8+:** AGP no longer generates `BuildConfig` by default
 for application modules, so the `BuildConfig.DEBUG` guard fails to compile on a default
@@ -120,8 +121,8 @@ is a plain suspend function — call it from a coroutine (`lifecycleScope.launch
 
 Wire it with ONE line at the end of `MainActivity.onCreate()`:
 ```kotlin
-// TODO: Remove this line and delete OneSignalSetupVerification.kt once verified.
-OneSignalSetupVerification.installIfDebug(this)
+// Debug-only OneSignal setup verification (see OneSignalSetupVerification.kt).
+OneSignalSetupVerification.installIfDebug()
 ```
 
 ## Handoffs

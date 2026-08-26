@@ -1,12 +1,12 @@
 ---
 name: setup
-description: Entry-point OneSignal onboarding skill. Use when a developer wants to add, install, integrate, initialize, or "set up" the OneSignal SDK in their own codebase (web, iOS, Android, React Native, Expo, Flutter, Cordova/Ionic/Capacitor, Unity) — triggers on "set up OneSignal", "add push notifications", "install the OneSignal SDK", "integrate OneSignal", "onboard onto OneSignal", or a fresh project with no OneSignal present. Supports one-command invocation with arguments, e.g. "/onesignal:setup app=<APP_ID> token=<app-scoped key>". Detects the platform/framework from project manifests, gates on push credentials FIRST (uploading them via the provisioning endpoint before any SDK code is written), installs and initializes the SDK, drops a deletable verification file, and hands off to the verify skill.
+description: Entry-point OneSignal onboarding skill. Use when a developer wants to add, install, integrate, initialize, or "set up" the OneSignal SDK in their own codebase (web, iOS, Android, React Native, Expo, Flutter, Cordova/Ionic/Capacitor, Unity) — triggers on "set up OneSignal", "add push notifications", "install the OneSignal SDK", "integrate OneSignal", "onboard onto OneSignal", or a fresh project with no OneSignal present. Supports one-command invocation with arguments, e.g. "/onesignal:setup app=<APP_ID> token=<app-scoped key>". Detects the platform/framework from project manifests, gates on push credentials FIRST (uploading them via the provisioning endpoint before any SDK code is written), installs and initializes the SDK, adds a debug-only verification helper, and hands off to the verify skill.
 argument-hint: app=<APP_ID> token=<app-scoped-key>
 ---
 
 # OneSignal SDK setup (entry point)
 
-You are integrating the OneSignal SDK into the user's OWN repository, running locally on their machine. Your job: detect the platform, install + initialize the SDK minimally and idempotently, optionally provision the app via API, drop a deletable verification file, and hand off. You write real files — so the **safety contract is binding on every step below**.
+You are integrating the OneSignal SDK into the user's OWN repository, running locally on their machine. Your job: detect the platform, install + initialize the SDK minimally and idempotently, optionally provision the app via API, add a debug-only verification helper, and hand off. You write real files — so the **safety contract is binding on every step below**.
 
 **Read these foundation docs before acting** (they carry verified API facts, the safety rules, and the per-platform matrix; never contradict them):
 - Safety rules → [../../references/safety-contract.md](../../references/safety-contract.md)
@@ -59,10 +59,9 @@ Do not ask again. Do not reach the network by another route.
 
 ## Network access — declare it once, after checkpoint consent
 
-This skill needs the network for the SDK version endpoint (Step 4), app and credential
-API calls (Steps 2–3), and the test-send in the verification file (Step 6). If the user
-consented above, checkpoints also use the network. All of them are `api.onesignal.com`
-or `onesignal.github.io`.
+This skill needs the network for the SDK version endpoint (Step 4) and the app and
+credential API calls (Steps 2–3). If the user consented above, checkpoints also use the
+network. All of them are `api.onesignal.com` or `onesignal.github.io`.
 
 **If your runtime sandboxes network access, request approval once, before Step 0**, and
 say what it covers. Do not use that request as the checkpoint-consent question; that
@@ -251,30 +250,32 @@ Open the platform reference file for the detected platform and follow its instal
 - the SDK init / lifecycle file (AppDelegate, Application subclass, `App.tsx`/`_layout.tsx`, `main.dart`, `<head>`/root layout for web)
 - ONE centralized wrapper module (see below)
 - platform config files strictly required by the matrix (AndroidManifest, Info.plist + pbxproj, entitlements, web service worker in `public/`)
-- ONE deletable verification file
+- ONE debug-only verification helper file
 - `.gitignore` and, if needed, `.env` + `.env.example`
 
 Touching anything outside this list requires re-confirming with the user. Then compute the **full change set and show it as diffs**, get **one** approval for the whole set, and apply exactly as previewed. If a file drifted since preview, abort that file and re-preview it. Mark every generated block with `// onesignal:managed v1` (or the platform's comment syntax) so re-runs are idempotent.
 
 **Checkpoint:** after the change set is applied, `setup.install_applied ok`. If the user rejected the diff, `fail diff_rejected` and stop. If you had to change something outside the minimal integration to make it work, use `ok_after_fix` with the registered class: `minsdk_floor` (raised `minSdk`), `kotlin_stdlib_floor`, `agp_floor` (bumped AGP), `dependency_conflict`, `manifest_merger`, `buildconfig_disabled`. Classes come from the contract's list — never invent one at the call site.
 
-Match the repo's existing architecture, style, and package manager. No repo-wide reformatting, no import reordering, no unrelated dependency bumps (safety contract §7). Minimal integration only: SDK init in the correct lifecycle spot plus what the verification file needs — **no** extra OneSignal features unless the user asked (safety contract §8).
+Match the repo's existing architecture, style, and package manager. No repo-wide reformatting, no import reordering, no unrelated dependency bumps (safety contract §7). Minimal integration only: SDK init in the correct lifecycle spot plus what the verification helper needs — **no** extra OneSignal features unless the user asked (safety contract §8).
 
 ### Centralized wrapper (all platforms)
 
-Create ONE module that isolates every OneSignal SDK call (init, `login`/`logout`, `addEmail`/`addSms`, `addTag`, log level). No direct OneSignal calls outside this wrapper except inside the deletable verification file. This mirrors the proven upstream flow and keeps future SDK updates easy. Method signatures per platform are in the reference files and in api-reference "SDK data surface".
+Create ONE module that isolates every OneSignal SDK call (init, `login`/`logout`, `addEmail`/`addSms`, `addTag`, log level). No direct OneSignal calls outside this wrapper except inside the verification helper. This mirrors the proven upstream flow and keeps future SDK updates easy. Method signatures per platform are in the reference files and in api-reference "SDK data surface".
 
-## Step 6 — Deletable verification file (proves real delivery)
+## Step 6 — Debug-only verification helper (registers the first subscription)
 
-Generate a **separate, deletable** verification file (the pattern from the sdk-ai-prompts "Setup Verification Flow"). It must:
+Generate ONE **separate, debug-only** verification helper file. It must:
 - run in **debug builds only** (`BuildConfig.DEBUG` / `#if DEBUG` / equivalent) and early-return in release;
+- request push permission once — this is the **only** place the integration may request permission;
 - register a push-subscription observer AND evaluate the current subscription ID immediately (the ID may already be assigned before the observer attaches);
 - treat the device as registered only when the subscription ID is non-empty and **not** prefixed with `local-` (that prefix is the SDK's pre-registration placeholder);
-- when registered, show a native "Your OneSignal SDK integration is complete!" dialog exactly once (shown-once guard) with a **"Got it"** button;
-- on tap → request push permission; if granted → prompt for a message body → `POST https://api.onesignal.com/notifications` with `include_subscription_ids` for this device (test-send-to-self). This path uses **no Authorization header** and relies on the `permit_unauth_notif_create` flag, which is enabled for apps created via the AI integration flow but is UNVERIFIED for arbitrary apps — if a self-send returns 401, fall back to a REST-key send or dashboard test (api-reference "Messaging & verification"). Requesting permission here is the **only** place permission may be requested — do NOT prompt at launch.
-- top-of-file comment naming the exact filename + call site to delete. Per-platform verification code lives in each reference file.
+- when registered, log the subscription ID exactly once (logged-once guard);
+- carry a top-of-file comment naming the exact filename + call site, and saying the file is debug-only and safe to keep. Per-platform verification code lives in each reference file.
 
-The verification file is the **only** place a raw `api.onesignal.com` call or a direct SDK call outside the wrapper is allowed.
+Do NOT add any dialog, in-app prompt, or in-app test-send code. The **verify** skill owns the test push: it confirms the subscription server-side, asks the user in chat what the message should say, and sends via the MCP or the REST API. Nothing this step writes needs removal later — the helper is durable because the debug guard keeps it out of every release build.
+
+The verification helper is the **only** place a direct SDK call outside the wrapper is allowed. It makes **no** raw `api.onesignal.com` call — no file you write may.
 
 **Checkpoint:** `setup.verification_added ok` once written.
 
@@ -289,7 +290,7 @@ Decide what is still missing:
 
 ## Step 8 — Summary & rollback (safety contract §9–10)
 
-Emit a copy-ready summary: files changed; SDK version + that it came from the releases.json endpoint; the dashboard/console steps the human still owns (from the platform's "Human must do" column in the matrix); verification steps (run debug build → see dialog → grant permission → send self a push → receive it); the exact filename + call site to delete for cleanup; and rollback commands (`git checkout -- <files>` / delete the `onesignal-integration` branch / restore `.onesignal.bak` files). **Do NOT auto-commit or open a PR** — offer the commands; the user runs them.
+Emit a copy-ready summary: files changed; SDK version + that it came from the releases.json endpoint; the dashboard/console steps the human still owns (from the platform's "Human must do" column in the matrix); verification steps (run the debug build → accept the permission prompt → the verify skill confirms the subscription and sends the test push); the verification helper's filename + call site (debug-only; safe to keep, deletable on request); and rollback commands (`git checkout -- <files>` / delete the `onesignal-integration` branch / restore `.onesignal.bak` files). **Do NOT auto-commit or open a PR** — offer the commands; the user runs them.
 
 Before finishing, **run the structural self-check and fix anything it flags** — do not rely on the build or on your own reading: `${CLAUDE_PLUGIN_ROOT}/scripts/verify_integration.py <project_dir> --platform <platform> --app-id <APP_ID>`. It deterministically verifies the constraint-following facts a compiler cannot see (exact version pin, no placeholder/fabricated App ID, init in an Application subclass, the verification file guarded by `BuildConfig.DEBUG` so it can't ship to release, `onesignal:managed` markers, no stray `google-services.json`, no deprecated `addOutcome`). If `verdict` is `fail`, repair each error-level check and re-run until it passes; only then declare done. This is the deterministic close of the loop — the agent catches its own slips (e.g. a verification file that names `installIfDebug` but forgets the guard) instead of shipping them.
 
