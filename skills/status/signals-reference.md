@@ -4,7 +4,7 @@ Exact reads for each activation-ladder rung. All are **read-only** (`GET`-shaped
 
 ## Two ways to call
 
-- **OneSignal MCP (preferred if connected).** Use the hosted tools — they hold the app + key context: `onesignal_config`, `list_messages`, `view_message`, `view_outcomes`, `view_user`. (The MCP is an API proxy; it reads, it cannot edit files.)
+- **OneSignal MCP (preferred if connected).** Use the hosted tools — the connection carries the account's OAuth grant, so no REST key is handled: `onesignal_config`, `list_apps`, `list_messages`, `view_message`, `view_outcomes`, `view_user`. (The MCP is an API proxy; it reads, it cannot edit files.)
 - **App-scoped key via curl (fallback).** Header `Authorization: Key <KEY>` where `<KEY>` is the key provided with the invocation/session or `$ONESIGNAL_REST_API_KEY` from env. Base host and exact paths per api-reference.md. `app_id` is passed as shown.
 
 With the MCP but no key, you can probe rungs 1 and 4–6; rungs 2–3 need a key (the subscription poll has no MCP tool, and the rung-3 sample comes from that poll). With neither the MCP nor a key, you cannot probe rungs 2–7 — see SKILL.md Step 0.

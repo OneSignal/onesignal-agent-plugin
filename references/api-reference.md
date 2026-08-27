@@ -58,9 +58,11 @@ App-scoped tokens can be created/rotated/revoked: `POST/PATCH/DELETE /api/v1/app
 - Activation readiness diagnostics: staff-only endpoint; not customer-callable.
 Skills must present these as dashboard steps (deep-link the user), never as curl calls.
 
-## OneSignal MCP server (hosted)
+## OneSignal MCP server (hosted, first-party)
 
-If the user has the OneSignal MCP connected, prefer its tools over curl: `create_user`, `view_user`, `update_user`, `create_or_update_alias`, `create_subscription`, `update_subscription`, `create_segment`, `list_segments`, `update_segment`, `create_template`, `list_templates`, `send_message`, `view_message`, `list_messages`, `view_outcomes`, `provision_app_credentials` (the write-once credential endpoint above — see its MCP transport note), `onesignal_config`, `onesignal_health`, live-activity and CSV-export tools. Setup docs: the "Model Context Protocol" page in OneSignal docs. The MCP is an API proxy — it cannot edit files; repo work is always done by this local agent.
+- **Endpoint:** `https://api.onesignal.com/mcp/oauth` — OneSignal's own hosted MCP server; no third-party gateway. **Auth is OneSignal OAuth:** the client opens OneSignal's sign-in page in a browser, the user approves access, and the connection becomes an account-tied grant. No App ID or REST API key is part of the connection, and the grant is revocable from **Connected apps** in the account settings.
+- **Scope:** the connection follows the signed-in account's permissions and can access every app that account manages — `list_apps` discovers App IDs. Skills must confirm the target app before any read or write.
+- If the user has the OneSignal MCP connected, prefer its tools over curl: `list_apps`, `create_user`, `view_user`, `update_user`, `create_or_update_alias`, `create_subscription`, `update_subscription`, `create_segment`, `list_segments`, `update_segment`, `create_template`, `list_templates`, `send_message`, `view_message`, `list_messages`, `view_outcomes`, `provision_app_credentials` (the write-once credential endpoint above — see its MCP transport note), `onesignal_config`, `onesignal_health`, live-activity, custom-event, and CSV-export tools. Setup docs: the "Model Context Protocol" page in OneSignal docs. The MCP is an API proxy — it cannot edit files; repo work is always done by this local agent.
 
 ## SDK data surface (verified signatures — the codegen targets)
 
