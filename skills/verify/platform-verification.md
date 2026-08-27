@@ -84,12 +84,19 @@ Diagnose in this ranked order. For each: symptom → most-likely cause → fix /
 ### 6. "Delivered" (`successful >= 1`) but not shown on the device
 **Symptom:** step 5 shows `successful >= 1` but the user says nothing appeared.
 **Cause:** this is a display issue, not a send failure — OneSignal already handed it to APNs/FCM.
+**Resend cap — 1 resend maximum.** A repeat send into the same device state returns the same server-side data and proves nothing new. If the resend also does not show, change the environment (cold-boot the emulator, or move to a physical device). Do not change the message and send again.
 **Fixes (mobile "notifications not shown" + web docs):**
 - **Focus / Do Not Disturb** on the device, or OS/browser notification settings disabled for the app/site. (Verify step 4 warns about this before the send — re-check it here first; it's the cheapest explanation.)
 - **Rapid test sends collapsing:** several pushes sent in quick succession can display as only the most recent (same `web_push_topic` on web / `collapse_id` on mobile, or OS coalescing). If "only one of my N test pushes appeared," check each notification's `successful`/Delivered count server-side before treating it as a delivery failure — N delivered + 1 visible is a display artifact, not a send problem.
 - Another push SDK intercepting: a custom `FirebaseMessagingService`/`firebase_messaging` overriding `onMessageReceived`, legacy `FirebaseInstanceIdReceiver`, or calling `FirebaseMessaging.getToken()/deleteToken()` — OneSignal should own the token lifecycle.
 - App in foreground calling `preventDefault()` in the foreground lifecycle listener.
-- Device offline / browser closed (push shows when reopened within TTL) / firewall blocking APNs (5223, 443/2197) or FCM (5228–5230).
+- Device offline / browser closed (push shows when reopened within TTL) / firewall blocking APNs (5223, 443/2197) or FCM (5228–5230). Check the firewall from the host side only: Android 10+ restricts `/proc/net` for apps and Play images refuse `adb root`, so an empty device-side socket table is NOT evidence that the FCM connection is down — do not report it as a finding.
+- **Emulator suspended by the host (for example, left open overnight):** the FCM transport can go stale while everything else still looks healthy — services running, valid token, permission granted, DND off. An app relaunch does not restore it; **cold-boot the device** (Device Manager → "Cold Boot Now", or `adb reboot`) and resend once. Observed on an Android AVD after a host sleep; treat the cold boot as the first environment change to try, not as a confirmed root cause.
+- **Held vs never delivered — the decisive check (Android):** in the OneSignal logcat payload, compare the FCM field `google.sent_time` (epoch ms) with the SDK's `shownTimeStamp` (epoch s). A large gap means FCM accepted the message, held it within `google.ttl`, and flushed it on reconnect — a stale-transport case, not a send failure.
+
+**Report the outcome so recurrence is measurable** (telemetry contract rules apply, consent included):
+- The push showed only after an environment change (cold boot, device swap): `bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh verify.delivered ok_after_fix unknown display_transport_stale`
+- The push never showed after all of the above: `bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh verify.delivered fail unknown display_not_shown`
 
 ### Escalation
 If a rung still fails after the above, the docs' support path is: capture a device debug log and contact `support@onesignal.com` with App ID, External ID and/or Subscription ID, and the notification ID. Surface that to the user; do not transmit anything yourself.
