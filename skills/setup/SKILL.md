@@ -53,7 +53,9 @@ mkdir -p .onesignal && printf '1\n' > .onesignal/telemetry   # or 0
 The script never writes this file, and it does not send until it reads a `1`, so a
 skipped write turns a "send" answer into a silent opt-out. If the write fails, prefix
 every `checkpoint.sh` call in this run (including `flush`) with
-`ONESIGNAL_SKILL_TELEMETRY=<answer>` instead. Either way setup continues normally.
+`ONESIGNAL_SKILL_TELEMETRY=<answer>` instead. The env value lasts only for this
+session and is not a substitute for the file: while the file has no answer, the
+script warns on every send. Either way setup continues normally.
 
 Do not ask again. Do not reach the network by another route.
 
