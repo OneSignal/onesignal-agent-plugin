@@ -93,7 +93,7 @@ Send to ONLY the subscription from step 2 — never a broadcast. **Ask before se
 
 - **Preferred — MCP:** `send_message` with the confirmed `app_id`, targeting that subscription id, with the fixed title and `<BODY>`. The MCP path needs no REST key.
 - **Fallback — REST:** `POST https://api.onesignal.com/notifications` with `Authorization: Key <KEY>`, body `{ "app_id": "<APP_ID>", "include_subscription_ids": ["<SUB_ID>"], "headings": { "en": "Successful test via OneSignal plugin" }, "contents": { "en": "<BODY>" } }`.
-- **Unauthenticated create path:** an unauth path exists behind the `permit_unauth_notif_create` flag and is confirmed only for apps created via the AI integration flow — **UNVERIFIED for arbitrary apps.** Do NOT rely on it here. Default to the key-expression or MCP path. If the user has no key source and no MCP, follow the "No key → MCP first" order (see "Inputs you need") and wait for a working auth path rather than assert the unauth path will work.
+- **Unauthenticated create path:** an unauth path exists behind an app-level feature flag and is confirmed only for apps created via the AI integration flow — **UNVERIFIED for arbitrary apps.** Do NOT rely on it here. Default to the key-expression or MCP path. If the user has no key source and no MCP, follow the "No key → MCP first" order (see "Inputs you need") and wait for a working auth path rather than assert the unauth path will work.
 - Capture the returned notification `id`. If the POST returns `errored` / an empty-recipients error, that itself is a finding → step 7.
 
 ### Step 5 — Confirm server-side delivery (the actual proof)
