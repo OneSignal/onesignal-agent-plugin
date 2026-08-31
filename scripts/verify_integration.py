@@ -164,9 +164,11 @@ class Checks:
             # OneSignal config plugin writes a Podfile range (>= x, < y) there by
             # design. Those dirs are regenerated build artifacts, not manifests
             # the customer pins, so a range inside them is not a violation.
+            # Match any path segment, not only the top level, so a nested app
+            # root (e.g. a monorepo's packages/mobile/ios) is covered too.
             files = [fp for fp in files
-                     if os.path.relpath(fp, self.root).split(os.sep)[0]
-                     not in ("ios", "android")]
+                     if not any(seg in ("ios", "android") for seg in
+                                os.path.relpath(fp, self.root).split(os.sep)[:-1])]
         return files
 
     def no_version_range(self):
