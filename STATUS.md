@@ -2,8 +2,8 @@
 
 A snapshot for teammates picking this up or evaluating it. For customer-facing
 install/usage, see [README.md](README.md). This file is the team-facing
-orientation; the deep engineering rationale lives in the git history and the
-per-repo `tmp/` planning docs referenced below.
+orientation; the deep engineering rationale lives in the git history and in
+internal planning docs.
 
 **One line:** an agent-driven OneSignal SDK onboarding plugin (Claude Code skills +
 deterministic Python scripts) that installs the SDK with pinned versions, writes
@@ -41,12 +41,11 @@ nothing persistent. Full install options (marketplace, MCP, Cursor) are in the R
 - **Credentials work today** via the current app-key API path (Apple `.p8`,
   Firebase FCM v1 JSON uploaded for you; console steps guided).
 - **MCP credential provisioning (Phase 1, shipped).** The OneSignal MCP exposes
-  `provision_app_credentials` (mcp-http#111, merged) and the Rails credentials
-  endpoint accepts OAuth bearer tokens alongside app/org keys (LAU-725, done —
-  additive, flag-gated behind `integrations_feature_oauth_api_auth_05_26`). The
+  `provision_app_credentials`, and the credentials endpoint accepts OAuth
+  bearer tokens alongside app/org keys (additive, flag-gated per app). The
   credentials skill prefers the tool when the MCP is connected, gated on an
   App-ID precondition, with a direct-`POST` fallback.
-- **An eval harness** (`OS/general-eval`) with a 3-arm version comparison and
+- **An eval harness** (internal repo) with a 3-arm version comparison and
   per-check structural rows. Most recent signal: the plugin's version-pin
   discipline took Android + Expo gating from 0–67% up to 67–100%, and a
   companion-package fabrication bug we caught took Expo from 67% → 100%.
@@ -59,12 +58,12 @@ Be precise about these when you share — they're direction, not features:
   walks the full closed loop (build → subscription → identity → real send →
   server-confirmed delivery) as a *guided* flow needing a device + a human tap.
   Turning that into a headless, eval-measured **confirmed-delivery rate** is
-  **spiked, not built** — see `OS/general-eval/tmp/delivery-verification-spike.md`.
+  **spiked, not built** — the spike doc lives in the internal eval repo.
   This is the intended differentiator.
 - **MCP credential provisioning — remaining phases.** Phase 1 shipped (see
   "What's real today"). **Not** built yet: create-or-update/replace semantics and
-  the OAuth-only lockdown (Rails Phases 3–4), after which app-key support is
-  retired. Until then provisioning stays write-once, and app-key remains the
+  the OAuth-only lockdown (later server-side phases), after which app-key support
+  is retired. Until then provisioning stays write-once, and app-key remains the
   default auth mode.
 - **Flutter template + `flutter analyze` eval gate** — blocked on installing the
   Flutter SDK.
@@ -78,13 +77,14 @@ Be precise about these when you share — they're direction, not features:
    spike above is step one). Highest leverage; it's the thing competitors don't do.
 2. **Finish the OAuth credential path** — Phase 1 (the MCP tool + OAuth
    acceptance) shipped; what remains is replace/create-or-update semantics and
-   the OAuth-only lockdown (Rails Phases 3–4), then retiring app-key support.
+   the OAuth-only lockdown (later server-side phases), then retiring app-key
+   support.
 3. **Regenerate reference docs from source** — kill doc rot while keeping the
    exact-string fidelity embedded docs give us.
 
 ## How it's proven
 
-The eval (`OS/general-eval`) is the reason to trust any of the above. It runs the
+The eval harness is the reason to trust any of the above. It runs the
 real agent against fixture apps and grades with a mix of build/compile gates,
 deterministic structural checks, and LLM judges — with the compile/type gates
 kept as the load-bearing signal because judges are noisy at low trial counts. The
@@ -100,5 +100,5 @@ a couple of eval-hygiene calls.
 ## Repos
 
 - **Plugin:** `onesignal-agent-plugin` (this repo) — skills, scripts, templates.
-- **Eval:** `OS/general-eval` — harness, fixtures, graders, version arms.
-- Planning docs for the in-flight cross-repo work live under each repo's `tmp/`.
+- **Eval:** an internal repo — harness, fixtures, graders, version arms.
+- Planning docs for the in-flight cross-repo work are internal.

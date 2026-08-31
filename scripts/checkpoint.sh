@@ -452,8 +452,8 @@ fi
 # ---------------------------------------------------------------------------
 # app_id — REQUIRED by the ingestion endpoint. It is passed as a
 # query parameter and validated: must parse as a UUID (else 400) and the app
-# must be Enabled (else 403), unless the UUID is in the ConfigCat
-# `allowed_listed_uuids` list, which bypasses the status check.
+# must be Enabled (else 403), unless the UUID is in a server-side
+# allow-list, which bypasses the status check.
 #
 # There is no other authentication on that endpoint. app_id is the whole gate.
 #
