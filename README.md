@@ -168,15 +168,15 @@ the file edits). Connecting the **OneSignal MCP server** lets Claude run OneSign
 first-class tools — creating users, checking delivery, sending a test send — which the `verify`,
 `status`, and `instrument` skills will prefer when available.
 
-**This plugin ships an MCP configuration** (`.mcp.json` at the plugin root) that declares the hosted
-OneSignal MCP server:
+**This plugin ships an MCP configuration** (`.mcp.json` at the plugin root) that declares OneSignal's
+first-party hosted MCP endpoint:
 
 ```json
 {
   "mcpServers": {
     "onesignal": {
       "type": "http",
-      "url": "https://server.smithery.ai/onesignal/onesignal"
+      "url": "https://api.onesignal.com/mcp/oauth"
     }
   }
 }
@@ -190,16 +190,24 @@ authentication. Complete the one-time sign-in from inside Claude Code:
 /mcp
 ```
 
-Select **onesignal → Authenticate**. A hosted **Connect OneSignal** page opens in your browser where
-you enter your **App ID** and **REST API key**; credentials are stored with the connection and reused
-after that.
+Select **onesignal → Authenticate**. Your browser opens OneSignal's sign-in page. Sign in and approve
+access — that is the whole flow. There is no App ID or REST API key to enter: the connection is an
+OAuth grant tied to your OneSignal account.
 
-Notes and limitations, per OneSignal's MCP docs:
+Notes, per OneSignal's MCP docs (the
+["Model Context Protocol" page](https://documentation.onesignal.com/docs/en/model-context-protocol)):
 
-- **Where your key goes (security note):** `server.smithery.ai/onesignal/onesignal` is OneSignal's officially documented MCP endpoint (docs: "Model Context Protocol" page), hosted by **Smithery** — your App ID and REST API key are stored with the connection and proxied through that third-party hosted service rather than sent directly to `api.onesignal.com`. If your security posture requires a first-party-only credential flow, skip the bundled MCP (disable it in the plugin) and let the skills use their REST fallbacks — keys then stay in your local env.
-- Each MCP connection is scoped to **one App ID**. Managing multiple apps means one connection per app.
-- The MCP is currently in **beta**. `send_message` is treated as a high-impact action and asks for
-  confirmation; it has a lower rate limit.
+- **First-party endpoint.** `api.onesignal.com/mcp/oauth` is OneSignal's own hosted MCP server. Your
+  sign-in goes to OneSignal directly — no third-party gateway sits in the path, and the MCP server does
+  not store your customer data.
+- **Account-scoped, multi-app.** The connection follows the permissions of the OneSignal user who
+  authorized it, and it can access every app that user can manage (`list_apps` discovers App IDs). The
+  `verify`, `status`, and `credentials` skills confirm the target app before a read or write.
+- **Revocable.** Every connected AI client appears under **Connected apps** in your OneSignal account
+  settings. Revoke a client there at any time; revocation invalidates its tokens.
+- The MCP is in **open beta**; an app may need enablement before non-utility tools are available.
+  `send_message` is treated as a high-impact action and asks for confirmation; tool calls are rate
+  limited.
 - The MCP is an **API proxy** — it cannot read or edit your files. All repo work is done by your local
   Claude Code agent regardless of whether MCP is connected.
 - If you'd rather not bundle it, disable the plugin's MCP server, or set up the same connection manually
@@ -218,19 +226,23 @@ loading in Cursor. Be aware of what this plugin can and can't do there:
   the chat — and Cursor's model can follow the same steps. The safety contract in
   `references/safety-contract.md` still applies; include it so the agent honors the read/write and
   secrets rules.
-- **The OneSignal MCP (works):** Cursor *does* support MCP. You can connect the same OneSignal MCP
-  server directly in Cursor via `~/.cursor/mcp.json` (all projects) or `.cursor/mcp.json` (per project):
+- **The OneSignal MCP (works):** Cursor *does* support MCP, and OneSignal has an official listing in
+  the [Cursor Marketplace](https://cursor.com/marketplace/onesignal). Install that plugin — it
+  configures the hosted MCP server for you — then authenticate from **Settings → MCP & Integrations**
+  (an OneSignal sign-in page opens in your browser; there is no App ID or key to paste). To wire the
+  connection by hand instead, add the endpoint to `~/.cursor/mcp.json` (all projects) or
+  `.cursor/mcp.json` (per project):
   ```json
   {
     "mcpServers": {
       "onesignal": {
-        "url": "https://server.smithery.ai/onesignal/onesignal"
+        "url": "https://api.onesignal.com/mcp/oauth"
       }
     }
   }
   ```
-  Then restart Cursor and authenticate from **Settings → MCP & Integrations**. (This mirrors OneSignal's
-  own Cursor instructions on the MCP docs page.)
+  Then restart Cursor and authenticate the same way. (This mirrors OneSignal's own Cursor instructions
+  on the MCP docs page.)
 - **What won't happen automatically:** namespaced `/onesignal:*` commands, model-invoked skill
   triggering, and the plugin's `.mcp.json` auto-connecting. Those are Claude Code features. In Cursor you
   drive the skills manually by supplying them as context.
@@ -283,7 +295,7 @@ general Claude Code caution, not specific to OneSignal).
 
 ## Support & versioning
 
-- **Version:** see `version` in `.claude-plugin/plugin.json` (currently `0.1.0`). Because a `version` is
+- **Version:** see `version` in `.claude-plugin/plugin.json` (currently `0.4.0`). Because a `version` is
   set, Claude Code only pulls updates when this field is bumped. Update an installed copy with
   `/plugin marketplace update <marketplace-name>` then `/reload-plugins`.
 - **OneSignal support:** questions about your account, credentials, or the MCP beta →

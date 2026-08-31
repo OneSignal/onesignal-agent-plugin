@@ -2,7 +2,7 @@
   "mcpServers": {
     "onesignal": {
       "type": "http",
-      "url": "https://server.smithery.ai/onesignal/onesignal"
+      "url": "https://api.onesignal.com/mcp/oauth"
     }
   }
 }

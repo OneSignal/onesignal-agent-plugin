@@ -4,10 +4,10 @@ Exact reads for each activation-ladder rung. All are **read-only** (`GET`-shaped
 
 ## Two ways to call
 
-- **OneSignal MCP (preferred if connected).** Use the hosted tools — they hold the app + key context: `onesignal_config`, `list_messages`, `view_message`, `view_outcomes`, `view_user`. (The MCP is an API proxy; it reads, it cannot edit files.)
+- **OneSignal MCP (preferred if connected).** Use the hosted tools — the connection carries the account's OAuth grant, so no REST key is handled: `list_apps`, `list_messages`, `view_message`, `view_outcomes`, `view_user`. Confirm membership first with `list_apps` (paginated), and pass the target `app_id` on every call — the tools require it. (`onesignal_config` reports connection details, not app data. The MCP is an API proxy; it reads, it cannot edit files.)
 - **App-scoped key via curl (fallback).** Header `Authorization: Key <KEY>` where `<KEY>` is the key provided with the invocation/session or `$ONESIGNAL_REST_API_KEY` from env. Base host and exact paths per api-reference.md. `app_id` is passed as shown.
 
-With the MCP but no key, you can probe rungs 1 and 4–6; rungs 2–3 need a key (the subscription poll has no MCP tool, and the rung-3 sample comes from that poll). With neither the MCP nor a key, you cannot probe rungs 2–7 — see SKILL.md Step 0.
+With the MCP but no key, you can probe rungs 4–6, plus the web half of rung 1 through the unauthenticated sync probe; the app-config half of rung 1 and rungs 2–3 need a key (no MCP tool gives a per-app config read, the subscription poll has no MCP tool, and the rung-3 sample comes from that poll). With neither the MCP nor a key, you cannot probe rungs 2–7 — see SKILL.md Step 0.
 
 ---
 
@@ -15,8 +15,8 @@ With the MCP but no key, you can probe rungs 1 and 4–6; rungs 2–3 need a key
 
 **Signal:** the app has ≥1 messaging platform configured (FCM / APNs / web push keys present).
 
-- **MCP:** `onesignal_config` → inspect the returned app/platform configuration.
-- **REST:** fetch the app config (the "view app" / `onesignal_config` path in api-reference.md).
+- **MCP:** no verified per-app config read — `onesignal_config` returns connection details, not the target app's platform config. Use the REST read or the web probe; with the MCP only, mark the app-config half of this rung ⚠️ unknown.
+- **REST:** fetch the app config (the view-app read, `GET /api/v1/apps/{id}`, app auth — api-reference.md).
 - **Web (works even with NO key):** `GET https://api.onesignal.com/sync/<APP_ID>/web?fresh=<timestamp>` — free and unauthenticated (api-reference "Web platform config probe"). `success: true` ⇒ web platform configured; `{"code":2,"description":"This app is not configured for web push."}` ⇒ web platform never provisioned (signup doesn't do it). Always append the throwaway `?fresh=` param — responses are CDN-cached ~1 h and a stale answer will mislead the ladder.
 
 **Read:** which platform objects exist, and whether each has its credential populated.
