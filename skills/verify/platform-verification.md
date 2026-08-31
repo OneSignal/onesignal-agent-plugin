@@ -24,11 +24,17 @@ The goal of the gate is only to get the app *running with the SDK linked* so the
 
 ### iOS native
 - **Build:** `xcodebuild -workspace <App>.xcworkspace -scheme <Scheme> -destination 'generic/platform=iOS' build` (or the project/scheme the user names). If CocoaPods is used, Pods must be installed; if SPM, the `OneSignal-XCFramework` package must resolve — add **`-scmProvider system`** to `xcodebuild` for SPM projects, or package resolution can pop a login-keychain password prompt (re-prompting on Deny) that stalls CLI/agent runs.
-- **Run:** **physical device, or a simulator on an Apple-silicon Mac** — Xcode 14+ simulators on Apple silicon receive real sandbox APNs pushes; Intel-Mac simulators do not receive remote push. State this up front; the user must run the app and accept the prompt.
-- **Pass condition:** build succeeds with the Push capability + `remote-notification` background mode present; app launches on device.
+- **Run — simulator on an Apple-silicon Mac (run it yourself):** Xcode 14+ simulators there receive real sandbox APNs pushes, and every step below is headless — do not hand this run to the user:
+  1. Pick a device from `xcrun simctl list devices available`; boot it with `xcrun simctl boot "<device>"` (skip if already Booted). Then `open -a Simulator` so the window — and later the permission prompt — is visible to the user.
+  2. Build for the simulator: `xcodebuild ... -destination 'platform=iOS Simulator,name=<device>' -derivedDataPath "$DD" build`, with `DD=$(mktemp -d)` — keep derived data OUT of the user's repo so the tree stays clean.
+  3. `xcrun simctl install booted "$DD/Build/Products/Debug-iphonesimulator/<App>.app"`
+  4. `xcrun simctl launch booted <bundle-id>` — read the bundle id from the built app (`plutil -extract CFBundleIdentifier raw "<App>.app/Info.plist"`). Add `--console` in a background shell to capture the SDK's verbose log and the debug helper's `[OneSignal] Push subscription registered: <id>` line directly.
+- **Run — physical device (hand to the user):** you cannot drive the phone, and signing + device trust are Xcode-GUI-bound. Ask the user to run the app from Xcode, then wait. On an Intel Mac this is the only option — Intel-Mac simulators do not receive remote push.
+- **The permission prompt is the one tap you cannot do** — `xcrun simctl privacy` has no notifications service. The prompt does NOT gate step 2: the setup skill adds `UIBackgroundModes = remote-notification`, and with that the SDK gets an APNs token and creates the server-side subscription before the prompt is answered (verified in SDK source: `OSNotificationsManager.registerForAPNsToken` requires accepted permission OR that background mode; `OSRequestCreateUser` always includes the push subscription). The prompt DOES gate step 4: a never-permissioned subscription is an unsubscribed target, so a send to it returns the unsubscribed/empty-recipients error instead of `successful`. Ask the user to click **Allow** (simulator window or device) before the step-4 send.
+- **Pass condition:** build succeeds with the Push capability + `remote-notification` background mode present; app launches — by you on a simulator, by the user on a device.
 
 ### React Native / Flutter / Cordova / Capacitor
-- Build the JS/Dart layer (`npx react-native run-ios`/`run-android`, `flutter build`/`flutter run`, `npx cap sync` + native build). For iOS these wrappers inherit the **full native iOS device flow** — physical device or Apple-silicon-Mac simulator.
+- Build the JS/Dart layer (`npx react-native run-ios`/`run-android`, `flutter build`/`flutter run`, `npx cap sync` + native build). For iOS these wrappers inherit the **full native iOS device flow** — physical device, or an Apple-silicon-Mac simulator that you run yourself (the `simctl` sequence under "iOS native" above).
 - **Capacitor iOS:** confirm `ios.handleApplicationNotifications: false` in `capacitor.config` (Part B §3) — its absence causes the "APNS delegate never fired" class of errors.
 
 ### Expo

@@ -8,7 +8,7 @@ Reference for the `setup` skill. Follow [SKILL.md](SKILL.md) Steps 0–8; this f
 - **Human (Xcode GUI + Apple portal — you CANNOT reliably do these):**
   - Apple Developer portal (paid account): enable the **Push Notifications** capability on the App ID, generate an **APNs `.p8`** key + capture Key ID + Team ID → handed to the **credentials** skill.
   - Xcode GUI: signing, the Push Notifications + Background Modes capability toggles, and — if needed — **Notification Service Extension target creation** (File ▸ New ▸ Target). NSE is NOT reliably text-editable; guide the human.
-  - Test on a **physical device, or a simulator on an Apple-silicon Mac** (Xcode 14+ simulators there receive real sandbox APNs pushes; Intel-Mac simulators do not receive remote push).
+  - Test on a **physical device** (signing + device trust are Xcode-GUI-bound). A simulator on an Apple-silicon Mac is NOT a human step — the verify skill boots, installs, and launches it headlessly (Xcode 14+ simulators there receive real sandbox APNs pushes; Intel-Mac simulators do not receive remote push). Only the notification permission tap stays with the human.
 
 ## NSE is OPTIONAL for a minimal install
 
@@ -82,4 +82,4 @@ The Step-8 structural self-check (`verify_integration.py --platform ios`) enforc
 ## Handoffs
 
 - Hand off to **credentials** — iOS push needs the APNs `.p8` (+ Key ID/Team ID) on the OneSignal app, and the human must toggle capabilities + create the NSE in Xcode if rich features are wanted.
-- Then **verify** on a physical device (or an Apple-silicon-Mac simulator).
+- Then **verify** — on an Apple-silicon Mac the verify skill runs the simulator itself; a physical device needs the human to launch from Xcode.
