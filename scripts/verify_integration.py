@@ -50,7 +50,8 @@ def walk_files(root):
     for dp, dn, fn in os.walk(root):
         dn[:] = [d for d in dn if d not in EXCLUDE]
         for f in fn:
-            if os.path.splitext(f)[1] in CODE_EXTS or f in ("Podfile", "Package.swift"):
+            if os.path.splitext(f)[1] in CODE_EXTS or f in ("Podfile", "Package.swift",
+                                                            "project.pbxproj"):
                 yield os.path.join(dp, f)
 
 
@@ -78,13 +79,13 @@ def grep(root, pattern, files=None):
 _SPM_RANGE_KW = re.compile(r"from\s*:|upToNext(?:Major|Minor)|\"\s*\.\.[.<]\s*\"", re.I)
 
 
-def spm_range_hits(root):
+def spm_range_hits(root, files=None):
     """Multi-line-aware scan for a OneSignal SPM `.package(...)` call that carries a
     range (from:/upToNext/..<) instead of an exact pin. The per-line RANGE_PATTERNS
     miss the Xcode-generated style where url and version sit on separate lines, so
     parse each `.package(` call as a balanced-paren span across newlines."""
     hits = []
-    for fp in walk_files(root):
+    for fp in (files if files is not None else walk_files(root)):
         if os.path.basename(fp) != "Package.swift":
             continue
         text = read(fp)
@@ -108,6 +109,45 @@ def spm_range_hits(root):
     return hits
 
 
+_PBX_REPO_URL = re.compile(r"repositoryURL\s*=\s*\"?([^\";\n]+)")
+_PBX_REQ_KIND = re.compile(r"kind\s*=\s*(\w+)")
+
+
+def pbxproj_spm_range_hits(root, files=None):
+    """The Xcode GUI writes an SPM dependency into project.pbxproj, not
+    Package.swift, so `spm_range_hits` never sees it. Each dependency is an
+    XCRemoteSwiftPackageReference entry with a repositoryURL and a nested
+    `requirement = { kind = ...; };` block; only `kind = exactVersion` is a pin.
+    The pbxproj is a NeXT-style plist — a balanced-brace scan over each entry is
+    enough, no full plist parser. Scoped to a OneSignal repositoryURL so a
+    third-party range does not trip the check."""
+    hits = []
+    for fp in (files if files is not None else walk_files(root)):
+        if os.path.basename(fp) != "project.pbxproj":
+            continue
+        text = read(fp)
+        for m in re.finditer(r"isa\s*=\s*XCRemoteSwiftPackageReference\b", text):
+            start = text.rfind("{", 0, m.start())
+            if start < 0:
+                continue
+            depth = 0
+            for end in range(start, len(text)):
+                if text[end] == "{":
+                    depth += 1
+                elif text[end] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        break
+            block = text[start:end + 1]
+            url = _PBX_REPO_URL.search(block)
+            if not url or "onesignal" not in url.group(1).lower():
+                continue
+            kind = _PBX_REQ_KIND.search(block)
+            if kind and kind.group(1) != "exactVersion":
+                hits.append((os.path.relpath(fp, root), text.count("\n", 0, start) + 1))
+    return hits
+
+
 class Checks:
     def __init__(self, root, platform, app_id):
         self.root, self.platform, self.app_id = root, platform, app_id
@@ -117,11 +157,27 @@ class Checks:
         self.results.append({"check": name, "passed": passed, "severity": severity, "detail": detail})
 
     # ---- universal ----
+    def _range_scan_files(self):
+        files = list(walk_files(self.root))
+        if self.platform == "expo":
+            # Expo CNG: `npx expo prebuild` generates ios/ and android/, and the
+            # OneSignal config plugin writes a Podfile range (>= x, < y) there by
+            # design. Those dirs are regenerated build artifacts, not manifests
+            # the customer pins, so a range inside them is not a violation.
+            # Match any path segment, not only the top level, so a nested app
+            # root (e.g. a monorepo's packages/mobile/ios) is covered too.
+            files = [fp for fp in files
+                     if not any(seg in ("ios", "android") for seg in
+                                os.path.relpath(fp, self.root).split(os.sep)[:-1])]
+        return files
+
     def no_version_range(self):
+        files = self._range_scan_files()
         hits = []
         for rx in RANGE_PATTERNS:
-            hits += grep(self.root, rx)
-        hits += spm_range_hits(self.root)
+            hits += grep(self.root, rx, files=files)
+        hits += spm_range_hits(self.root, files=files)
+        hits += pbxproj_spm_range_hits(self.root, files=files)
         hits = sorted(set(hits))  # a single-line SPM range matches both paths
         self.add("no_version_range", not hits, "error",
                  "" if not hits else f"range/dynamic version at {hits[:5]} — must be an exact pin")
