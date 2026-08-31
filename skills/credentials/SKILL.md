@@ -12,6 +12,7 @@ Foundation docs are binding. Read them before acting, and never contradict them:
 - API surface & auth tiers: [../../references/api-reference.md](../../references/api-reference.md)
 - Safety contract (secrets, gitignore, approval gates): [../../references/safety-contract.md](../../references/safety-contract.md)
 - Per-platform automate-vs-human matrix: [../../references/platform-matrix.md](../../references/platform-matrix.md)
+- Onboarding milestone checkpoints: [../../references/telemetry-contract.md](../../references/telemetry-contract.md)
 
 Per-credential portal detail lives in the sibling files — open the one you need:
 - Apple .p8 + Firebase FCM (the two you upload via API): [api-uploaded-credentials.md](api-uploaded-credentials.md)
@@ -67,6 +68,18 @@ Both agent-uploadable credentials go to the **write-once provisioning endpoint**
 - **Preferred — the `provision_app_credentials` MCP tool**, when the OneSignal MCP is connected and exposes it. The tool forwards the MCP session's auth downstream, so you pass the target `app_id` plus the credential params (no `Authorization` header) and still supply base64 strings, not file paths — the MCP can't read local files, so you read and encode the file yourself. It provisions one platform set per call, and it covers **APNs and FCM only** — the live schema has no web params, so the web platform always goes through the direct `POST` (see [guided-channels.md](guided-channels.md)). The raw API response comes back unchanged, so the validation loop and every status mapping below apply as-is.
   - **App-ID precondition (do this first).** The write is one-shot, so the target must be confirmed, not assumed. Check with `list_apps` (paginated — page until the items seen equal the response's `total_count` before you conclude absence) that the OAuth grant can access the target App ID, then pass exactly that `app_id` to the tool — the first-party schema requires it. (`onesignal_config` reports connection details, not app membership — it is not this check.) If the grant cannot see the target app, use the direct `POST` instead. A credential written to the wrong app cannot be undone through this endpoint — the check is not optional.
 - **Fallback — a direct `POST`** when the MCP isn't connected or doesn't expose the tool yet.
+
+**No key and no MCP → offer the connection first, the Keys & IDs link second.** When the MCP is not connected and no key source exists (no invocation key, no `$ONESIGNAL_REST_API_KEY`), resolve in this order — never jump straight to the dashboard walkthrough, and never ask for a key in chat (binding rules above):
+
+1. **Offer the MCP connection.** The plugin ships the server in its `.mcp.json`, so "registered but unauthenticated" is the expected first-run state. Ask the user to authenticate it (in Claude Code: `/mcp` → **onesignal** → **Authenticate**): the browser opens OneSignal's first-party sign-in page, and the connection becomes an OAuth grant tied to their account — no App ID, no REST key, and no credential ever enters the chat or the repo. Then apply the App-ID precondition above before any write.
+2. **The user declines the MCP, or the session has no server** → send the Keys & IDs link in chat, built from the App ID: `https://dashboard.onesignal.com/apps/<APP_ID>/settings/keys_and_ids`. Ask the user to open it, create or copy an app API key, export it in their shell as `ONESIGNAL_REST_API_KEY`, and say when that is done. Do not have them paste the key into chat. Tell them a new key (`os_v2_app_…`) is shown only once at creation, so they must store it immediately.
+3. **The user declines both** → fall back to the dashboard upload walkthrough (Settings > Push Platforms) and say plainly that on this path you cannot upload or validate for them.
+
+**Report which path resolved** — one checkpoint per skill run, the moment the auth path is settled (telemetry contract rules apply, consent included; status and path tokens are in [../../references/telemetry-contract.md](../../references/telemetry-contract.md) → "The auth choice"):
+
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.auth_resolved <ok|ok_after_fix|fail> <path-token>
+```
 
 Read the "Credential provisioning" section of [../../references/api-reference.md](../../references/api-reference.md) — it is the contract — then apply these rules:
 
