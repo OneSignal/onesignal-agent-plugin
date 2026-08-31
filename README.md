@@ -202,7 +202,7 @@ Notes, per OneSignal's MCP docs (the
   not store your customer data.
 - **Account-scoped, multi-app.** The connection follows the permissions of the OneSignal user who
   authorized it, and it can access every app that user can manage (`list_apps` discovers App IDs). The
-  skills confirm the target app before any read or write.
+  `verify`, `status`, and `credentials` skills confirm the target app before a read or write.
 - **Revocable.** Every connected AI client appears under **Connected apps** in your OneSignal account
   settings. Revoke a client there at any time; revocation invalidates its tokens.
 - The MCP is in **open beta**; an app may need enablement before non-utility tools are available.
