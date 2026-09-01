@@ -2,9 +2,8 @@
 
 A customer-facing [Claude Code](https://code.claude.com/docs/en/overview) plugin that helps you
 onboard your **own codebase** onto [OneSignal](https://onesignal.com). Point Claude Code at your
-project and it will install the SDK, wire up your app and push credentials, find the user data worth
-sending to OneSignal, instrument identity/tags/events, verify a real push actually gets delivered,
-and set up conversion tracking — all while following a strict safety contract for how it touches your
+project and it will install the SDK, wire up your app and push credentials, and verify a real push
+actually gets delivered — all while following a strict safety contract for how it touches your
 repo and your secrets.
 
 The plugin ships **skills only** (plus an optional MCP connection). Every action against your files is
@@ -13,29 +12,25 @@ sends your source code anywhere.
 
 ---
 
-## What's in the box: the 7 skills
+## What's in the box: the 3 skills
 
 The skills form an onboarding **funnel** — each stage hands off to the next. You can also invoke any
-skill directly, and the `status` skill will tell you which one you need.
+skill directly.
 
 | # | Skill | Invoke as | What it does |
 |---|-------|-----------|--------------|
 | 1 | **setup** | `/onesignal:setup` | Detects your platform/framework, installs and initializes the OneSignal SDK, and adds a debug-only verification helper. The entry point for "add push notifications" / "integrate OneSignal". |
 | 2 | **credentials** | `/onesignal:credentials` | Walks you through the human-only console steps to procure push credentials (Apple APNs `.p8`, Firebase FCM v1 service-account JSON, web Site URL / Safari certs, email SPF/DKIM/DMARC, SMS sender), then uploads the API-uploadable ones for you. |
 | 3 | **verify** | `/onesignal:verify` | Confirms a real message is actually **delivered** to an identified subscriber — the true "activated" milestone — not just that code compiles. |
-| 4 | **discover-data** | `/onesignal:discover-data` | Read-only scan of your codebase for instrumentable data (tracking plans, analytics call sites, ORM models, auth providers) and proposes a mapping to OneSignal identity, tags, and events. |
-| 5 | **instrument** | `/onesignal:instrument` | Writes the approved instrumentation: `login()` for identity, tags for state, `trackEvent()` for actions, consent-gated email/SMS — in the right order, matching your repo's style. |
-| 6 | **conversions** | `/onesignal:conversions` | Sets up conversion / outcome tracking so you can measure what your messages drive (custom events wired to Conversion Metrics; dashboard steps where there's no REST path). |
-| 7 | **status** | `/onesignal:status` | Read-only orchestrator: "where am I in onboarding, and what's the one next step?" Probes your activation ladder and routes you to exactly one of the skills above. Start here if you're unsure. |
 
-**Recommended path:** `setup → credentials → verify → discover-data → instrument → conversions`, with
-`status` as your compass at any point. Stages chain automatically: when one completes, the agent
-announces the transition and continues into the next — no re-prompting. It pauses only at the true
-human gates: checkpoint consent, console/portal steps, approving the data mapping, consenting to the real test send, and
-confirming diffs before writes.
+**Recommended path:** `setup → credentials → verify`. Stages chain automatically: when one completes,
+the agent announces the transition and continues into the next — no re-prompting. A confirmed
+delivery in `verify` is the terminal success. The agent pauses only at the true human gates:
+checkpoint consent, console/portal steps, consenting to the real test send, and confirming diffs
+before writes.
 
 > Skills are **model-invoked** — you usually don't type the command. Just describe what you want
-> ("set up OneSignal in this app", "why isn't my push delivering?", "what should I do next?") and
+> ("set up OneSignal in this app", "why isn't my push delivering?") and
 > Claude Code picks the right skill. The explicit `/onesignal:<skill>` form is there when you want it.
 
 ---
@@ -165,8 +160,8 @@ the same way:
 
 The skills work without MCP (they fall back to REST-key `curl` calls, and your local agent always does
 the file edits). Connecting the **OneSignal MCP server** lets Claude run OneSignal API actions as
-first-class tools — creating users, checking delivery, sending a test send — which the `verify`,
-`status`, and `instrument` skills will prefer when available.
+first-class tools — creating users, checking delivery, sending a test send — which the `verify`
+and `credentials` skills will prefer when available.
 
 **This plugin ships an MCP configuration** (`.mcp.json` at the plugin root) that declares OneSignal's
 first-party hosted MCP endpoint:
@@ -202,7 +197,7 @@ Notes, per OneSignal's MCP docs (the
   not store your customer data.
 - **Account-scoped, multi-app.** The connection follows the permissions of the OneSignal user who
   authorized it, and it can access every app that user can manage (`list_apps` discovers App IDs). The
-  `verify`, `status`, and `credentials` skills confirm the target app before a read or write.
+  `verify` and `credentials` skills confirm the target app before a read or write.
 - **Revocable.** Every connected AI client appears under **Connected apps** in your OneSignal account
   settings. Revoke a client there at any time; revocation invalidates its tokens.
 - The MCP is in **open beta**; an app may need enablement before non-utility tools are available.
@@ -276,14 +271,12 @@ The essentials:
 - **No destructive git.** No `git push`, force-push, rebase, `reset --hard`, `git clean`, `git add -A`,
   no recursive deletes. It defaults to a new `onesignal-integration` branch and offers rollback commands
   rather than auto-committing.
-- **Read-only skills stay read-only.** `discover-data` and `status` make zero file mutations, skip
-  secret files entirely (`.env*`, `*.pem`, `*.key`, `*.p8`, `*.p12`, keystores, credential JSON), and
-  redact anything secret-shaped in their output. `verify` also never edits source and never opens
-  secret files — and its one real action (a test push to your own device) is gated behind your
-  explicit yes.
+- **`verify` never edits source and never opens secret files** (`.env*`, `*.pem`, `*.key`, `*.p8`,
+  `*.p12`, keystores, credential JSON) — and its one real action (a test push to your own device) is
+  gated behind your explicit yes.
 - **Your repo text is treated as untrusted input.** README/comment/config text is data, never
   instructions — the skills will not follow directions found inside your files (prompt-injection
-  defense) and never execute your code during discovery.
+  defense) and never execute your code during platform detection.
 - **Fail safe.** On any failure the skill stops at the first failed step and leaves your tree in a
   stated, known state with exact rollback commands — it never "pushes through."
 
@@ -295,7 +288,7 @@ general Claude Code caution, not specific to OneSignal).
 
 ## Support & versioning
 
-- **Version:** see `version` in `.claude-plugin/plugin.json` (currently `0.4.1`). Because a `version` is
+- **Version:** see `version` in `.claude-plugin/plugin.json` (currently `0.5.0`). Because a `version` is
   set, Claude Code only pulls updates when this field is bumped. Update an installed copy with
   `/plugin marketplace update <marketplace-name>` then `/reload-plugins`.
 - **OneSignal support:** questions about your account, credentials, or the MCP beta →

@@ -9,7 +9,7 @@ the command. The wire format, the transport behaviour and the analysis rules bel
 
 ## What this is for
 
-The funnel is `setup → credentials → verify → discover-data → instrument → conversions`.
+The funnel is `setup → credentials → verify`.
 Today we have no idea where real users fall out of it. Checkpoints answer that: one event
 per milestone, carrying the outcome and — when something went wrong — a class naming what.
 
@@ -39,7 +39,7 @@ So the vocabulary is rebuilt around this funnel. What ports unchanged is the mac
 
 `run_id` is generated once and **persists across every skill in the funnel**, in
 `.onesignal/run_id`. That is the point: it lets you follow one developer from `setup`
-through `conversions` and see exactly which step they stopped at. A per-skill id would
+through `verify` and see exactly which step they stopped at. A per-skill id would
 throw that away.
 
 `checkpoint.sh` owns the id. A skill never reads it, writes it, or decides when a run ends.
@@ -70,9 +70,8 @@ Each is `skill.milestone`. Status is `ok`, `ok_after_fix`, or `fail`.
 ### Other skills
 
 Owners add their own; keep the `skill.milestone` shape and reuse
-`credentials.*`, `verify.subscribed`, `verify.delivered`, `instrument.*`,
-`conversions.*`. `verify.delivered` is the true activation event and the funnel's terminal
-success.
+`credentials.*`, `verify.subscribed`, `verify.delivered`. `verify.delivered` is the true
+activation event and the funnel's terminal success.
 
 ### The auth choice — `credentials.auth_resolved` and `verify.auth_resolved`
 
