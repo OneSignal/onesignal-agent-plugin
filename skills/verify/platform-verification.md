@@ -52,7 +52,8 @@ Diagnose in this ranked order. For each: symptom → most-likely cause → fix /
 
 ### 1. Installed but nothing registers / nothing delivers  — #1 cause: missing platform credentials
 **Symptom:** step 2 poll times out with zero subscriptions, OR step 5 shows `errored` > 0 immediately. (**Not `failed`** — in this API `failed` counts unsubscribed/opted-out targets, not delivery errors; `failed`>0 routes to permission/opt-in diagnosis, #5 below.)
-**Cause:** the app has no push credentials configured in OneSignal — no FCM v1 service-account JSON (Android), no APNs .p8/.p12 (iOS), or no web platform config. Without these OneSignal has nothing to hand FCM/APNs, so devices can't complete registration and sends error.
+**Cause:** the app has no push credentials configured in OneSignal — no FCM v1 service-account JSON (Android), no APNs .p8/.p12 (iOS), or no web platform config. Without these OneSignal has nothing to hand FCM/APNs, so sends error — and on Android/web, registration itself typically stalls.
+**Pre-check before this diagnosis:** a step-2 row with `notification_types < 1` is a permission gap → §5, not credentials. And on iOS v5 the subscription row comes from the server-side user create, independent of platform credentials (verified in SDK source, not yet live-tested) — expect a missing `.p8` to show as `errored` at step 5 rather than as a step-2 timeout.
 **Fix / route:** send to the **credentials skill** to procure + upload credentials (agent uploads via the write-once endpoint `POST /api/v1/apps/{id}/credentials` with an app-scoped key; the human procures the .p8 / service-account JSON). New APNs keys take ~10–15 min to propagate. Re-run this verify skill afterward.
 
 ### 2. Web — platform never provisioned; or service worker 404/403, wrong MIME, redirect, or scope/PWA conflict
@@ -71,7 +72,7 @@ Diagnose in this ranked order. For each: symptom → most-likely cause → fix /
 **Symptom:** step 2 times out on iOS; or logs show "APNS Delegate Never Fired" / "APNS 3000".
 **Causes & fixes:**
 - **Simulator:** Intel-Mac simulators do not receive remote push — use a **physical device or a simulator on an Apple-silicon Mac** (Xcode 14+ simulators there receive real sandbox APNs pushes and register normally).
-- **APNs not configured / not propagated:** .p8 (+ Key ID + Team ID) uploaded via the credentials skill; new keys take 10–15 min. Push capability must be enabled on the App ID and provisioning profile.
+- **APNs credentials (.p8) missing or not propagated block *delivery*, not registration** on the v5 SDK — the subscription row comes from the server-side user create, independent of platform credentials (verified in SDK source, not yet live-tested). Expect that gap as `errored` at step 5; a true step-2 timeout points at the app never running or init never firing, or at the other items here. New keys take 10–15 min to propagate (the credentials skill uploads the .p8 + Key ID + Team ID). The **Push capability** on the App ID / provisioning profile is a different failure: without it the token fetch itself fails (APNS 3000, next bullet).
 - **"APNS delegate never fired" / "APNS 3000":** usually a second push SDK or native push API alongside OneSignal, or transient connectivity that self-resolves after a new session (background 30s+, reopen). Remove other push dependencies; for **Capacitor** set `ios.handleApplicationNotifications: false`.
 - Confirmed receipt (`received`) additionally needs the **NSE + App Group** — but that is optional for a minimal install; do not treat its absence as a registration failure.
 
