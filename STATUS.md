@@ -22,10 +22,8 @@ nothing persistent. Full install options (marketplace, MCP, Cursor) are in the R
 
 ## What's real today (shippable, committed, eval-backed)
 
-- **Three skills**, a funnel: `setup → credentials → verify`. A confirmed
-  delivery in `verify` (ACTIVATED) is the terminal success. The `discover-data`,
-  `instrument`, `conversions`, and `status` skills are out of the v1 scope; they
-  live on the `v2` branch until a later release.
+- **Seven skills**, a funnel with a `status` compass: `setup → credentials →
+  verify → discover-data → instrument → conversions`.
 - **Cross-platform setup.** Compile-verified integration templates for **Android,
   iOS, Web**; validated docs for **Expo**; structural checks for **Flutter,
   Cordova, Capacitor**. Every SDK API in a template was validated against SDK
