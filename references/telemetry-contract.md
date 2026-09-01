@@ -74,6 +74,34 @@ Owners add their own; keep the `skill.milestone` shape and reuse
 `conversions.*`. `verify.delivered` is the true activation event and the funnel's terminal
 success.
 
+### The auth choice — `credentials.auth_resolved` and `verify.auth_resolved`
+
+These 2 milestones record which auth path the user ended on for the API steps: the MCP
+OAuth grant, an API key, or neither. Fire one per skill run — on **every** run, including
+runs that start already authenticated — and only when the path is **confirmed, not merely
+chosen**: `mcp_oauth` after the app-match precondition passes; `api_key_env` /
+`api_key_link` after the first read with that key succeeds; `dashboard_manual` when the
+user picks the walkthrough.
+
+On these milestones only, the class position names the **chosen path**, not a failure.
+`checkpoint.sh` sends it unchanged; no other milestone may use these tokens:
+
+| Report | Meaning |
+|---|---|
+| `ok mcp_oauth` | the MCP was already connected and the app match held |
+| `ok_after_fix mcp_oauth` | the user authenticated the MCP during the run |
+| `ok api_key_env` | a key arrived with the invocation or from `$ONESIGNAL_REST_API_KEY` |
+| `ok_after_fix api_key_link` | no key existed; the user created one from the Keys & IDs link |
+| `ok dashboard_manual` | the user chose the dashboard walkthrough over the MCP and the API |
+| `fail auth_declined` | the user declined every path; the API steps stay blocked |
+
+`ok_after_fix` carries a **different sense on these 2 milestones** than in the failure
+milestones: there it means the agent changed something the user did not ask for; here it
+means the user completed an auth action during the run. Treat the two as separate
+populations when you aggregate `ok_after_fix` across milestones. Do not put a failure
+class here — a run that ends with no auth path is `fail auth_declined`, and any API
+failure that follows belongs to the step that meets it.
+
 ## Failure classes
 
 Reuse an existing class where one fits; otherwise add it here rather than inventing one at
@@ -101,6 +129,10 @@ correct code that does not compile until the app module declares one more thing.
 OneSignal app yet, the second means they supplied an ID that does not parse as a UUID
 (a truncated paste, most likely). Conflating them hides which fix the onboarding flow
 needs — app creation versus input validation.
+
+The `auth_resolved` tokens (`mcp_oauth`, `api_key_env`, `api_key_link`,
+`dashboard_manual`, `auth_declined`) are path names, not failure classes. They are valid
+only on the `auth_resolved` milestones — see "The auth choice" above.
 
 An absent failure class is deliberate. Send no class where there is none: an empty value
 creates a category that every count of failure classes must then exclude.

@@ -205,9 +205,16 @@ def cmd_subscribers(args):
                           "raw": data}, indent=2)); return
     total = data.get("total_count")
     players = data.get("players") or []
+    nt = players[0].get("notification_types") if players else None
     out = {"probe": "subscribers", "app_id": args.app_id, "http": status, "status": "ok",
            "has_subscriber": bool(players) or bool(total),
-           "total_count": total}
+           "total_count": total,
+           "first_subscription_id": players[0].get("id") if players else None,
+           "notification_types": nt,
+           "first_subscription_opted_in": bool(nt is not None and nt >= 1),
+           "note": "notification_types >= 1 = opted in (the activation-ladder bar); "
+                   "< 1 = registered but not opted in (pre-permission or unsubscribed); "
+                   "do not test-send to it yet."}
     print(json.dumps(out, indent=2))
 
 

@@ -24,11 +24,27 @@ The goal of the gate is only to get the app *running with the SDK linked* so the
 
 ### iOS native
 - **Build:** `xcodebuild -workspace <App>.xcworkspace -scheme <Scheme> -destination 'generic/platform=iOS' build` (or the project/scheme the user names). If CocoaPods is used, Pods must be installed; if SPM, the `OneSignal-XCFramework` package must resolve — add **`-scmProvider system`** to `xcodebuild` for SPM projects, or package resolution can pop a login-keychain password prompt (re-prompting on Deny) that stalls CLI/agent runs.
-- **Run:** **physical device, or a simulator on an Apple-silicon Mac** — Xcode 14+ simulators on Apple silicon receive real sandbox APNs pushes; Intel-Mac simulators do not receive remote push. State this up front; the user must run the app and accept the prompt.
-- **Pass condition:** build succeeds with the Push capability + `remote-notification` background mode present; app launches on device.
+- **Run — simulator on an Apple-silicon Mac (run it yourself):** Xcode 14+ simulators there receive real sandbox APNs pushes. The run is **unattended, not headless** — you do no GUI work, but the Simulator window must stay visible for the user's later permission tap. Do not hand this run to the user. When the target is a simulator, build for the simulator **instead of** the generic device build above — one build, not two (a device artifact does not install on a simulator):
+  1. Pick a device from `xcrun simctl list devices available`; boot it with `xcrun simctl boot "<device>"` (skip if already Booted). Then `open -a Simulator` so the window — and later the permission prompt — is visible to the user.
+  2. Build, locate, install, and launch in **one shell call** — `$DD` and `$APP` do not survive separate shell invocations:
+     ```bash
+     DD=$(mktemp -d)   # derived data stays OUT of the user's repo
+     xcodebuild -workspace <App>.xcworkspace -scheme <Scheme> \
+       -destination 'platform=iOS Simulator,name=<device>' -derivedDataPath "$DD" build
+     APP="$(find "$DD/Build/Products" -maxdepth 2 -name '*.app' -print -quit)"
+     xcrun simctl install "<device>" "$APP"
+     BID="$(plutil -extract CFBundleIdentifier raw "$APP/Info.plist")"
+     xcrun simctl launch --console "<device>" "$BID" > "$DD/console.log" 2>&1 &
+     echo "$DD"   # print the path so later shell calls can read the log
+     ```
+     The `--console` flag must come **before** the device — `simctl` passes anything after the bundle id to the app as argv, so a trailing `--console` does nothing, silently. The redirect is what makes the stream readable; a bare backgrounded launch has no sink. If the scheme builds more than one `.app`, pick the right one with the same `xcodebuild` flags plus `-showBuildSettings` → `FULL_PRODUCT_NAME`.
+  3. Tail `<DD>/console.log` during the step-2 poll: it carries the SDK's verbose log and the debug helper's `[OneSignal] Push subscription registered: <id>` line directly.
+- **Run — physical device (hand to the user):** you cannot drive the phone, and signing + device trust are Xcode-GUI-bound. Ask the user to run the app from Xcode, then wait. On an Intel Mac this is the only option — Intel-Mac simulators do not receive remote push.
+- **The permission prompt is the one tap you cannot do** — `xcrun simctl privacy` has no notifications service. The prompt does NOT gate step 2: the setup skill adds `UIBackgroundModes = remote-notification`, and with that the SDK gets an APNs token and creates the server-side subscription before the prompt is answered (verified in SDK source: `OSNotificationsManager.registerForAPNsToken` requires accepted permission OR that background mode; `OSRequestCreateUser` always includes the push subscription). The prompt DOES gate step 4: a never-permissioned subscription is an unsubscribed target, so a send to it returns the unsubscribed/empty-recipients error instead of `successful`. Ask the user to click **Allow** (simulator window or device) before the step-4 send. ⚠️ The step-2 exemption holds only when that background mode is present. On an integration the setup skill did not write, check `Info.plist` for `remote-notification` first — without it, the prompt gates step 2 too, and a step-2 timeout there is a permission problem, not a credentials problem.
+- **Pass condition:** build succeeds with the Push capability + `remote-notification` background mode present; app launches — by you on a simulator, by the user on a device.
 
 ### React Native / Flutter / Cordova / Capacitor
-- Build the JS/Dart layer (`npx react-native run-ios`/`run-android`, `flutter build`/`flutter run`, `npx cap sync` + native build). For iOS these wrappers inherit the **full native iOS device flow** — physical device or Apple-silicon-Mac simulator.
+- Build the JS/Dart layer (`npx react-native run-ios`/`run-android`, `flutter build`/`flutter run`, `npx cap sync` + native build). For iOS these wrappers inherit the **full native iOS device flow** — physical device, or an Apple-silicon-Mac simulator that you run yourself (the `simctl` sequence under "iOS native" above).
 - **Capacitor iOS:** confirm `ios.handleApplicationNotifications: false` in `capacitor.config` (Part B §3) — its absence causes the "APNS delegate never fired" class of errors.
 
 ### Expo
@@ -46,7 +62,8 @@ Diagnose in this ranked order. For each: symptom → most-likely cause → fix /
 
 ### 1. Installed but nothing registers / nothing delivers  — #1 cause: missing platform credentials
 **Symptom:** step 2 poll times out with zero subscriptions, OR step 5 shows `errored` > 0 immediately. (**Not `failed`** — in this API `failed` counts unsubscribed/opted-out targets, not delivery errors; `failed`>0 routes to permission/opt-in diagnosis, #5 below.)
-**Cause:** the app has no push credentials configured in OneSignal — no FCM v1 service-account JSON (Android), no APNs .p8/.p12 (iOS), or no web platform config. Without these OneSignal has nothing to hand FCM/APNs, so devices can't complete registration and sends error.
+**Cause:** the app has no push credentials configured in OneSignal — no FCM v1 service-account JSON (Android), no APNs .p8/.p12 (iOS), or no web platform config. Without these OneSignal has nothing to hand FCM/APNs, so sends error — and on Android/web, registration itself typically stalls.
+**Pre-check before this diagnosis:** a step-2 row with `notification_types < 1` is a permission gap → §5, not credentials. And on iOS v5 the subscription row comes from the server-side user create, independent of platform credentials (verified in SDK source, not yet live-tested) — expect a missing `.p8` to show as `errored` at step 5 rather than as a step-2 timeout. On an iOS integration without the `remote-notification` background mode (one the setup skill did not write), a step-2 timeout usually means the prompt was never accepted → §5.
 **Fix / route:** send to the **credentials skill** to procure + upload credentials (agent uploads via the write-once endpoint `POST /api/v1/apps/{id}/credentials` with an app-scoped key; the human procures the .p8 / service-account JSON). New APNs keys take ~10–15 min to propagate. Re-run this verify skill afterward.
 
 ### 2. Web — platform never provisioned; or service worker 404/403, wrong MIME, redirect, or scope/PWA conflict
@@ -65,7 +82,7 @@ Diagnose in this ranked order. For each: symptom → most-likely cause → fix /
 **Symptom:** step 2 times out on iOS; or logs show "APNS Delegate Never Fired" / "APNS 3000".
 **Causes & fixes:**
 - **Simulator:** Intel-Mac simulators do not receive remote push — use a **physical device or a simulator on an Apple-silicon Mac** (Xcode 14+ simulators there receive real sandbox APNs pushes and register normally).
-- **APNs not configured / not propagated:** .p8 (+ Key ID + Team ID) uploaded via the credentials skill; new keys take 10–15 min. Push capability must be enabled on the App ID and provisioning profile.
+- **APNs credentials (.p8) missing or not propagated block *delivery*, not registration** on the v5 SDK — the subscription row comes from the server-side user create, independent of platform credentials (verified in SDK source, not yet live-tested). Expect that gap as `errored` at step 5; a true step-2 timeout points at the app never running or init never firing, or at the other items here. New keys take 10–15 min to propagate (the credentials skill uploads the .p8 + Key ID + Team ID). The **Push capability** on the App ID / provisioning profile is a different failure: without it the token fetch itself fails (APNS 3000, next bullet).
 - **"APNS delegate never fired" / "APNS 3000":** usually a second push SDK or native push API alongside OneSignal, or transient connectivity that self-resolves after a new session (background 30s+, reopen). Remove other push dependencies; for **Capacitor** set `ios.handleApplicationNotifications: false`.
 - Confirmed receipt (`received`) additionally needs the **NSE + App Group** — but that is optional for a minimal install; do not treat its absence as a registration failure.
 

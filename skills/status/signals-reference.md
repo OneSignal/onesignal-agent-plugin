@@ -4,10 +4,10 @@ Exact reads for each activation-ladder rung. All are **read-only** (`GET`-shaped
 
 ## Two ways to call
 
-- **OneSignal MCP (preferred if connected).** Use the hosted tools — the connection carries the account's OAuth grant, so no REST key is handled: `list_apps`, `list_messages`, `view_message`, `view_outcomes`, `view_user`. Confirm membership first with `list_apps` (paginated), and pass the target `app_id` on every call — the tools require it. (`onesignal_config` reports connection details, not app data. The MCP is an API proxy; it reads, it cannot edit files.)
+- **OneSignal MCP (preferred if connected).** Use the hosted tools — the connection carries the account's OAuth grant, so no REST key is handled: `list_apps`, `list_messages`, `view_message`, `view_outcomes`, `view_user`. Confirm membership first with `list_apps` (paginated — page until the items seen equal the response's `total_count`), and pass the target `app_id` on every call — the tools require it. (`onesignal_config` reports connection details, not app data. The MCP is an API proxy; it reads, it cannot edit files.)
 - **App-scoped key via curl (fallback).** Header `Authorization: Key <KEY>` where `<KEY>` is the key provided with the invocation/session or `$ONESIGNAL_REST_API_KEY` from env. Base host and exact paths per api-reference.md. `app_id` is passed as shown.
 
-With the MCP but no key, you can probe rungs 4–6, plus the web half of rung 1 through the unauthenticated sync probe; the app-config half of rung 1 and rungs 2–3 need a key (no MCP tool gives a per-app config read, the subscription poll has no MCP tool, and the rung-3 sample comes from that poll). With neither the MCP nor a key, you cannot probe rungs 2–7 — see SKILL.md Step 0.
+With the MCP but no key, you can probe rungs 4–6, plus the web half of rung 1 through the unauthenticated sync probe; the app-config half of rung 1 and rungs 2–3 need a key (no MCP tool gives a per-app config read; the subscription poll has no *suitable* MCP tool — `export_subscriptions_csv` is a whole-audience async export capped at 1 concurrent run per account, and `estimate_recipient_count` is email-only and returns 0 for push, so neither fits a presence check — and the rung-3 sample comes from that poll). With neither the MCP nor a key, you cannot probe rungs 2–7 — see SKILL.md Step 0.
 
 ---
 
