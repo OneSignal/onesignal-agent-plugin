@@ -24,4 +24,4 @@ What the agent can do vs. what stays human, per platform. Verified against SDK r
 
 ## Activation ladder the skills drive (all measurable today)
 
-SDK initialized → first subscription (`notification_types >= 1`) → **External ID set** (highest-leverage, most-skipped) → first message sent → **first message DELIVERED (`successful >= 1`) to an identified subscriber = ACTIVATED** → first click (`converted`, free/auto) → conversion metrics (needs custom events + paid plan).
+SDK initialized → first subscription (`notification_types >= 1`) → **External ID set** (highest-leverage, most-skipped) → first message sent → **first message DELIVERED (`successful >= 1`) to an identified subscriber = ACTIVATED** — the terminal rung.

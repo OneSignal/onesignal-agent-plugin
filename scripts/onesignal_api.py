@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic OneSignal API probes for the setup / status / verify skills.
+"""Deterministic OneSignal API probes for the setup / credentials / verify skills.
 
 This encodes the fiddly, verified details that models keep getting wrong:
   - the web sync probe is CDN-cached ~1h, so we always append ?fresh=<ts>

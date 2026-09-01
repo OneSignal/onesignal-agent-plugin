@@ -83,6 +83,8 @@ This is the dashboard signup wizard's own pattern: fetch subscriptions/players w
 - **A real subscription ID is server-assigned and is NOT prefixed `local-`.** The SDK assigns a `local-` placeholder before the device registers; a `local-` id does not count as registered (verified against the SDK-ai-prompts verification-flow contract).
 - **On timeout (still empty):** STOP polling and go to the troubleshooting tree (step 7). On Android/web the overwhelmingly common cause is *missing platform credentials* → route to the credentials skill; on iOS a timeout more likely means the app never ran or init never fired (step 7 §1 pre-check). Do not fabricate a subscription.
 
+**Checkpoint** (telemetry contract rules apply, consent included): the moment the poll shows a real subscription with `notification_types >= 1`, run `bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh verify.subscribed ok`. On the timeout, report the dropout once step 7 names the cause: `verify.subscribed fail credentials_missing` when the tree routes to the credentials skill, else `verify.subscribed fail unknown <slug>` (a short noun-and-state slug; no path, project name, or version).
+
 Capture the first subscription's `id` — you need it for the targeted test send in step 4.
 
 ### Step 3 — Identity check (only if the app wires `OneSignal.login`)
@@ -121,6 +123,8 @@ Reading back the notification is the difference between "we tried to send" and "
   - **`received` (confirmed delivery)** → device-side receipt. Report ONLY as: *paid plans + SDK-managed subscriptions only; not available for API-only subscriptions; Safari never supports it; iOS needs the NSE + App Group.* Do not present its absence as a failure — most minimal installs won't have it.
 - **Delivered ("successful") ≠ shown on the device.** If `successful >= 1` but the user reports nothing appeared, that is a *device/display* issue, not a send failure → step 7 "delivered but not shown."
 
+**Checkpoint — the terminal success** (telemetry contract rules apply, consent included): the moment you observe `successful >= 1`, run `bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh verify.delivered ok` — `verify.delivered` is the true activation event and the funnel's terminal success. On `errored > 0` with `successful == 0`, report `verify.delivered fail credentials_missing` before you route to step 7. The "delivered but not shown" recovery paths own their own `verify.delivered` variants (platform-verification.md §6).
+
 ### Step 6 — Custom-event verification (dashboard-only — do not fake an API call)
 
 If the app emits `trackEvent(...)` custom events, custom-event **readback has no customer REST path** — it is a dashboard-session-only endpoint (api-reference.md "Dashboard-session ONLY"). Do NOT invent or curl a `custom_events/recent_events` call.
@@ -156,5 +160,7 @@ State the activation ladder result explicitly — how far it climbed and where i
 - If anything failed: the ranked cause, the skill to route to, and exact next step. Never claim success you did not observe server-side.
 
 **ACTIVATED ✅ is the terminal success of the funnel (`setup → credentials → verify`) — stop there.** Report the win; do not continue into another skill. A failed rung → continue into the skill that fixes it (usually **credentials** or **setup**) — announce the transition in one line, don't ask "want me to continue?".
+
+Verify is the last skill in the funnel, so close the telemetry with the final report — on a win and on a failure: run `bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh flush`. No skill runs after this one, so this flush is the last chance for buffered or re-buffered events to send before the session ends.
 
 This skill mutates nothing (except removal of the debug-only verification helper if the user asks for it), so there is no rollback beyond `git checkout -- <helper-file>` if it was removed.
