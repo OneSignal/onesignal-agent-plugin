@@ -149,7 +149,7 @@ State the activation ladder result explicitly — how far it climbed and where i
 
 - Build gate: pass/fail (+ error if fail).
 - Subscription registered: yes (id captured, not `local-`) / no (timeout → cause).
-- Identity: verified / skipped (no identity skill) / late-login flag.
+- Identity: verified / skipped (no `login()` call) / late-login flag.
 - Test send: sent (notification id) / not sent (why).
 - **Server-side: `successful=N` (ACTIVATED ✅) / failed / errored** — the headline result. `converted` and `received` reported only if observed, with the paid/SDK-only caveat on `received`.
 - Custom events: dashboard path given (not API-verified).
