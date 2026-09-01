@@ -70,7 +70,7 @@ the real agent against fixture apps. For local checks:
 5. Behavior changes: load the plugin with `claude --plugin-dir .` and run the changed skill
    against a scratch project.
 
-If a change affects setup, verify, or instrument behavior, ask for an eval run before merge.
+If a change affects setup, credentials, or verify behavior, ask for an eval run before merge.
 Do not trust a skill edit on read-through alone.
 
 ## Releases
