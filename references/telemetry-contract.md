@@ -70,8 +70,12 @@ Each is `skill.milestone`. Status is `ok`, `ok_after_fix`, or `fail`.
 ### Other skills
 
 Owners add their own; keep the `skill.milestone` shape and reuse
-`credentials.*`, `verify.subscribed`, `verify.delivered`. `verify.delivered` is the true
-activation event and the funnel's terminal success.
+`credentials.*`, `verify.subscribed`, `verify.delivered`, `verify.displayed`.
+`verify.delivered` is the true activation event and the funnel's terminal success; it
+fires at most once per run. `verify.displayed` carries the separate device-display
+outcome when the "delivered but not shown" investigation ran — never reuse
+`verify.delivered` for a display verdict, or the terminal event gets two verdicts in
+one run.
 
 ### The auth choice — `credentials.auth_resolved` and `verify.auth_resolved`
 
@@ -218,8 +222,9 @@ one. So:
   flush time, so a milestone that waited in the buffer still reports the moment it happened.
 - Everything after that sends as it happens. A failed send is held for a later flush, unless
   the failure is one that an identical retry cannot fix.
-- Run `flush` one final time at `setup.complete`, so events re-buffered mid-run get a
-  second attempt before the session ends.
+- Run `flush` one final time when a skill closes: setup at `setup.complete`, and verify
+  with its final report — the funnel's terminal flush, since no skill runs after verify.
+  Events re-buffered mid-run get a second attempt before the session ends.
 
 **Never substitute a placeholder or demo App ID to make an early send work.** Setup Step 2
 already forbids hardcoded fallback App IDs, and attributing a real user's onboarding to a
