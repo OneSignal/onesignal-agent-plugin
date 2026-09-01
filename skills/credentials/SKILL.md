@@ -75,10 +75,15 @@ Both agent-uploadable credentials go to the **write-once provisioning endpoint**
 2. **The user declines the MCP, or the session has no server** → send the Keys & IDs link in chat, built from the App ID: `https://dashboard.onesignal.com/apps/<APP_ID>/settings/keys_and_ids`. Ask the user to open it, create or copy an app API key, export it in their shell as `ONESIGNAL_REST_API_KEY`, and say when that is done. Do not have them paste the key into chat. Tell them a new key (`os_v2_app_…`) is shown only once at creation, so they must store it immediately.
 3. **The user declines both** → fall back to the dashboard upload walkthrough (Settings > Push Platforms) and say plainly that on this path you cannot upload or validate for them.
 
-**Report which path resolved** — one checkpoint per skill run, the moment the auth path is settled (telemetry contract rules apply, consent included; status and path tokens are in [../../references/telemetry-contract.md](../../references/telemetry-contract.md) → "The auth choice"):
+**Report which path resolved** — one checkpoint on **every** run of this skill, not only when the no-key ladder above ran (telemetry contract rules apply, consent included; meanings in [../../references/telemetry-contract.md](../../references/telemetry-contract.md) → "The auth choice"). Fire it when the path is **confirmed, not merely chosen**: `mcp_oauth` counts after the App-ID precondition passes; `api_key_env` and `api_key_link` count after the first read with that key succeeds; `dashboard_manual` counts when the user picks the walkthrough. Run exactly one of these literal lines:
 
 ```bash
-bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.auth_resolved <ok|ok_after_fix|fail> <path-token>
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.auth_resolved ok mcp_oauth
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.auth_resolved ok_after_fix mcp_oauth
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.auth_resolved ok api_key_env
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.auth_resolved ok_after_fix api_key_link
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.auth_resolved ok dashboard_manual
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.auth_resolved fail auth_declined
 ```
 
 Read the "Credential provisioning" section of [../../references/api-reference.md](../../references/api-reference.md) — it is the contract — then apply these rules:

@@ -77,8 +77,11 @@ success.
 ### The auth choice — `credentials.auth_resolved` and `verify.auth_resolved`
 
 These 2 milestones record which auth path the user ended on for the API steps: the MCP
-OAuth grant, an API key, or neither. Fire one per skill run, at the moment the path is
-settled — after the MCP offer and, when it applies, the Keys & IDs link.
+OAuth grant, an API key, or neither. Fire one per skill run — on **every** run, including
+runs that start already authenticated — and only when the path is **confirmed, not merely
+chosen**: `mcp_oauth` after the app-match precondition passes; `api_key_env` /
+`api_key_link` after the first read with that key succeeds; `dashboard_manual` when the
+user picks the walkthrough.
 
 On these milestones only, the class position names the **chosen path**, not a failure.
 `checkpoint.sh` sends it unchanged; no other milestone may use these tokens:
@@ -92,9 +95,12 @@ On these milestones only, the class position names the **chosen path**, not a fa
 | `ok dashboard_manual` | the user chose the dashboard walkthrough over the MCP and the API |
 | `fail auth_declined` | the user declined every path; the API steps stay blocked |
 
-`ok_after_fix` keeps its meaning: the path works only because the user did something
-during the run. Do not put a failure class here — a run that ends with no auth path is
-`fail auth_declined`, and any API failure that follows belongs to the step that meets it.
+`ok_after_fix` carries a **different sense on these 2 milestones** than in the failure
+milestones: there it means the agent changed something the user did not ask for; here it
+means the user completed an auth action during the run. Treat the two as separate
+populations when you aggregate `ok_after_fix` across milestones. Do not put a failure
+class here — a run that ends with no auth path is `fail auth_declined`, and any API
+failure that follows belongs to the step that meets it.
 
 ## Failure classes
 
