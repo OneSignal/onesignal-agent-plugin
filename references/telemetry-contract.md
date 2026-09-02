@@ -67,10 +67,27 @@ Each is `skill.milestone`. Status is `ok`, `ok_after_fix`, or `fail`.
 | `setup.verification_added` | verification helper written (Step 6) | — |
 | `setup.complete` | handing off (Step 7) | setup's own completion rate |
 
+### credentials
+
+| Milestone | Fires when | Why it matters |
+|---|---|---|
+| `credentials.detected` | the Step 1 presence check resolves | how often a run meets an already-configured platform; the wrong-App-ID stop |
+| `credentials.uploaded` | the validation loop resolves — the upload response is the validity verdict | which credential uploads fail, and which mapped cause |
+| `credentials.complete` | wrap-up: the skill hands off to verify or setup | the skill's own completion rate |
+
+`credentials.uploaded` covers the credentials the skill uploads through the API: the APNs
+`.p8`, the FCM service-account JSON, and the web origin. One row per platform set, at the
+loop's conclusion. On the dashboard-manual path the skill cannot observe the upload, so it
+sends no `credentials.uploaded` row — `credentials.auth_resolved ok dashboard_manual`
+already records that path. Amazon and Huawei credentials have no flow in this skill, so no
+milestone exists for them yet. The `platform` token names the framework, not the credential
+platform: on a cross-platform framework, an APNs row and an FCM row from one run share one
+token, and the milestone does not name the credential type.
+
 ### Other skills
 
 Owners add their own; keep the `skill.milestone` shape and reuse
-`credentials.*`, `verify.subscribed`, `verify.delivered`, `verify.displayed`.
+`verify.subscribed`, `verify.delivered`, `verify.displayed`.
 `verify.delivered` is the true activation event and the funnel's terminal success; it
 fires at most once per run. `verify.displayed` carries the separate device-display
 outcome when the "delivered but not shown" investigation ran — never reuse
@@ -114,7 +131,15 @@ the call site. Current set:
 `credentials_missing`, `uploaded_during_run`, `deferred`, `releases_unreachable`,
 `diff_rejected`, `network_blocked`, `kotlin_stdlib_floor`, `minsdk_floor`, `agp_floor`,
 `dependency_conflict`, `buildconfig_disabled`, `coroutines_missing`, `manifest_merger`,
-`unknown`.
+`already_configured`, `endpoint_flag_off`, `apns_propagation`, `apns_ids_swapped`,
+`apns_wrong_file`, `wrong_firebase_project`, `unknown`.
+
+The 6 classes from `already_configured` to `wrong_firebase_project` name the mapped causes
+in the credentials validation loop: the definite 409, the 404 feature-flag miss, the APNs
+propagation window, swapped Key/Team IDs, a `.p12` where a `.p8` belongs, and a
+service-account JSON from the wrong Firebase project. `credentials.uploaded` reports a
+cause the run recovered from as `ok_after_fix <class>`, and a terminal one as
+`fail <class>`.
 
 `buildconfig_disabled`: AGP 8+ stopped generating `BuildConfig` by default, so the
 verification helper's `BuildConfig.DEBUG` guard needs `buildFeatures { buildConfig = true }`
@@ -222,8 +247,9 @@ one. So:
   flush time, so a milestone that waited in the buffer still reports the moment it happened.
 - Everything after that sends as it happens. A failed send is held for a later flush, unless
   the failure is one that an identical retry cannot fix.
-- Run `flush` one final time when a skill closes: setup at `setup.complete`, and verify
-  with its final report — the funnel's terminal flush, since no skill runs after verify.
+- Run `flush` one final time when a skill closes: setup at `setup.complete`, credentials
+  at `credentials.complete`, and verify with its final report — the funnel's terminal
+  flush, since no skill runs after verify.
   Events re-buffered mid-run get a second attempt before the session ends.
 
 **Never substitute a placeholder or demo App ID to make an early send work.** Setup Step 2

@@ -98,6 +98,15 @@ The probe reads and their response semantics come from [../../references/api-ref
 6. **Wrong or unknown App ID** (`no_such_app` from the web probe, `not_found` from the app read) **→ STOP.** Do not start a portal walkthrough and do not route toward an upload — the endpoint is write-once, and a credential aimed at a mistyped App ID lands on the wrong app. Re-ask the user for the App ID (it is public — grep the init code for it) and re-run this step. A probe `status: unknown` is not a decision either: re-run the probe or fall back to the raw `GET` before you continue.
 7. **Check cannot run** (no key available, or the `GET` itself fails) **→** say so and continue into the flow anyway. The write-once endpoint still guards the case: an upload against an already-configured platform returns a 409, and the validation loop maps it.
 
+**Checkpoint** (telemetry contract rules apply, consent included): report `credentials.detected` the moment this step resolves — it is the presence verdict for the target platform. Email and SMS have no presence check here and send no row. `fail credentials_missing` is the normal entry into the flows below, not a stop. On the wrong-App-ID stop, fire the row **before you end the turn to re-ask** (a session that never resumes otherwise leaves no trace); when the step re-runs with a good App ID, the new row records the recovery. Run exactly one of:
+
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.detected ok                          # platform already configured
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.detected fail credentials_missing    # not configured — continue into the flow
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.detected fail invalid_app_id         # wrong or unknown App ID — stop and re-ask
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.detected fail unknown probe_unavailable  # the check cannot run (item 7)
+```
+
 ## The API-upload mechanism (shared by Apple .p8 and Firebase)
 
 Both agent-uploadable credentials go to the **write-once provisioning endpoint**, via one of two transports for the same payload:
@@ -182,6 +191,18 @@ The apps API validates credentials at upload time, so the API response *is* the 
    - **401** → on the **direct `POST`**, the key doesn't belong to this app (or isn't a valid app key) — check which env var was used. On the **MCP tool** path no key or env var is involved (the session auth is forwarded), so a 401 has two likely causes: (a) the OAuth grant cannot access the target app — re-check with `list_apps` (the failure the App-ID precondition above is meant to catch before you write); or (b) the session uses **OAuth against an app where OAuth acceptance is not enabled** — OAuth acceptance is flag-gated per app (api-reference.md), so if the app match holds but the 401 persists, fall back to the direct `POST` with an app key.
 4. Never retry with a mutation more than the propagation-wait case warrants — **with one exception**: after an *ambiguous network failure* (you never saw a status code), re-call once. The endpoint is write-once, so the re-call is safe — it either lands (2xx: the first didn't) or returns a 409. Read that 409 as success **only if the platform was unconfigured before your first attempt**; if that is unknown, treat it as indeterminate and verify the platform config before any success claim (per the 409 mapping above). Do not re-call a request that already returned a definite status. If it keeps failing, stop and report the verbatim error plus the mapped hypothesis; point the user at `support@onesignal.com` with their App ID.
 
+**Checkpoint** (telemetry contract rules apply, consent included): report `credentials.uploaded` when the loop resolves — one row per platform set, at the loop's conclusion, not per HTTP attempt. The upload response is the validity check, so this row is the validity verdict for the credential. Do not send the row on the dashboard-manual path — the skill cannot observe that upload, and `credentials.auth_resolved ok dashboard_manual` already records the path. Resolve an indeterminate 409 through the config check first; report the row only after you know the verdict.
+
+- First-attempt 2xx → `ok`. A 409 on the recovery re-call that the loop reads as success is also `ok`.
+- 2xx after a mapped failure → `ok_after_fix <class>`: `apns_propagation`, `apns_ids_swapped`, `apns_wrong_file`, or `wrong_firebase_project`.
+- Terminal failure → `fail <class>`: `already_configured` (definite 409), `endpoint_flag_off` (404 — the dashboard fallback continues, but the API upload is over), `network_blocked`, or the mapped class the user could not resolve. Anything else is `fail unknown <slug>` (a short noun-and-state slug; no path, project name, or version).
+
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.uploaded ok
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.uploaded ok_after_fix apns_propagation
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.uploaded fail already_configured
+```
+
 ## gitignore check for secret files
 
 Run this before any Base64/upload, and treat it as mandatory (safety contract §"Never" and §"After"):
@@ -201,5 +222,12 @@ When a credential is uploaded and validated, tell the user, plainly:
 - for guide-only channels (email/SMS), the expected wait (email DNS ~24h; SMS days–weeks) and the re-check step.
 
 Do not auto-commit. Offer the commands; the user runs them.
+
+**Checkpoint — close the skill** (telemetry contract rules apply, consent included): at wrap-up, report completion and flush — a direct credentials run may be the session's last skill, and the flush gives re-buffered events their final attempt. The row fires for every wrap-up, after an upload and for guide-only channels that stop on a propagation wait. A run that stops at a terminal failure sends its `fail` row at the failing step and no `credentials.complete` row (safety contract §13).
+
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.complete ok
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh flush
+```
 
 Then keep the funnel moving (`setup → credentials → verify`): once a push credential is uploaded and validated, **continue straight into the `verify` skill** — announce it in one line, don't ask "want me to continue?". If the SDK isn't installed yet, continue into **setup** instead. Guide-only channels with a propagation wait (email DNS, SMS review) are the exception: stop there and tell the user when to re-check.
