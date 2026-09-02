@@ -290,7 +290,7 @@ general Claude Code caution, not specific to OneSignal).
 
 ## Support & versioning
 
-- **Version:** see `version` in `.claude-plugin/plugin.json` (currently `0.5.4`). Because a `version` is
+- **Version:** see `version` in `.claude-plugin/plugin.json`. Because a `version` is
   set, Claude Code only pulls updates when this field is bumped. Update an installed copy with
   `/plugin marketplace update <marketplace-name>` then `/reload-plugins`.
 - **OneSignal support:** questions about your account, credentials, or the MCP beta →
