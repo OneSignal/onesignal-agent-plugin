@@ -1,6 +1,6 @@
-# Guide-only channels: Web, Email DNS, SMS
+# Web, Email DNS, SMS: no secret file to upload
 
-These channels have **no agent-uploadable credential**. The configuration happens in the OneSignal dashboard, the user's DNS provider, or via carrier registration — the agent can guide and (for email) prompt a re-check, but cannot finish them through the apps API. Set expectations honestly and hand off cleanly.
+None of these channels has a secret credential file. Web is the exception on API access: the agent can set the initial web platform config through the write-once provisioning endpoint — `chrome_web_origin`, MCP tool preferred (see the Web push section). Email, SMS, and a user-owned Safari `.p12` stay **guide-only**: the configuration happens in the OneSignal dashboard, the user's DNS provider, or through carrier registration. The agent guides those and (for email) prompts a re-check, but cannot finish them through the apps API. Set expectations honestly and hand off cleanly.
 
 Verified against the OneSignal docs (July 2026): `web-sdk-setup.mdx`, `email-setup.mdx`, `sms-setup.mdx`, and the Create/Update App reference pages. See [../../references/platform-matrix.md](../../references/platform-matrix.md) for the automate-vs-human split and [../../references/safety-contract.md](../../references/safety-contract.md) for the rules.
 

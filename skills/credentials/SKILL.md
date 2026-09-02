@@ -16,7 +16,7 @@ Foundation docs are binding. Read them before acting, and never contradict them:
 
 Per-credential portal detail lives in the sibling files — open the one you need:
 - Apple .p8 + Firebase FCM (the two you upload via API): [api-uploaded-credentials.md](api-uploaded-credentials.md)
-- Web Site URL / Safari, Email DNS, SMS registration (guide-only): [guided-channels.md](guided-channels.md)
+- Web Site URL (API-settable, MCP tool preferred), plus guide-only Safari certs, Email DNS, and SMS registration: [guided-channels.md](guided-channels.md)
 
 ## Binding safety rules for this skill (bake into every step)
 
@@ -65,7 +65,7 @@ The probe reads and their response semantics come from [../../references/api-ref
 
 Both agent-uploadable credentials go to the **write-once provisioning endpoint**, via one of two transports for the same payload:
 
-- **Preferred — the `provision_app_credentials` MCP tool**, when the OneSignal MCP is connected and exposes it. The tool forwards the MCP session's auth downstream, so you pass the target `app_id` plus the credential params (no `Authorization` header) and still supply base64 strings, not file paths — the MCP can't read local files, so you read and encode the file yourself. It provisions one platform set per call and covers **APNs, FCM, and web** — for web the params are `chrome_web_origin` (required) plus optional `chrome_web_default_notification_icon`; the web flow lives in [guided-channels.md](guided-channels.md). The raw API response comes back unchanged, so the validation loop and every status mapping below apply as-is.
+- **Preferred — the `provision_app_credentials` MCP tool**, when the OneSignal MCP is connected and exposes it. The tool forwards the MCP session's auth downstream, so you pass the target `app_id` plus the credential params (no `Authorization` header). For APNs and FCM you still supply base64 strings, not file paths — the MCP can't read local files, so you read and encode the file yourself. It provisions one platform set per call and covers **APNs, FCM, and web** — the web params are plain URL strings, never base64: `chrome_web_origin` (required) plus optional `chrome_web_default_notification_icon`; the web flow lives in [guided-channels.md](guided-channels.md). The raw API response comes back unchanged, so the validation loop and every status mapping below apply as-is.
   - **App-ID precondition (do this first).** The write is one-shot, so the target must be confirmed, not assumed. Check with `list_apps` (paginated — page until the items seen equal the response's `total_count` before you conclude absence) that the OAuth grant can access the target App ID, then pass exactly that `app_id` to the tool — the first-party schema requires it. (`onesignal_config` reports connection details, not app membership — it is not this check.) If the grant cannot see the target app, use the direct `POST` instead. A credential written to the wrong app cannot be undone through this endpoint — the check is not optional.
 - **Fallback — a direct `POST`** when the MCP isn't connected or doesn't expose the tool yet.
 
@@ -161,7 +161,7 @@ When a credential is uploaded and validated, tell the user, plainly:
 - what was configured (which platform, which app id),
 - that the secret file never entered the repo (and where it lives / that it's gitignored),
 - the next verification step (a real test send via the SDK-setup/verify skill — a 2xx is configuration success, not proof of delivery),
-- for guide-only channels (web/email/SMS), the expected wait (email DNS ~24h; SMS days–weeks) and the re-check step.
+- for guide-only channels (email/SMS), the expected wait (email DNS ~24h; SMS days–weeks) and the re-check step.
 
 Do not auto-commit. Offer the commands; the user runs them.
 
