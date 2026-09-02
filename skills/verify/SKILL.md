@@ -24,6 +24,34 @@ Per-platform build/run gates and the full troubleshooting tree live in [`platfor
 - **Prefer the OneSignal MCP** for every API step it covers — it authenticates with an account OAuth grant, so no REST key is handled at all. **App-match precondition (standing, mirrors the credentials skill):** before the first MCP call of a session, confirm with `list_apps` (paginated — page until the items seen equal the response's `total_count` before you conclude absence) that the OAuth grant can access the target App ID, then pass exactly that `app_id` on every MCP call — the tools require it. (`onesignal_config` reports connection details, not app membership.) The OAuth grant follows the signed-in account and can span many apps; a session that cannot see the target app must not read its data — and must never `send_message` into a different app's audience. On a mismatch, treat the MCP as unavailable for this app and use the key path. If the MCP is not connected yet, do not silently downgrade to the key ask: offer the MCP connection first (see "No key → MCP first" under "Inputs you need"). Fall back to REST curl only when the MCP is absent from the session or the user declines it.
 - **No mutations on failure.** If a step fails, report the known state and the fix; never "push through" with retries that change anything.
 
+## Checkpoint consent — resolve before the first checkpoint
+
+This skill reports milestone checkpoints ([../../references/telemetry-contract.md](../../references/telemetry-contract.md)). On a funnel run that follows setup, the answer already exists and the skip rules below apply. On a direct `/onesignal:verify` run, no skill has asked yet: every checkpoint buffers as `telemetry_unset`, and this skill's final flush is the funnel's last send — without an answer those events never leave the machine.
+
+Skip the question when one of these is already true:
+
+- `ONESIGNAL_SKILL_TELEMETRY` is exactly `0` or `1` in the environment
+- the first non-comment line of `.onesignal/telemetry` at the repo root is `0` or `1`
+
+Otherwise ask once, before the first `checkpoint.sh` call, via the harness's native structured-question tool (safety contract §14). This is its own question — never fold it into a network-access request.
+
+Question: "OneSignal can record onboarding checkpoints (step name, success or fail, failure class, run ID, platform, OS, App ID). No source code, paths, or credentials. Send these to OneSignal?"
+
+Choices:
+
+- Send checkpoints to OneSignal
+- Keep checkpoints on this machine only
+
+Record the answer as one line in `.onesignal/telemetry` at the repo root (`git rev-parse --show-toplevel`) — `1` for "send", `0` for "keep local":
+
+```bash
+mkdir -p .onesignal && printf '1\n' > .onesignal/telemetry   # or 0
+```
+
+`.onesignal/` is run state, never project content (safety contract §20): make sure `.gitignore` covers it, and never commit it. If the write fails, prefix every `checkpoint.sh` call in this run (including `flush`) with `ONESIGNAL_SKILL_TELEMETRY=<answer>`, and still write the file before the session ends — an env-only answer does not reach the next session. After a "send" answer, run `bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh flush` once: an earlier run that was never asked may hold buffered events, and the script keeps them for exactly this recovery.
+
+Do not ask twice. A refusal is a valid answer: checkpoints stay local, and you never reach the network by another route.
+
 ## Inputs you need (gather, don't over-ask)
 
 | Input | How to get it | Required for |
