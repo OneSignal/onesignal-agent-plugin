@@ -79,6 +79,22 @@ The Step-8 structural self-check (`verify_integration.py --platform ios`) enforc
 - No dialog and no network call — the verify skill confirms the subscription server-side and sends the test push from chat.
 - Top-of-file comment naming the file + call site, and saying the file is debug-only and safe to keep.
 
+## Checkpoint — `setup.platform_config` (capabilities + permission request)
+
+Report the iOS push prerequisites right after `setup.verification_added`, once the
+Step-5 change set and the verification helper both exist (telemetry contract rules
+apply, consent included). Run exactly one of:
+
+- All 4 prerequisites are in place — `UIBackgroundModes` `remote-notification`, the
+  `aps-environment` entitlement, the pbxproj build settings, and the `requestPermission`
+  call in the helper:
+  `bash <plugin>/scripts/checkpoint.sh setup.platform_config ok`
+- The pbxproj format did not match and you handed the capability toggles to the human
+  via Xcode's Signing & Capabilities tab:
+  `bash <plugin>/scripts/checkpoint.sh setup.platform_config fail capability_manual`
+  — report it at the hand-off and continue; the fail row records the drop out of agent
+  automation, not a skill stop.
+
 ## Handoffs
 
 - Hand off to **credentials** — iOS push needs the APNs `.p8` (+ Key ID/Team ID) on the OneSignal app, and the human must toggle capabilities + create the NSE in Xcode if rich features are wanted.

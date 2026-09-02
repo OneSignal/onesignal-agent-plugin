@@ -65,7 +65,34 @@ Each is `skill.milestone`. Status is `ok`, `ok_after_fix`, or `fail`.
 | `setup.sdk_pinned` | exact version resolved from releases.json (Step 4) | catches releases.json being unreachable |
 | `setup.install_applied` | change set approved and written (Step 5) | how often users reject the diff |
 | `setup.verification_added` | verification helper written (Step 6) | — |
+| `setup.platform_config` | after Step 6, on `android`, `ios`, and `web` only: the platform's push prerequisites resolve | which platform-side prerequisite blocks push — the iOS capability set, the Android permission state, or the web service worker |
 | `setup.complete` | handing off (Step 7) | setup's own completion rate |
+
+`setup.platform_config` is one milestone with 3 platform-specific meanings; the
+`platform` field separates them. It fires once the Step-5 change set and the Step-6
+verification helper both exist, because the prerequisites span both steps:
+
+- `ios` — the capability set and the permission request: `UIBackgroundModes`
+  `remote-notification`, the `aps-environment` entitlement, the pbxproj build settings,
+  and the `requestPermission` call in the verification helper. When the pbxproj format
+  does not match and the capability toggle goes to the human in Xcode, report
+  `fail capability_manual` at the hand-off and continue. Like `deferred` on the
+  credentials gate, this records a drop out of agent automation, not a skill stop.
+- `android` — the permission state: `INTERNET` present in the manifest, no manual
+  `POST_NOTIFICATIONS` line (the SDK manifest-merges it), and the `requestPermission`
+  call in the verification helper. If `INTERNET` was missing and the approved change
+  set added it, that is part of the minimal integration — still plain `ok`.
+- `web` — the service worker: the one-line `importScripts` worker at the origin-root
+  path, or a subdirectory scope with both `serviceWorkerPath` and `serviceWorkerParam`
+  set. A pre-existing worker that forced the combine or the subdirectory scope is
+  `ok_after_fix worker_scope_conflict`; a conflict the user declined to resolve is
+  `fail worker_scope_conflict`.
+
+On web this milestone covers the repo side only. The dashboard side — the Site URL and
+the provisioned web platform — already belongs to `setup.credentials_gate`. The wrapper
+frameworks (`react-native`, `expo`, `flutter`, `cordova`, `capacitor`, `unity`) send no
+`setup.platform_config` row yet: their native capability work spans 2 platforms in one
+run and needs its own design first.
 
 ### credentials
 
@@ -145,7 +172,8 @@ the call site. Current set:
 `diff_rejected`, `network_blocked`, `kotlin_stdlib_floor`, `minsdk_floor`, `agp_floor`,
 `dependency_conflict`, `buildconfig_disabled`, `coroutines_missing`, `manifest_merger`,
 `already_configured`, `endpoint_flag_off`, `apns_propagation`, `apns_ids_swapped`,
-`apns_wrong_file`, `wrong_firebase_project`, `unknown`.
+`apns_wrong_file`, `wrong_firebase_project`, `capability_manual`,
+`worker_scope_conflict`, `unknown`.
 
 The 6 classes from `already_configured` to `wrong_firebase_project` name the mapped causes
 in the credentials validation loop: the definite 409, the 404 feature-flag miss, the APNs
@@ -165,6 +193,15 @@ SDK ships it only as a runtime (`implementation`) dependency, not `api`, so a ba
 to compile until it declares coroutines (the `android_coroutines_on_classpath` check flags
 this; android.md documents the exact dependency line). Sibling of `buildconfig_disabled`:
 correct code that does not compile until the app module declares one more thing.
+
+`capability_manual`: the iOS pbxproj edits could not apply safely, so the Push
+Notifications and Background Modes toggles went to the human in Xcode. The run cannot
+observe when the human completes them, so the milestone records the hand-off itself.
+
+`worker_scope_conflict`: the site already registers a service worker at the scope
+OneSignal needs. `setup.platform_config` reports the resolved conflict — the combine or
+the subdirectory scope — as `ok_after_fix worker_scope_conflict`, and a conflict the
+user declined to resolve as `fail worker_scope_conflict`.
 
 `no_app_id` and `invalid_app_id` are different findings: the first means the user has no
 OneSignal app yet, the second means they supplied an ID that does not parse as a UUID

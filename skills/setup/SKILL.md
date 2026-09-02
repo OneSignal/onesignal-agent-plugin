@@ -281,6 +281,8 @@ The verification helper is the **only** place a direct SDK call outside the wrap
 
 **Checkpoint:** `setup.verification_added ok` once written.
 
+**Checkpoint — native platforms only:** right after `setup.verification_added`, on `android`, `ios`, and `web`, report `setup.platform_config` — the platform's push prerequisites (capabilities and the permission request on iOS, the permission state on Android, the service worker on web). The platform reference file carries the exact report block. The wrapper frameworks send no row for this milestone yet (telemetry contract, "setup").
+
 ## Step 7 — Handoffs (automatic — announce, don't ask)
 
 The funnel is `setup → credentials → verify`. After the Step-8 summary, **continue straight into the next skill** — announce the transition in one line ("Setup complete — continuing to verify.") instead of asking "want me to continue?". Pause only at a real human gate (checkpoint consent, console/portal steps, test-send consent, diff confirmation) or on a failure.

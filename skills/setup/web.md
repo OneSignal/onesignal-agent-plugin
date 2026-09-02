@@ -122,6 +122,23 @@ export function installOneSignalVerify() {
 
 Verify the exact `PushSubscription` accessor names against the current web-sdk-reference doc before finalizing if anything looks off — the SDK's public surface is authoritative.
 
+## Checkpoint — `setup.platform_config` (the service worker)
+
+Report the service-worker state right after `setup.verification_added`, once the
+Step-5 change set and the verification helper both exist (telemetry contract rules
+apply, consent included). Run exactly one of:
+
+- The one-line `importScripts` worker sits at the origin-root path, or at a
+  subdirectory scope with both `serviceWorkerPath` and `serviceWorkerParam` set:
+  `bash <plugin>/scripts/checkpoint.sh setup.platform_config ok`
+- A pre-existing worker forced the combine or the subdirectory scope:
+  `bash <plugin>/scripts/checkpoint.sh setup.platform_config ok_after_fix worker_scope_conflict`
+- The user declined to touch the existing worker, so no OneSignal worker exists:
+  `bash <plugin>/scripts/checkpoint.sh setup.platform_config fail worker_scope_conflict`
+
+This milestone covers the repo side only. The dashboard Site URL and the provisioned
+web platform belong to the Step-3 credentials gate.
+
 ## Verify / troubleshoot
 
 - Browser must be Chrome/Firefox/Edge/Safari over HTTPS (or localhost). Push does not work on plain `http://`.
