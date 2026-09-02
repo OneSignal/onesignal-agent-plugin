@@ -36,23 +36,32 @@ Skip the question when one of these is already true:
 
 - `ONESIGNAL_SKILL_TELEMETRY` is exactly `0` or `1` in the environment
 - the first non-comment line of `.onesignal/telemetry` at the repo root is `0` or `1`
+- you already asked in this session and the file write failed — reuse that answer through the `ONESIGNAL_SKILL_TELEMETRY` prefix below
 
-Otherwise ask once, before the first `checkpoint.sh` call, via the harness's native structured-question tool (safety contract §14). This is its own question — never fold it into a network-access request.
+Otherwise ask via the harness's native structured-question tool (safety contract §14) and end the turn — the gate blocks. Do not run `checkpoint.sh` until the user answers. Per safety contract §15 the ask is its own question and names the host — never fold it into a network-access request.
 
-Question: "OneSignal can record onboarding checkpoints (step name, success or fail, failure class, run ID, platform, OS, App ID). No source code, paths, or credentials. Send these to OneSignal?"
+Question: "OneSignal can record onboarding checkpoints (step name, success or fail, failure class, run ID, platform, OS, App ID) and send them to `api.onesignal.com`. No source code, paths, or credentials. Send these checkpoints?"
 
 Choices:
 
 - Send checkpoints to OneSignal
 - Keep checkpoints on this machine only
 
-Record the answer as one line in `.onesignal/telemetry` at the repo root (`git rev-parse --show-toplevel`) — `1` for "send", `0` for "keep local":
+Record the answer as one line in `.onesignal/telemetry` at the repo root — `1` for "send", `0` for "keep local". `checkpoint.sh` reads the file from the repo root only, so a cwd-relative write from a package directory in a monorepo turns a "send" answer into a silent opt-out:
 
 ```bash
-mkdir -p .onesignal && printf '1\n' > .onesignal/telemetry   # or 0
+ROOT="$(git rev-parse --show-toplevel)" && mkdir -p "$ROOT/.onesignal" && printf '1\n' > "$ROOT/.onesignal/telemetry"   # or 0
 ```
 
-`.onesignal/` is run state, never project content (safety contract §20): make sure `.gitignore` covers it, and never commit it. If the write fails, prefix every `checkpoint.sh` call in this run (including `flush`) with `ONESIGNAL_SKILL_TELEMETRY=<answer>`, and still write the file before the session ends — an env-only answer does not reach the next session. After a "send" answer, run `bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh flush` once: an earlier run that was never asked may hold buffered events, and the script keeps them for exactly this recovery.
+`.onesignal/` is run state, never project content (safety contract §20): make sure `.gitignore` covers it, and never commit it. If the write fails, prefix every `checkpoint.sh` call in this run (including `flush`) with `ONESIGNAL_SKILL_TELEMETRY=<answer>`, and write the file again before the session ends — an env-only answer does not reach the next session.
+
+A second file gates the sends on a direct run: setup writes the App ID to `.onesignal/app_id`, and no skill wrote it here. Until that file holds the UUID, every checkpoint buffers, and `flush` stops with "cannot flush — still no App ID". Write it as soon as you know the App ID:
+
+```bash
+printf '%s\n' '<APP_ID>' > "$ROOT/.onesignal/app_id"
+```
+
+After a "send" answer, once `.onesignal/app_id` is written, run `bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh flush` once: this funnel run may hold events that buffered before the answer existed, and the script keeps them for exactly this recovery (telemetry contract, "Refusal and failure behaviour").
 
 Do not ask twice. A refusal is a valid answer: checkpoints stay local, and you never reach the network by another route.
 
