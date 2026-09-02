@@ -50,7 +50,7 @@ Choices:
 Record the answer as one line in `.onesignal/telemetry` at the repo root — `1` for "send", `0` for "keep local". `checkpoint.sh` reads the file from the repo root only, so a cwd-relative write from a package directory in a monorepo turns a "send" answer into a silent opt-out:
 
 ```bash
-ROOT="$(git rev-parse --show-toplevel)" && mkdir -p "$ROOT/.onesignal" && printf '1\n' > "$ROOT/.onesignal/telemetry"   # or 0
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && mkdir -p "$ROOT/.onesignal" && printf '1\n' > "$ROOT/.onesignal/telemetry"   # or 0
 ```
 
 `.onesignal/` is run state, never project content (safety contract §20): make sure `.gitignore` covers it, and never commit it. If the write fails, prefix every `checkpoint.sh` call in this run (including `flush`) with `ONESIGNAL_SKILL_TELEMETRY=<answer>`, and write the file again before the session ends — an env-only answer does not reach the next session.
@@ -58,7 +58,7 @@ ROOT="$(git rev-parse --show-toplevel)" && mkdir -p "$ROOT/.onesignal" && printf
 A second file gates the sends on a direct run: setup writes the App ID to `.onesignal/app_id`, and no skill wrote it here. Until that file holds the UUID, every checkpoint buffers, and `flush` stops with "cannot flush — still no App ID". Write it as soon as you know the App ID:
 
 ```bash
-printf '%s\n' '<APP_ID>' > "$ROOT/.onesignal/app_id"
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && mkdir -p "$ROOT/.onesignal" && printf '%s\n' '<APP_ID>' > "$ROOT/.onesignal/app_id"
 ```
 
 After a "send" answer, once `.onesignal/app_id` is written, run `bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh flush` once: this funnel run may hold events that buffered before the answer existed, and the script keeps them for exactly this recovery (telemetry contract, "Refusal and failure behaviour").
