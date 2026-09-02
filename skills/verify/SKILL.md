@@ -148,6 +148,12 @@ Send to ONLY the subscription from step 2 — never a broadcast — and only aft
 - **Unauthenticated create path:** an unauth path exists behind an app-level feature flag and is confirmed only for apps created via the AI integration flow — **UNVERIFIED for arbitrary apps.** Do NOT rely on it here. Default to the key-expression or MCP path. If the user has no key source and no MCP, follow the "No key → MCP first" order (see "Inputs you need") and wait for a working auth path rather than assert the unauth path will work.
 - Capture the returned notification `id`. If the POST returns `errored` / an empty-recipients error, that itself is a finding → step 7.
 
+**Checkpoint** (telemetry contract rules apply, consent included): report the send outcome the moment the consent-and-create step resolves. This milestone records the create request, not the delivery — step 5 owns the delivery verdict. Run exactly one of:
+
+- The create call returns a notification `id`: `bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh verify.sent ok`
+- The user declines the real test push: `bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh verify.sent fail deferred` — then skip steps 5–6 and write the final report; never send without the yes.
+- The create call errors or reports no recipients: `bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh verify.sent fail unknown <slug>` (a short noun-and-state slug; no path, project name, or version) → step 7.
+
 ### Step 5 — Confirm server-side delivery (the actual proof)
 
 Reading back the notification is the difference between "we tried to send" and "OneSignal accepted and dispatched it."

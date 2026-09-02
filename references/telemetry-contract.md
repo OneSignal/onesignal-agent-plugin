@@ -84,15 +84,28 @@ milestone exists for them yet. The `platform` token names the framework, not the
 platform: on a cross-platform framework, an APNs row and an FCM row from one run share one
 token, and the milestone does not name the credential type.
 
+### verify
+
+| Milestone | Fires when | Why it matters |
+|---|---|---|
+| `verify.subscribed` | the step 2 poll shows a subscription with `notification_types >= 1` | the first device registered and opted in |
+| `verify.sent` | the step 4 test send resolves — consent answered, create call returned | how often a run that reached a live subscription also gets a push out the door |
+| `verify.delivered` | the step 5 readback shows `successful >= 1` | **the true activation event and the funnel's terminal success**; fires at most once per run |
+| `verify.displayed` | only when the "delivered but not shown" investigation ran | the device-display outcome, kept separate from the dispatch verdict |
+
+`verify.sent` records the create request, not the delivery. `ok` means the create call
+returned a notification id — the API accepted the request. `fail deferred` means the user
+declined the real test push. `fail unknown <slug>` means the call errored or reported no
+recipients. An accepted create followed by an `errored` readback is 2 findings: the
+acceptance belongs to `verify.sent`, the delivery verdict to `verify.delivered`.
+
+Never reuse `verify.delivered` for a display verdict — the terminal event carries one
+verdict per run. The display outcome belongs to `verify.displayed`.
+
 ### Other skills
 
-Owners add their own; keep the `skill.milestone` shape and reuse
-`verify.subscribed`, `verify.delivered`, `verify.displayed`.
-`verify.delivered` is the true activation event and the funnel's terminal success; it
-fires at most once per run. `verify.displayed` carries the separate device-display
-outcome when the "delivered but not shown" investigation ran — never reuse
-`verify.delivered` for a display verdict, or the terminal event gets two verdicts in
-one run.
+Owners add their own; keep the `skill.milestone` shape and reuse the milestones above
+where one fits.
 
 ### The auth choice — `credentials.auth_resolved` and `verify.auth_resolved`
 
