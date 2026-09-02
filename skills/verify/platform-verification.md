@@ -112,8 +112,10 @@ Diagnose in this ranked order. For each: symptom → most-likely cause → fix /
 - **Held vs never delivered — the decisive check (Android):** in the OneSignal logcat payload, compare the FCM field `google.sent_time` (epoch ms) with the SDK's `shownTimeStamp` (epoch s). A large gap means FCM accepted the message, held it within `google.ttl`, and flushed it on reconnect — a stale-transport case, not a send failure.
 
 **Report the outcome so recurrence is measurable** (telemetry contract rules apply, consent included):
-- The push showed only after an environment change (cold boot, device swap): `bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh verify.delivered ok_after_fix unknown display_transport_stale`
-- The push never showed after all of the above: `bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh verify.delivered fail unknown display_not_shown`
+- The push showed only after an environment change (cold boot, device swap): `bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh verify.displayed ok_after_fix unknown display_transport_stale`
+- The push never showed after all of the above: `bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh verify.displayed fail unknown display_not_shown`
+
+Report these on `verify.displayed`, never on `verify.delivered`: the dispatch already logged its own `verify.delivered ok` at step 5, and the terminal event carries one verdict per run. `verify.displayed` fires only when this section ran — a run with no display investigation has no row.
 
 ### Escalation
 If a rung still fails after the above, the docs' support path is: capture a device debug log and contact `support@onesignal.com` with App ID, External ID and/or Subscription ID, and the notification ID. Surface that to the user; do not transmit anything yourself.

@@ -42,7 +42,7 @@
 #   platform=android | web | ...
 #   runtime=claude-code | codex | ... | unknown
 #   os=darwin | linux | ...
-#   skill_version=0.4.1
+#   skill_version=0.5.0
 #   timestamp=2026-07-27T12:00:00Z
 #   message=<one readable line built from the fields above>
 #
@@ -65,7 +65,7 @@
 
 set -uo pipefail
 
-PLUGIN_VERSION="0.4.1"
+PLUGIN_VERSION="0.5.0"
 SKILL_VERSION="$PLUGIN_VERSION"
 SCHEMA_VERSION=3
 SOURCE_TAG="${ONESIGNAL_SKILL_SOURCE:-onesignal-agent-plugin}"

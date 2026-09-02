@@ -242,7 +242,7 @@ The script fetches the official feed, resolves the exact `channels.stable.versio
 
 **Checkpoint:** `setup.sdk_pinned ok` once you have an exact version. If the endpoint was unreachable and you had to ask the user, that is `ok_after_fix releases_unreachable` — it is a real onboarding obstacle and worth counting, especially in sandboxed runtimes where egress is denied.
 
-Prefer the OneSignal MCP server's tools over raw curl for API reads if it is connected (api-reference "OneSignal MCP server"). **App-match precondition (standing — same as the verify, status, and credentials skills):** before the first MCP call of a session, confirm with `list_apps` that the OAuth grant can access the target App ID (page until the items seen equal `total_count` before you conclude absence), then pass exactly that `app_id` on every call; on a mismatch, treat the MCP as unavailable for this app. (`onesignal_config` reports connection details, not app membership — it is not this check.) The MCP cannot edit files or resolve SDK versions — repo work and version resolution stay with you and the scripts. (It *can* provision APNs and FCM credentials via the `provision_app_credentials` tool — not web; the credentials skill owns that path and its App-ID precondition.)
+Prefer the OneSignal MCP server's tools over raw curl for API reads if it is connected (api-reference "OneSignal MCP server"). **App-match precondition (standing — same as the verify and credentials skills):** before the first MCP call of a session, confirm with `list_apps` that the OAuth grant can access the target App ID (page until the items seen equal `total_count` before you conclude absence), then pass exactly that `app_id` on every call; on a mismatch, treat the MCP as unavailable for this app. (`onesignal_config` reports connection details, not app membership — it is not this check.) The MCP cannot edit files or resolve SDK versions — repo work and version resolution stay with you and the scripts. (It *can* provision APNs and FCM credentials via the `provision_app_credentials` tool — not web; the credentials skill owns that path and its App-ID precondition.)
 
 ## Step 5 — Declare the allow-list, compute diffs, get ONE approval (safety contract §4–6)
 
@@ -283,7 +283,7 @@ The verification helper is the **only** place a direct SDK call outside the wrap
 
 ## Step 7 — Handoffs (automatic — announce, don't ask)
 
-The funnel is `setup → credentials → verify → discover-data → instrument → conversions`. After the Step-8 summary, **continue straight into the next skill** — announce the transition in one line ("Setup complete — continuing to verify.") instead of asking "want me to continue?". Pause only at a real human gate (checkpoint consent, console/portal steps, test-send consent, diff confirmation) or on a failure.
+The funnel is `setup → credentials → verify`. After the Step-8 summary, **continue straight into the next skill** — announce the transition in one line ("Setup complete — continuing to verify.") instead of asking "want me to continue?". Pause only at a real human gate (checkpoint consent, console/portal steps, test-send consent, diff confirmation) or on a failure.
 
 Decide what is still missing:
 - **Push credentials** should already be closed by the Step-3 gate. If the user deferred them there, restate it now: push will NOT deliver until credentials are set — continue into the **credentials** skill and say so plainly.
