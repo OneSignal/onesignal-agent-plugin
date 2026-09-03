@@ -19,6 +19,17 @@ In the dashboard: **Settings → Push & In-App → Web**. Set **Site URL** to th
 
 If the web platform has never been configured, the agent can set it via the write-once provisioning endpoint (`POST /api/v1/apps/{app_id}/credentials`). The transport and its rules are owned by [SKILL.md](SKILL.md) → "The API-upload mechanism" (don't restate them here): prefer the `provision_app_credentials` MCP tool when the MCP is connected — its schema takes the web params, and the App-ID precondition applies — else use the direct app-scoped-key `POST`. The web-specific params: `chrome_web_origin` (must be `https://` and exactly match the origin) plus optional `chrome_web_default_notification_icon`. The endpoint does NOT take Site Name or any Safari params — those, and any later changes to an already-configured web platform, happen in the dashboard (Settings → Push & In-App → Web).
 
+**The consent question for this write** (safety contract §14a; the wording rules are in [SKILL.md](SKILL.md) → "The API-upload mechanism"). Ask it with the structured-question tool after the App-ID precondition passes and after the user typed the origin. Use this wording — the user reads the outcome, not the transport:
+
+> Can I set up web push for your OneSignal app on your behalf? I will set the Site URL to `<origin>`. This is a one-time setup from here. Later changes happen in the dashboard (Settings > Push & In-App > Web).
+
+Choices:
+
+- Yes, set it up for me
+- No, I will set it up in the dashboard
+
+On "No", skip the API call, give the dashboard path above, and continue with the next step.
+
 ### Safari certificates
 OneSignal auto-provides Safari Web Push certificates at no cost — the user does **nothing** for the normal case. Only if the user already owns their own Safari Web Push `.p12` do they toggle it on and upload it (then it becomes a real secret: gitignore/keep-external, never paste in chat). Default guidance: leave it off, let OneSignal handle it.
 
