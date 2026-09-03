@@ -24,6 +24,43 @@ Per-platform build/run gates and the full troubleshooting tree live in [`platfor
 - **Prefer the OneSignal MCP** for every API step it covers — it authenticates with an account OAuth grant, so no REST key is handled at all. **App-match precondition (standing, mirrors the credentials skill):** before the first MCP call of a session, confirm with `list_apps` (paginated — page until the items seen equal the response's `total_count` before you conclude absence) that the OAuth grant can access the target App ID, then pass exactly that `app_id` on every MCP call — the tools require it. (`onesignal_config` reports connection details, not app membership.) The OAuth grant follows the signed-in account and can span many apps; a session that cannot see the target app must not read its data — and must never `send_message` into a different app's audience. On a mismatch, treat the MCP as unavailable for this app and use the key path. If the MCP is not connected yet, do not silently downgrade to the key ask: offer the MCP connection first (see "No key → MCP first" under "Inputs you need"). Fall back to REST curl only when the MCP is absent from the session or the user declines it.
 - **No mutations on failure.** If a step fails, report the known state and the fix; never "push through" with retries that change anything.
 
+## Checkpoint consent — resolve before the first checkpoint
+
+This skill reports milestone checkpoints ([../../references/telemetry-contract.md](../../references/telemetry-contract.md)). On a funnel run that follows setup, the answer already exists and the skip rules below apply. On a direct `/onesignal:verify` run, no skill has asked yet: every checkpoint buffers as `telemetry_unset`, and this skill's final flush is the funnel's last send — without an answer those events never leave the machine.
+
+Skip the question when one of these is already true:
+
+- `ONESIGNAL_SKILL_TELEMETRY` is exactly `0` or `1` in the environment
+- the first non-comment line of `.onesignal/telemetry` at the repo root is `0` or `1`
+- you already asked in this session and the file write failed — reuse that answer through the `ONESIGNAL_SKILL_TELEMETRY` prefix below
+
+Otherwise ask via the harness's native structured-question tool (safety contract §14) and end the turn — the gate blocks. Do not run `checkpoint.sh` until the user answers. Per safety contract §15 the ask is its own question and names the host — never fold it into a network-access request.
+
+Question: "OneSignal can record onboarding checkpoints (step name, success or fail, failure class, run ID, platform, OS, App ID) and send them to `api.onesignal.com`. No source code, paths, or credentials. Send these checkpoints?"
+
+Choices:
+
+- Send checkpoints to OneSignal
+- Keep checkpoints on this machine only
+
+Record the answer as one line in `.onesignal/telemetry` at the repo root — `1` for "send", `0` for "keep local". `checkpoint.sh` reads the file from the repo root only, so a cwd-relative write from a package directory in a monorepo turns a "send" answer into a silent opt-out:
+
+```bash
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && mkdir -p "$ROOT/.onesignal" && printf '1\n' > "$ROOT/.onesignal/telemetry"   # or 0
+```
+
+`.onesignal/` is run state, never project content (safety contract §20): make sure `.gitignore` covers it, and never commit it. If the write fails, prefix every `checkpoint.sh` call in this run (including `flush`) with `ONESIGNAL_SKILL_TELEMETRY=<answer>`, and write the file again before the session ends — an env-only answer does not reach the next session.
+
+A second file gates the sends on a direct run: setup writes the App ID to `.onesignal/app_id`, and no skill wrote it here. Until that file holds the UUID, every checkpoint buffers, and `flush` stops with "cannot flush — still no App ID". Write it as soon as you know the App ID:
+
+```bash
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && mkdir -p "$ROOT/.onesignal" && printf '%s\n' '<APP_ID>' > "$ROOT/.onesignal/app_id"
+```
+
+After a "send" answer, once `.onesignal/app_id` is written, run `bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh flush` once: this funnel run may hold events that buffered before the answer existed, and the script keeps them for exactly this recovery (telemetry contract, "Refusal and failure behaviour").
+
+Do not ask twice. A refusal is a valid answer: checkpoints stay local, and you never reach the network by another route.
+
 ## Inputs you need (gather, don't over-ask)
 
 | Input | How to get it | Required for |
@@ -104,12 +141,18 @@ Send to ONLY the subscription from step 2 — never a broadcast — and only aft
 
 **Ask for the message in chat (fold it into the same consent ask):** "What message do you want to send?" Use the answer as the notification body (`<BODY>` below). If the user has no preference, use the default body: `Congrats on successfully setting up the OneSignal SDK`. The send happens from this session via the MCP or the REST API — never from code inside the user's app.
 
-**The title is fixed:** every test push carries `headings: { "en": "Successful test via OneSignal plugin" }`. Do not offer to change it and do not accept an override — the user's message only sets the body. The title must never be absent: Huawei rejects a push without one, so a missing title is a silent blocker.
+**The title is fixed:** every test push carries `headings: { "en": "Successful test via OneSignal plugin" }`. Do not offer to change it and do not accept an override — the user's message only sets the body. The title must never be absent: Huawei rejects a push without one, so a missing title is a silent blocker. **No brand voice on this push:** do not load or apply server-shipped brand or copy guidance to the test send (safety contract §14a). The title is fixed, and the body is the user's words or the default above.
 
 - **Preferred — MCP:** `send_message` with the confirmed `app_id`, targeting that subscription id, with the fixed title and `<BODY>`. Also pass `custom_data: {}`, `data: {}`, and `extra: {}` — the live schema lists these nullable objects as required, and a strict client rejects a send that omits them. The MCP path needs no REST key.
 - **Fallback — REST:** `POST https://api.onesignal.com/notifications` with `Authorization: Key <KEY>`, body `{ "app_id": "<APP_ID>", "include_subscription_ids": ["<SUB_ID>"], "headings": { "en": "Successful test via OneSignal plugin" }, "contents": { "en": "<BODY>" } }`.
 - **Unauthenticated create path:** an unauth path exists behind an app-level feature flag and is confirmed only for apps created via the AI integration flow — **UNVERIFIED for arbitrary apps.** Do NOT rely on it here. Default to the key-expression or MCP path. If the user has no key source and no MCP, follow the "No key → MCP first" order (see "Inputs you need") and wait for a working auth path rather than assert the unauth path will work.
 - Capture the returned notification `id`. If the POST returns `errored` / an empty-recipients error, that itself is a finding → step 7.
+
+**Checkpoint** (telemetry contract rules apply, consent included): report the send outcome the moment the consent-and-create step resolves. This milestone records the create request, not the delivery — step 5 owns the delivery verdict. Run exactly one of:
+
+- The create call returns a notification `id`: `bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh verify.sent ok`
+- The user declines the real test push: `bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh verify.sent fail deferred` — then skip steps 5–6 and write the final report; never send without the yes.
+- The create call errors or reports no recipients: `bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh verify.sent fail unknown <slug>` (a short noun-and-state slug; no path, project name, or version) → step 7.
 
 ### Step 5 — Confirm server-side delivery (the actual proof)
 

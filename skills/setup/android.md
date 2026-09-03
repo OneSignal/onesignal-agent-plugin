@@ -125,6 +125,19 @@ Wire it with ONE line at the end of `MainActivity.onCreate()`:
 OneSignalSetupVerification.installIfDebug()
 ```
 
+## Checkpoint — `setup.platform_config` (permission state)
+
+Report the Android permission state right after `setup.verification_added`, once the
+Step-5 change set and the verification helper both exist (telemetry contract rules
+apply, consent included):
+
+- `INTERNET` present in the manifest, no manual `POST_NOTIFICATIONS` line (the SDK
+  manifest-merges it), and the `requestPermission` call wired in the helper:
+  `bash <plugin>/scripts/checkpoint.sh setup.platform_config ok`
+
+If `INTERNET` was missing and the approved change set added it, that is part of the
+minimal integration — still plain `ok`.
+
 ## Handoffs
 
 - Almost always hand off to **credentials** next — Android push does not deliver without the FCM v1 service-account JSON on the OneSignal app.

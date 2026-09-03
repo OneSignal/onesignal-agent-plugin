@@ -1,6 +1,6 @@
 {
   "name": "onesignal",
-  "version": "0.5.0",
+  "version": "0.5.7",
   "description": "OneSignal onboarding & activation skills: install and initialize the SDK, provision your app and push credentials, and verify real delivery.",
   "author": {
     "name": "OneSignal",

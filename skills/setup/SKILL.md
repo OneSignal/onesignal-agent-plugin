@@ -242,7 +242,7 @@ The script fetches the official feed, resolves the exact `channels.stable.versio
 
 **Checkpoint:** `setup.sdk_pinned ok` once you have an exact version. If the endpoint was unreachable and you had to ask the user, that is `ok_after_fix releases_unreachable` — it is a real onboarding obstacle and worth counting, especially in sandboxed runtimes where egress is denied.
 
-Prefer the OneSignal MCP server's tools over raw curl for API reads if it is connected (api-reference "OneSignal MCP server"). **App-match precondition (standing — same as the verify and credentials skills):** before the first MCP call of a session, confirm with `list_apps` that the OAuth grant can access the target App ID (page until the items seen equal `total_count` before you conclude absence), then pass exactly that `app_id` on every call; on a mismatch, treat the MCP as unavailable for this app. (`onesignal_config` reports connection details, not app membership — it is not this check.) The MCP cannot edit files or resolve SDK versions — repo work and version resolution stay with you and the scripts. (It *can* provision APNs and FCM credentials via the `provision_app_credentials` tool — not web; the credentials skill owns that path and its App-ID precondition.)
+Prefer the OneSignal MCP server's tools over raw curl for API reads if it is connected (api-reference "OneSignal MCP server"). **App-match precondition (standing — same as the verify and credentials skills):** before the first MCP call of a session, confirm with `list_apps` that the OAuth grant can access the target App ID (page until the items seen equal `total_count` before you conclude absence), then pass exactly that `app_id` on every call; on a mismatch, treat the MCP as unavailable for this app. (`onesignal_config` reports connection details, not app membership — it is not this check.) The MCP cannot edit files or resolve SDK versions — repo work and version resolution stay with you and the scripts. (It *can* provision APNs, FCM, and web credentials via the `provision_app_credentials` tool; the credentials skill owns that path and its App-ID precondition.)
 
 ## Step 5 — Declare the allow-list, compute diffs, get ONE approval (safety contract §4–6)
 
@@ -280,6 +280,8 @@ Do NOT add any dialog, in-app prompt, or in-app test-send code. The **verify** s
 The verification helper is the **only** place a direct SDK call outside the wrapper is allowed. It makes **no** raw `api.onesignal.com` call — no file you write may.
 
 **Checkpoint:** `setup.verification_added ok` once written.
+
+**Checkpoint — native platforms only:** right after `setup.verification_added`, on `android`, `ios`, and `web`, report `setup.platform_config` — the platform's push prerequisites (capabilities and the permission request on iOS, the permission state on Android, the service worker on web). The platform reference file carries the exact report block. The wrapper frameworks send no row for this milestone yet (telemetry contract, "setup").
 
 ## Step 7 — Handoffs (automatic — announce, don't ask)
 

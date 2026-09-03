@@ -252,12 +252,14 @@ yourself," not a one-click plugin.
 Every skill that touches your repo follows a binding **safety contract** (`references/safety-contract.md`).
 The essentials:
 
-- **Setup checkpoints are optional.** The setup skill asks, separately from any
-  network-access prompt, before it reports milestone outcomes (step name, success
-  or fail, failure class, run ID, platform, OS, App ID) to OneSignal. Source code,
-  paths, and credentials never leave the machine. Nothing is sent until you
-  consent, or until `ONESIGNAL_SKILL_TELEMETRY=1` is set. Choose "Keep checkpoints
-  on this machine only", or set `ONESIGNAL_SKILL_TELEMETRY=0`.
+- **Onboarding checkpoints are optional.** The first funnel skill you run (setup,
+  credentials, or verify) asks, separately from any network-access prompt, before
+  it reports milestone outcomes (step name, success or fail, failure class, run ID,
+  platform, OS, App ID) to OneSignal. Source code, paths, and credentials never
+  leave the machine. Nothing is sent until you consent, or until
+  `ONESIGNAL_SKILL_TELEMETRY=1` is set. Choose "Keep checkpoints on this machine
+  only", or set `ONESIGNAL_SKILL_TELEMETRY=0`. Later skills in the same run reuse
+  the recorded answer and do not ask again.
 - **Secrets never touch your code or chat.** The REST API key and org key live in environment variables
   only. The plugin writes `.env` (gitignored — it verifies) and `.env.example` with empty placeholders,
   and scans its own diff for secret-shaped strings before finishing. It will never write a key into
@@ -288,7 +290,7 @@ general Claude Code caution, not specific to OneSignal).
 
 ## Support & versioning
 
-- **Version:** see `version` in `.claude-plugin/plugin.json` (currently `0.5.0`). Because a `version` is
+- **Version:** see `version` in `.claude-plugin/plugin.json`. Because a `version` is
   set, Claude Code only pulls updates when this field is bumped. Update an installed copy with
   `/plugin marketplace update <marketplace-name>` then `/reload-plugins`.
 - **OneSignal support:** questions about your account, credentials, or the MCP beta →
