@@ -229,6 +229,29 @@ class Checks:
         self.add("android_manifest_registers_app", hit, "error",
                  "" if hit else "no <application android:name=...> — Application subclass not registered")
 
+    def android_manifest_no_node_replace(self):
+        node_replace = re.compile(r"""tools:node\s*=\s*['"]replace['"]""")
+        bad = []
+        for fp in walk_files(self.root):
+            if os.path.basename(fp) != "AndroidManifest.xml":
+                continue
+            text = read(fp)
+            for m in re.finditer(r"<application\b([^>]*)>", text, re.I | re.S):
+                if node_replace.search(m.group(1)):
+                    bad.append(os.path.relpath(fp, self.root))
+                    break
+        self.add(
+            "android_manifest_no_node_replace",
+            not bad,
+            "error",
+            "" if not bad else (
+                f'tools:node="replace" on <application> in {bad[:3]}: '
+                "drops OneSignal PermissionsActivity; notification permission "
+                "flow crashes with ActivityNotFoundException. Remove it. "
+                "Override a single attribute with tools:replace instead."
+            ),
+        )
+
     def android_no_stray_google_services(self):
         gs = [fp for fp in walk_files(self.root) if os.path.basename(fp) == "google-services.json"]
         firebase = grep(self.root, r"com\.google\.firebase")
@@ -565,6 +588,7 @@ class Checks:
                      self.app_id_present, self.no_deprecated_addoutcome, self.no_committed_secrets]
         by_platform = {
             "android": [self.android_init_in_application, self.android_manifest_registers_app,
+                        self.android_manifest_no_node_replace,
                         self.android_no_stray_google_services, self.android_verification_debug_guarded,
                         self.android_requestpermission_not_callback, self.android_buildconfig_feature_enabled,
                         self.android_coroutines_on_classpath],

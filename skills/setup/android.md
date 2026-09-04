@@ -67,6 +67,14 @@ Register in `AndroidManifest.xml`:
 ```
 If an `android:name` Application class already exists, add the init call to its `onCreate()` instead of creating a new one.
 
+**Before you edit the manifest, open it and look at the `<application>` tag.** If it has `tools:node="replace"`:
+
+1. **Stop and warn the user.** That merger marker wipes library-merged components. OneSignal's `PermissionsActivity` never reaches the merged manifest, and the notification permission flow crashes with `ActivityNotFoundException`.
+2. **Fix:** remove `tools:node="replace"`. If they only need to override one attribute (theme, label, icon), use `tools:replace="android:theme"` (or that attribute) instead.
+3. After the next build, confirm `com.onesignal.core.activities.PermissionsActivity` is in `app/build/intermediates/merged_manifests`.
+
+Do not add `tools:node="replace"` yourself. `POST_NOTIFICATIONS` is already merged by the SDK.
+
 ## Centralized wrapper (Kotlin, no-DI default)
 
 Signatures verified against api-reference "SDK data surface". Tag values are strings only. `login()` before tags/email/sms (ordering rule).
