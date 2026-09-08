@@ -1,7 +1,7 @@
 ---
 name: setup
-description: Entry-point OneSignal onboarding skill. Use when a developer wants to add, install, integrate, initialize, or "set up" the OneSignal SDK in their own codebase (web, iOS, Android, React Native, Expo, Flutter, Cordova/Ionic/Capacitor, Unity) — triggers on "set up OneSignal", "add push notifications", "install the OneSignal SDK", "integrate OneSignal", "onboard onto OneSignal", or a fresh project with no OneSignal present. Supports one-command invocation with arguments, e.g. "/onesignal:setup app=<APP_ID> token=<app-scoped key>". Detects the platform/framework from project manifests, gates on push credentials FIRST (uploading them via the provisioning endpoint before any SDK code is written), installs and initializes the SDK, adds a debug-only verification helper, and hands off to the verify skill.
-argument-hint: app=<APP_ID> token=<app-scoped-key>
+description: Entry-point OneSignal onboarding skill. Use when a developer wants to add, install, integrate, initialize, or "set up" the OneSignal SDK in their own codebase (web, iOS, Android, React Native, Expo, Flutter, Cordova/Ionic/Capacitor, Unity) — triggers on "set up OneSignal", "add push notifications", "install the OneSignal SDK", "integrate OneSignal", "onboard onto OneSignal", or a fresh project with no OneSignal present. Supports one-command invocation with arguments, e.g. "/onesignal:setup app=<APP_ID>". Detects the platform/framework from project manifests, gates on push credentials FIRST (uploading them via the provisioning endpoint before any SDK code is written), installs and initializes the SDK, adds a debug-only verification helper, and hands off to the verify skill.
+argument-hint: app=<APP_ID>
 ---
 
 # OneSignal SDK setup (entry point)
@@ -114,10 +114,11 @@ Rules that matter:
 
 ## Invocation arguments (the one-command flow)
 
-The production entry point is **`/onesignal:setup app=<APP_ID> token=<key>`**. If arguments are present, parse them before Step 0:
+The production entry point is **`/onesignal:setup app=<APP_ID>`**. If arguments are present, parse them before Step 0:
 
 - `app=` → the OneSignal App ID (public UUID). Use it and skip the Step-2 ask.
-- `token=` (also accept `key=`) → the **app-scoped key** for this app (the setup token from the OneSignal setup page, or an API key). It authenticates the credentials gate (Step 3) and server-side verification — use it in the commands you run. Per the safety contract ("The setup key" section): don't repeat it in your text output or summaries, and never write it into the repo or any committed/client file. If it's a long-lived API key rather than a disposable setup token, add one line to the final summary suggesting they rotate it in Keys & IDs, since chat transcripts persist.
+- `token=` (also accept `key=`) → **optional**, and not part of the argument hint. Do not ask for it. If present, it is the **app-scoped key** for this app (the setup token from the OneSignal setup page, or an API key). It authenticates the credentials gate (Step 3) and server-side verification — use it in the commands you run. Per the safety contract ("The setup key" section): don't repeat it in your text output or summaries, and never write it into the repo or any committed/client file. If it's a long-lived API key rather than a disposable setup token, add one line to the final summary suggesting they rotate it in Keys & IDs, since chat transcripts persist.
+- No `token=` → read the app-scoped key from the environment (`$ONESIGNAL_REST_API_KEY` / `$ONESIGNAL_SETUP_TOKEN`), as Step 3 describes. Never ask the user to paste a key into chat (safety contract "Never"). If no key is available, Step 3 falls back to the dashboard check.
 - No arguments → proceed normally: ask for the App ID in Step 2, look for keys already exported in the environment.
 
 ---
