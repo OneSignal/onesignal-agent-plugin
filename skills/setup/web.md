@@ -86,7 +86,7 @@ Call `login()` BEFORE tags/email/sms or data attaches to the anonymous user (api
 
 ## Debug-only verification helper (Web)
 
-Web has no `local-` placeholder gate identical to mobile, but the same shape applies: request permission, confirm a real subscription, and log its ID — the verify skill sends the test push from chat. Gate on a debug/dev signal (e.g. `location.hostname === "localhost"` or a build env flag) so it never runs in production. Browsers require a user gesture for the native permission prompt (Firefox and Safari enforce it), so request permission on the first click — do NOT prompt on page load. No dialog, no `confirm()`/`prompt()`, and no `fetch` to `api.onesignal.com` — the helper only observes and logs.
+Web has no `local-` placeholder gate identical to mobile, but the same shape applies: request permission, confirm a real subscription, and log its ID — the verify skill sends the test push from chat. Gate on a debug/dev signal (e.g. `location.hostname === "localhost"` or a build env flag) so it never runs in production. Firefox 72+ and Safari 12.1+ open the native permission prompt only from a user gesture (verified in the SDK: `requiresUserInteraction()`), so do NOT call `requestPermission()` on page load. Show the SDK's **slidedown** instead, about 2 seconds after init: `OneSignal.Slidedown.promptPush({ force: true })` (verified: `SlidedownNamespace.promptPush`, web-sdk-reference "Slidedown prompts"). The slidedown is in-page HTML and needs no gesture; its Allow button supplies the gesture for the native prompt. With no slidedown configured in the dashboard, the SDK shows the default text. `force: true` bypasses the SDK's 3-day back-off after a dismissal — correct for a debug helper the developer re-runs, never for production code. The SDK skips the slidedown by itself when the browser is already subscribed or permission is denied. No dialog, no `confirm()`/`prompt()`, and no `fetch` to `api.onesignal.com` — the helper only observes and logs.
 
 ```js
 // onesignal-verify.js — debug-only verification helper (onesignal:managed v1).
@@ -106,21 +106,18 @@ export function installOneSignalVerify() {
     }
     OneSignal.User.PushSubscription.addEventListener("change", report);
     report(); // ID may already exist before the listener attaches
-    // The native permission prompt needs a user gesture in Firefox/Safari —
-    // ask on the first click, never on page load.
+    // Firefox and Safari open the native permission prompt only from a user
+    // gesture. The slidedown's Allow button is that gesture, so the slidedown
+    // can open on a timer while a direct requestPermission() call cannot.
     if (Notification.permission === "default") {
-      console.info("[OneSignal] Click anywhere on the page to enable web push.");
-      addEventListener(
-        "click",
-        () => { OneSignal.Notifications.requestPermission(); },
-        { once: true }
-      );
+      console.info("[OneSignal] Click Allow on the prompt to enable web push.");
+      setTimeout(() => { OneSignal.Slidedown.promptPush({ force: true }); }, 2000);
     }
   });
 }
 ```
 
-Verify the exact `PushSubscription` accessor names against the current web-sdk-reference doc before finalizing if anything looks off — the SDK's public surface is authoritative.
+Verify the exact `PushSubscription` and `Slidedown` accessor names against the current web-sdk-reference doc before finalizing if anything looks off — the SDK's public surface is authoritative.
 
 ## Checkpoint — `setup.platform_config` (the service worker)
 
