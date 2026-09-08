@@ -235,7 +235,7 @@ class Checks:
         for fp in walk_files(self.root):
             if os.path.basename(fp) != "AndroidManifest.xml":
                 continue
-            text = read(fp)
+            text = re.sub(r"<!--.*?-->", "", read(fp), flags=re.S)
             for m in re.finditer(r"<application\b([^>]*)>", text, re.I | re.S):
                 if node_replace.search(m.group(1)):
                     bad.append(os.path.relpath(fp, self.root))
@@ -246,9 +246,9 @@ class Checks:
             "error",
             "" if not bad else (
                 f'tools:node="replace" on <application> in {bad[:3]}: '
-                "drops OneSignal PermissionsActivity; notification permission "
-                "flow crashes with ActivityNotFoundException. Remove it. "
-                "Override a single attribute with tools:replace instead."
+                "drops all OneSignal manifest components (for example "
+                "PermissionsActivity). Remove it. Override a single "
+                "attribute with tools:replace instead."
             ),
         )
 

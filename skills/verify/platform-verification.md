@@ -92,7 +92,7 @@ Diagnose in this ranked order. For each: symptom → most-likely cause → fix /
 - **FCM v1 credentials missing** → credentials skill (see §1).
 - **No Google Play Services** on the test device/emulator → use a Play-services emulator image or a real device.
 - **`google-services.json` confusion:** it is **NOT required** for OneSignal push (FCM v1 creds are server-side). Only keep it if the app itself uses Firebase client SDKs. Do not tell the user to add it for OneSignal.
-- **`ActivityNotFoundException` for `PermissionsActivity`:** open the app `AndroidManifest.xml`. If `<application>` has `tools:node="replace"`, warn the user: that drops OneSignal's merged `PermissionsActivity` and crashes the notification permission flow. Remove `tools:node="replace"`. Override one attribute with `tools:replace` instead. Confirm `com.onesignal.core.activities.PermissionsActivity` is in `app/build/intermediates/merged_manifests`.
+- **`ActivityNotFoundException` for `PermissionsActivity`:** open the app `AndroidManifest.xml`. If `<application>` has `tools:node="replace"`, warn the user: that drops all OneSignal manifest components (for example `PermissionsActivity`). The notification permission flow crashes and push registration also breaks. Remove `tools:node="replace"`. Override one attribute with `tools:replace` instead. Confirm `com.onesignal.core.activities.PermissionsActivity` is in `app/build/intermediates/merged_manifests`.
 
 ### 5. Permission not granted
 **Symptom:** app runs, no subscription, no OS/browser prompt appeared or it was dismissed/blocked.
