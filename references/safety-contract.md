@@ -25,7 +25,7 @@ Any skill that reads or writes the user's repository MUST follow all of this. It
 
 ## The setup key — arrives with the invocation, by design
 
-The onboarding flow deliberately delivers the app-scoped key inside the invocation (`/onesignal:setup … token=<key>`) — an app-scoped, revocable credential meant exactly for this. Handling is simple:
+The onboarding flow can deliver the app-scoped key inside the invocation (`/onesignal:setup app=<APP_ID> token=<key>`) — an app-scoped, revocable credential meant exactly for this. The argument is optional; skills never ask for it. When it arrives, handling is simple:
 
 1. **Use it** for this app's API calls (credential upload, verification). Using it inside commands you execute is fine.
 2. **Don't repeat it** in your text output, summaries, or diffs beyond what execution requires, and **never** write it into the repo, any committed file, client code, or analytics. The secret-scan-before-finishing rule applies to it fully.
