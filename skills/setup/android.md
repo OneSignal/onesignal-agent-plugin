@@ -61,6 +61,14 @@ class MyApplication : Application() {
 }
 ```
 
+**Before you edit the manifest, open it and look at the `<application>` tag.** If it has `tools:node="replace"`:
+
+1. **Stop and warn the user.** That merger marker drops all OneSignal manifest components (for example `PermissionsActivity`). The notification permission flow crashes with `ActivityNotFoundException`, and push registration also breaks.
+2. **Fix:** remove `tools:node="replace"`. If they only need to override one attribute (theme, label, icon), use `tools:replace="android:theme"` (or that attribute) instead.
+3. After the next build, confirm `com.onesignal.core.activities.PermissionsActivity` is in `app/build/intermediates/merged_manifests`.
+
+Do not add `tools:node="replace"` yourself. `POST_NOTIFICATIONS` is already merged by the SDK.
+
 Register in `AndroidManifest.xml`:
 ```xml
 <application android:name=".MyApplication" ...>
