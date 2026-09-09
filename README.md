@@ -37,11 +37,12 @@ before writes.
 
 ## Prerequisites
 
-- **Python 3** on your `PATH` (`python3`). The setup/verify skills run small
+- **Python 3.8 or newer** on your `PATH` (`python3`). The setup/verify skills run small
   stdlib-only helper scripts in `scripts/` (exact version resolver, platform
   detection, structural self-check, secret scan) — no pip installs, but the
   interpreter must be present. Check with `python3 --version`; most macOS/Linux
-  dev machines already have it.
+  dev machines already have it. If it is missing, the setup skill stops at its
+  preflight and offers to continue with by-hand checks instead.
 - **A OneSignal account** — free at [onesignal.com](https://onesignal.com).
 - **An App ID.** Your app's public identifier. Find it in the dashboard under **Settings → Keys & IDs**
   (or in the dashboard URL). The App ID is public and safe to commit in client code.

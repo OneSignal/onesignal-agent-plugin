@@ -48,7 +48,7 @@ Do not break these without a decision from the team:
 
 - **API ground truth lives in `references/api-reference.md`.** If an endpoint or parameter is
   not verified there, the skill must say "verify against docs" instead of asserting it.
-- **Scripts are Python 3, stdlib only.** No pip installs. Two scripts are bash:
+- **Scripts are Python 3.8+, stdlib only.** No pip installs. Two scripts are bash:
   `scripts/checkpoint.sh` and `scripts/compile_check_ios.sh` (the compile gate for the iOS
   templates — do not rewrite it in another language).
 - **Version pins are exact.** Skills and templates never emit a version range.

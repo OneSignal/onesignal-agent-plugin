@@ -59,7 +59,7 @@ Each is `skill.milestone`. Status is `ok`, `ok_after_fix`, or `fail`.
 
 | Milestone | Fires when | Why it matters |
 |---|---|---|
-| `setup.preflight` | after Step 0–1: tree checked, prior install detected, platform identified | platform distribution; how often we meet an existing install |
+| `setup.preflight` | after Step 0–1: tree checked, script runtime present, prior install detected, platform identified | platform distribution; how often we meet an existing install; how often `python3` is missing |
 | `setup.app_id` | App ID obtained (Step 2) | how often users arrive without an app |
 | `setup.credentials_gate` | Step 3 resolves | **the headline metric.** `ok` = configured, `ok_after_fix` = uploaded during the run, `fail` = missing, class `deferred` when the user chose to skip |
 | `setup.sdk_pinned` | exact version resolved from releases.json (Step 4) | catches releases.json being unreachable |
@@ -167,8 +167,8 @@ failure that follows belongs to the step that meets it.
 Reuse an existing class where one fits; otherwise add it here rather than inventing one at
 the call site. Current set:
 
-`dirty_tree`, `prior_install`, `platform_ambiguous`, `no_app_id`, `invalid_app_id`,
-`credentials_missing`, `uploaded_during_run`, `deferred`, `releases_unreachable`,
+`dirty_tree`, `runtime_missing`, `prior_install`, `platform_ambiguous`, `no_app_id`,
+`invalid_app_id`, `credentials_missing`, `uploaded_during_run`, `deferred`, `releases_unreachable`,
 `diff_rejected`, `network_blocked`, `kotlin_stdlib_floor`, `minsdk_floor`, `agp_floor`,
 `dependency_conflict`, `buildconfig_disabled`, `coroutines_missing`, `manifest_merger`,
 `already_configured`, `endpoint_flag_off`, `apns_propagation`, `apns_ids_swapped`,
@@ -202,6 +202,15 @@ observe when the human completes them, so the milestone records the hand-off its
 OneSignal needs. `setup.platform_config` reports the resolved conflict — the combine or
 the subdirectory scope — as `ok_after_fix worker_scope_conflict`, and a conflict the
 user declined to resolve as `fail worker_scope_conflict`.
+
+`runtime_missing`: `python3` (3.8 or newer) is not on `PATH`, so the deterministic scripts
+in `scripts/` cannot run. `checkpoint.sh` is bash and still reports. Setup Step 0 reports
+`setup.preflight fail runtime_missing` at the moment of the miss, before it asks the user
+what to do. The row that follows tells the rest of the story: a run that installed Python
+and retried reports the normal `setup.preflight ok`; a run that continued with the by-hand
+fallbacks reports `setup.preflight ok_after_fix runtime_missing`. Count the `fail` rows to
+measure how often the prerequisite is absent, and the `ok_after_fix` rows to see how many
+runs went on without the deterministic checks.
 
 `no_app_id` and `invalid_app_id` are different findings: the first means the user has no
 OneSignal app yet, the second means they supplied an ID that does not parse as a UUID

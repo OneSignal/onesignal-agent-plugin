@@ -1,7 +1,7 @@
 {
   "name": "onesignal",
-  "version": "0.5.11",
-  "description": "OneSignal onboarding & activation skills: install and initialize the SDK, provision your app and push credentials, and verify real delivery.",
+  "version": "0.5.12",
+  "description": "OneSignal onboarding & activation skills: install and initialize the SDK, provision your app and push credentials, and verify real delivery. Needs Python 3.8 or newer on PATH for the bundled helper scripts.",
   "author": {
     "name": "OneSignal",
     "url": "https://onesignal.com"
@@ -21,7 +21,7 @@
   "interface": {
     "displayName": "OneSignal",
     "shortDescription": "Set up and verify OneSignal",
-    "longDescription": "Install and initialize the OneSignal SDK, configure push credentials, and verify delivery.",
+    "longDescription": "Install and initialize the OneSignal SDK, configure push credentials, and verify delivery. The bundled helper scripts need Python 3.8 or newer on PATH; the setup skill checks for it first and offers by-hand fallbacks when it is missing.",
     "developerName": "OneSignal",
     "category": "Developer Tools",
     "capabilities": [
