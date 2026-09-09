@@ -13,8 +13,9 @@ Two audiences read this repository:
 - **Customers' agents** run the skills against customer repositories.
 - **The OneSignal Engineering team** edits the skills, scripts, and references.
 
-`README.md` is the customer-facing document. `STATUS.md` is the team-facing orientation
-document. Keep both current when your change affects what they describe.
+`README.md` is the customer-facing document. Keep it current when your change affects what
+it describes. Roadmap and planning notes live in the internal project tracker, not in this
+repository.
 
 ## Repository layout
 

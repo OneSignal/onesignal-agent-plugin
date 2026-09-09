@@ -20,8 +20,8 @@ skill directly.
 | # | Skill | Invoke as | What it does |
 |---|-------|-----------|--------------|
 | 1 | **setup** | `/onesignal:setup` | Detects your platform/framework, installs and initializes the OneSignal SDK, and adds a debug-only verification helper. The entry point for "add push notifications" / "integrate OneSignal". |
-| 2 | **credentials** | `/onesignal:credentials` | Walks you through the human-only console steps to procure push credentials (Apple APNs `.p8`, Firebase FCM v1 service-account JSON, web Site URL / Safari certs, email SPF/DKIM/DMARC, SMS sender), then uploads the API-uploadable ones for you. |
-| 3 | **verify** | `/onesignal:verify` | Confirms a real message is actually **delivered** to an identified subscriber — the true "activated" milestone — not just that code compiles. |
+| 2 | **credentials** | `/onesignal:credentials` | Walks you through the human-only console steps to procure push credentials (Apple APNs `.p8`, Firebase FCM v1 service-account JSON, web Site URL / Safari certs, email SPF/DKIM/DMARC, SMS sender), then uploads the API-uploadable ones for you. The upload sets credentials only for a platform that has none yet; you replace credentials in the dashboard. |
+| 3 | **verify** | `/onesignal:verify` | Confirms a real message is actually **delivered** to an identified subscriber — the true "activated" milestone — not just that code compiles. Needs a device or browser that can receive the test push, and a human to accept the permission prompt. |
 
 **Recommended path:** `setup → credentials → verify`. Stages chain automatically: when one completes,
 the agent announces the transition and continues into the next — no re-prompting. A confirmed
