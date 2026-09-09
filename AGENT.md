@@ -26,6 +26,9 @@ repository.
 | `references/` | Shared contracts and verified facts. Skills link to them with relative paths. |
 | `scripts/` | Deterministic helpers: version resolution, platform detection, secret scan, structural verification, checkpoint transport. |
 | `.claude-plugin/plugin.json` | Plugin manifest. The `version` field controls when Claude Code pulls updates. |
+| `.claude-plugin/marketplace.json` | Marketplace catalog. This repository is its own marketplace, named `onesignal`. |
+| `.codex-plugin/plugin.json` | Codex manifest. The `interface` block holds the listing copy, legal URLs, and brand assets. |
+| `assets/` | Brand assets for the listings. The files come from the official OneSignal media kit. |
 | `.mcp.json` | Declares the hosted OneSignal MCP endpoint. |
 | `endpoint.conf` | The checkpoint ingestion endpoint. The comment block in the file explains the path. |
 

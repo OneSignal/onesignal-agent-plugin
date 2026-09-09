@@ -1,11 +1,16 @@
 {
   "name": "onesignal",
-  "owner": { "name": "OneSignal" },
+  "description": "OneSignal onboarding & activation skills for coding agents: install the SDK, provision push credentials, and verify real delivery.",
+  "owner": { "name": "OneSignal", "url": "https://onesignal.com" },
   "plugins": [
     {
       "name": "onesignal",
       "source": "./",
-      "description": "OneSignal onboarding & activation skills"
+      "description": "OneSignal onboarding & activation skills: install and initialize the SDK, provision your app and push credentials, and verify real delivery.",
+      "homepage": "https://documentation.onesignal.com",
+      "repository": "https://github.com/OneSignal/onesignal-agent-plugin",
+      "license": "MIT",
+      "keywords": ["onesignal", "push-notifications", "sdk-setup", "onboarding", "messaging"]
     }
   ]
 }
