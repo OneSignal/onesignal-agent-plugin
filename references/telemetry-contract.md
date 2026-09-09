@@ -66,7 +66,7 @@ Each is `skill.milestone`. Status is `ok`, `ok_after_fix`, or `fail`.
 | `setup.install_applied` | change set approved and written (Step 5) | how often users reject the diff |
 | `setup.verification_added` | verification helper written (Step 6) | — |
 | `setup.platform_config` | after Step 6, on `android`, `ios`, and `web` only: the platform's push prerequisites resolve | which platform-side prerequisite blocks push — the iOS capability set, the Android permission state, or the web service worker |
-| `setup.complete` | handing off (Step 7) | setup's own completion rate |
+| `setup.complete` | handing off (Step 7) | setup's own completion rate; `ok_after_fix runtime_missing` marks a completion whose deterministic checks did not run |
 
 `setup.platform_config` is one milestone with 3 platform-specific meanings; the
 `platform` field separates them. It fires once the Step-5 change set and the Step-6
@@ -203,14 +203,17 @@ OneSignal needs. `setup.platform_config` reports the resolved conflict — the c
 the subdirectory scope — as `ok_after_fix worker_scope_conflict`, and a conflict the
 user declined to resolve as `fail worker_scope_conflict`.
 
-`runtime_missing`: `python3` (3.8 or newer) is not on `PATH`, so the deterministic scripts
+`runtime_missing`: `python3` (3.7 or newer) is not on `PATH`, so the deterministic scripts
 in `scripts/` cannot run. `checkpoint.sh` is bash and still reports. Setup Step 0 reports
 `setup.preflight fail runtime_missing` at the moment of the miss, before it asks the user
 what to do. The row that follows tells the rest of the story: a run that installed Python
 and retried reports the normal `setup.preflight ok`; a run that continued with the by-hand
-fallbacks reports `setup.preflight ok_after_fix runtime_missing`. Count the `fail` rows to
-measure how often the prerequisite is absent, and the `ok_after_fix` rows to see how many
-runs went on without the deterministic checks.
+fallbacks reports `setup.preflight ok_after_fix runtime_missing`. The class carries through
+to the end of that run: because the structural self-check and the secret scan did not run,
+the hand-off reports `setup.complete ok_after_fix runtime_missing`, never plain `ok`. Count
+the `fail` rows to measure how often the prerequisite is absent, the `ok_after_fix` preflight
+rows to see how many runs went on without the deterministic checks, and the `ok_after_fix`
+complete rows to keep those runs separate from verified completions.
 
 `no_app_id` and `invalid_app_id` are different findings: the first means the user has no
 OneSignal app yet, the second means they supplied an ID that does not parse as a UUID

@@ -21,7 +21,7 @@
   "interface": {
     "displayName": "OneSignal",
     "shortDescription": "Set up and verify OneSignal",
-    "longDescription": "Install and initialize the OneSignal SDK, configure push credentials, and verify delivery. The bundled helper scripts need Python 3.8 or newer on PATH; the setup skill checks for it first and offers by-hand fallbacks when it is missing.",
+    "longDescription": "Install and initialize the OneSignal SDK, configure push credentials, and verify delivery. The bundled helper scripts need Python 3.7 or newer on PATH; the setup skill checks for it first and offers by-hand fallbacks when it is missing.",
     "developerName": "OneSignal",
     "category": "Developer Tools",
     "capabilities": [

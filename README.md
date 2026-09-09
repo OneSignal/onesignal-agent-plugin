@@ -37,7 +37,7 @@ before writes.
 
 ## Prerequisites
 
-- **Python 3.8 or newer** on your `PATH` (`python3`). The setup/verify skills run small
+- **Python 3.7 or newer** on your `PATH` (`python3`). The setup/verify skills run small
   stdlib-only helper scripts in `scripts/` (exact version resolver, platform
   detection, structural self-check, secret scan) — no pip installs, but the
   interpreter must be present. Check with `python3 --version`; most macOS/Linux
