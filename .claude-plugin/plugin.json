@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "onesignal",
   "displayName": "OneSignal",
-  "description": "OneSignal onboarding & activation skills: install and initialize the SDK, provision your app and push credentials, and verify real delivery. Needs Python 3.8 or newer on PATH for the bundled helper scripts.",
+  "description": "OneSignal onboarding & activation skills: install and initialize the SDK, provision your app and push credentials, and verify real delivery.",
   "version": "0.5.12",
   "author": {
     "name": "OneSignal",
