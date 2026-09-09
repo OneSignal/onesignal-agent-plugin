@@ -32,6 +32,8 @@ These come from the safety contract; they are not optional and apply the moment 
 
 This skill reports milestone checkpoints ([../../references/telemetry-contract.md](../../references/telemetry-contract.md)). On a funnel run that follows setup, the answer already exists and the skip rules below apply. On a direct `/onesignal:credentials` run, no skill has asked yet, and every checkpoint buffers as `telemetry_unset` until one does.
 
+Every `checkpoint.sh` and `onesignal_api.py` command in this skill starts with `<plugin>`: the plugin's root, the directory that contains `references/`, `scripts/`, and `skills/`. It is the directory **two levels above this `SKILL.md`** — take the absolute path of this file and go up two directories. Resolve it once and reuse it. Do not rely on a host environment variable for it — none is set on every agent.
+
 Skip the question when one of these is already true:
 
 - `ONESIGNAL_SKILL_TELEMETRY` is exactly `0` or `1` in the environment
@@ -61,7 +63,7 @@ A second file gates the sends on a direct run: setup writes the App ID to `.ones
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && mkdir -p "$ROOT/.onesignal" && printf '%s\n' '<APP_ID>' > "$ROOT/.onesignal/app_id"
 ```
 
-After a "send" answer, once `.onesignal/app_id` is written, run `bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh flush` once: this funnel run may hold events that buffered before the answer existed, and the script keeps them for exactly this recovery (telemetry contract, "Refusal and failure behaviour").
+After a "send" answer, once `.onesignal/app_id` is written, run `bash <plugin>/scripts/checkpoint.sh flush` once: this funnel run may hold events that buffered before the answer existed, and the script keeps them for exactly this recovery (telemetry contract, "Refusal and failure behaviour").
 
 Do not ask twice. A refusal is a valid answer: checkpoints stay local, and you never reach the network by another route.
 
@@ -88,7 +90,7 @@ Route (for iOS, Android, and web, run [Step 1 — detect existing credentials](#
 
 Many existing apps already have credentials for the target platform. Check for them **before any portal walkthrough**, so the user does not create a key they do not need. This is a **presence check only** — do not test whether the stored credentials are valid. The real validity proof is a test send, and that belongs to the `verify` skill.
 
-The probe reads and their response semantics come from [../../references/api-reference.md](../../references/api-reference.md) (the view-app read and the "Web platform config probe"), and `${CLAUDE_PLUGIN_ROOT}/scripts/onesignal_api.py` encodes them as commands. Use those; do not hand-roll the calls.
+The probe reads and their response semantics come from [../../references/api-reference.md](../../references/api-reference.md) (the view-app read and the "Web platform config probe"), and `<plugin>/scripts/onesignal_api.py` encodes them as commands. Use those; do not hand-roll the calls.
 
 1. **Push platforms (iOS / Android):** run `onesignal_api.py app <app_id>` — the view-app read, `GET /api/v1/apps/{app_id}` — with an app-scoped key (the script takes `--key` or reads `$ONESIGNAL_REST_API_KEY` / `$ONESIGNAL_SETUP_TOKEN`). No MCP tool returns the per-app platform config (api-reference.md), so this read has no MCP path. Populated credential fields for the target platform mean the platform is configured. The script reports only the response's field *names*, which cannot make that call — the raw `GET` is the read that decides (inspect the target platform's field values); use the script output for reachability and auth errors.
 2. **Web:** run `onesignal_api.py web-probe <app_id>` — no key needed. The script wraps the unauthenticated sync probe and always appends the throwaway `?fresh=` param that bypasses the ~1 h CDN cache (api-reference.md). A `status: provisioned` line means the web platform is provisioned (the script wraps the raw `success: true` as that status).
@@ -101,10 +103,10 @@ The probe reads and their response semantics come from [../../references/api-ref
 **Checkpoint** (telemetry contract rules apply, consent included): report `credentials.detected` the moment this step resolves — it is the presence verdict for the target platform. Email and SMS have no presence check here and send no row. `fail credentials_missing` is the normal entry into the flows below, not a stop. On the wrong-App-ID stop, fire the row **before you end the turn to re-ask** (a session that never resumes otherwise leaves no trace); when the step re-runs with a good App ID, the new row records the recovery. Run exactly one of:
 
 ```bash
-bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.detected ok                          # platform already configured
-bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.detected fail credentials_missing    # not configured — continue into the flow
-bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.detected fail invalid_app_id         # wrong or unknown App ID — stop and re-ask
-bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.detected fail unknown probe_unavailable  # the check cannot run (item 7)
+bash <plugin>/scripts/checkpoint.sh credentials.detected ok                          # platform already configured
+bash <plugin>/scripts/checkpoint.sh credentials.detected fail credentials_missing    # not configured — continue into the flow
+bash <plugin>/scripts/checkpoint.sh credentials.detected fail invalid_app_id         # wrong or unknown App ID — stop and re-ask
+bash <plugin>/scripts/checkpoint.sh credentials.detected fail unknown probe_unavailable  # the check cannot run (item 7)
 ```
 
 ## The API-upload mechanism (shared by Apple .p8 and Firebase)
@@ -126,12 +128,12 @@ Both agent-uploadable credentials go to the **write-once provisioning endpoint**
 **Report which path resolved** — one checkpoint on **every** run of this skill, not only when the no-key ladder above ran (telemetry contract rules apply, consent included; meanings in [../../references/telemetry-contract.md](../../references/telemetry-contract.md) → "The auth choice"). Fire it when the path is **confirmed, not merely chosen**: `mcp_oauth` counts after the App-ID precondition passes; `api_key_env` and `api_key_link` count after the first read with that key succeeds; `dashboard_manual` counts when the user picks the walkthrough. Run exactly one of these literal lines:
 
 ```bash
-bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.auth_resolved ok mcp_oauth
-bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.auth_resolved ok_after_fix mcp_oauth
-bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.auth_resolved ok api_key_env
-bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.auth_resolved ok_after_fix api_key_link
-bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.auth_resolved ok dashboard_manual
-bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.auth_resolved fail auth_declined
+bash <plugin>/scripts/checkpoint.sh credentials.auth_resolved ok mcp_oauth
+bash <plugin>/scripts/checkpoint.sh credentials.auth_resolved ok_after_fix mcp_oauth
+bash <plugin>/scripts/checkpoint.sh credentials.auth_resolved ok api_key_env
+bash <plugin>/scripts/checkpoint.sh credentials.auth_resolved ok_after_fix api_key_link
+bash <plugin>/scripts/checkpoint.sh credentials.auth_resolved ok dashboard_manual
+bash <plugin>/scripts/checkpoint.sh credentials.auth_resolved fail auth_declined
 ```
 
 Read the "Credential provisioning" section of [../../references/api-reference.md](../../references/api-reference.md) — it is the contract — then apply these rules:
@@ -200,9 +202,9 @@ The apps API validates credentials at upload time, so the API response *is* the 
 - Terminal failure → `fail <class>`: `already_configured` (definite 409), `endpoint_flag_off` (404 — the dashboard fallback continues, but the API upload is over), `network_blocked`, or the mapped class the user could not resolve. Anything else is `fail unknown <slug>` (a short noun-and-state slug; no path, project name, or version).
 
 ```bash
-bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.uploaded ok
-bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.uploaded ok_after_fix apns_propagation
-bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.uploaded fail already_configured
+bash <plugin>/scripts/checkpoint.sh credentials.uploaded ok
+bash <plugin>/scripts/checkpoint.sh credentials.uploaded ok_after_fix apns_propagation
+bash <plugin>/scripts/checkpoint.sh credentials.uploaded fail already_configured
 ```
 
 ## gitignore check for secret files
@@ -228,8 +230,8 @@ Do not auto-commit. Offer the commands; the user runs them.
 **Checkpoint — close the skill** (telemetry contract rules apply, consent included): at wrap-up, report completion and flush — a direct credentials run may be the session's last skill, and the flush gives re-buffered events their final attempt. The row fires for every wrap-up, after an upload and for guide-only channels that stop on a propagation wait. A run that stops at a terminal failure sends its `fail` row at the failing step and no `credentials.complete` row (safety contract §13).
 
 ```bash
-bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh credentials.complete ok
-bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh flush
+bash <plugin>/scripts/checkpoint.sh credentials.complete ok
+bash <plugin>/scripts/checkpoint.sh flush
 ```
 
 Then keep the funnel moving (`setup → credentials → verify`): once a push credential is uploaded and validated, **continue straight into the `verify` skill** — announce it in one line, don't ask "want me to continue?". If the SDK isn't installed yet, continue into **setup** instead. Guide-only channels with a propagation wait (email DNS, SMS review) are the exception: stop there and tell the user when to re-check.

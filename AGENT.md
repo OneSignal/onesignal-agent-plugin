@@ -52,6 +52,11 @@ Do not break these without a decision from the team:
 - **Relative links stay inside the plugin directory.** Claude Code copies the plugin into a
   cache on install. A skill link such as `../../references/api-reference.md` must resolve after
   the copy. Never link outside the repository root.
+- **Script paths in skills use the `<plugin>` placeholder.** Every skill defines `<plugin>`
+  as the directory two levels above its `SKILL.md`, and commands read
+  `bash <plugin>/scripts/checkpoint.sh ...`. Never build a path from a host environment
+  variable such as `${CLAUDE_PLUGIN_ROOT}`: Claude Code substitutes it in skill text, but
+  Codex and other agents read the skill text verbatim and the path breaks.
 - **Secrets never enter the repository.** No REST API keys, org keys, `.p8` contents, or
   service-account JSON in any file or example. The App ID is public and can appear in examples.
 - **`checkpoint.sh` owns the run ID.** Skills never read, write, or reset `.onesignal/run_id`.
@@ -65,6 +70,8 @@ the real agent against fixture apps. For local checks:
 2. JSON files: `python3 -m json.tool` on `.claude-plugin/plugin.json`,
    `.claude-plugin/marketplace.json`, and `.mcp.json`.
 3. Skill links: confirm every relative link in a changed `SKILL.md` resolves to a file.
+   Then run the portability check; it must print nothing:
+   `grep -rn 'CLAUDE_PLUGIN_ROOT\|PLUGIN_ROOT}\|/Users/\|/home/' skills/ references/ --include='*.md'`
 4. iOS templates: run `scripts/compile_check_ios.sh` when a file under
    `skills/setup/assets/ios/` changes.
 5. Behavior changes: load the plugin with `claude --plugin-dir .` and run the changed skill
