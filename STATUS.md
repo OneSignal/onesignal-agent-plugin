@@ -42,7 +42,7 @@ nothing persistent. Full install options (marketplace, MCP, Cursor) are in the R
   (Capacitor) gates that reject fabricated call shapes.
 - **Credentials work today** via the current app-key API path (Apple `.p8`,
   Firebase FCM v1 JSON uploaded for you; console steps guided).
-- **MCP credential provisioning (Phase 1, shipped).** The OneSignal MCP exposes
+- **MCP credential provisioning (write-once, shipped).** The OneSignal MCP exposes
   `provision_app_credentials` for APNs, FCM, and web, and the credentials
   endpoint accepts OAuth bearer tokens alongside app/org keys (additive,
   flag-gated per app). The
