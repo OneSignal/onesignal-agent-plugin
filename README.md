@@ -132,19 +132,18 @@ plugin, then add + install it.
    /reload-plugins
    ```
 
-### Option C — install from a hosted marketplace (for teams / distribution)
+### Option C — install from the GitHub repository (persistent)
 
-If this plugin is published to a git-hosted marketplace, add it by `owner/repo` or git URL and install
-the same way:
+This repository is its own marketplace (`.claude-plugin/marketplace.json`, name `onesignal`). Add it
+by `owner/repo` and install, inside Claude Code:
 
 ```text
-/plugin marketplace add <owner>/<repo>
-/plugin install onesignal@<marketplace-name>
+/plugin marketplace add OneSignal/onesignal-agent-plugin
+/plugin install onesignal@onesignal
 ```
 
-> **Unverified for this repo:** the exact `owner/repo` / marketplace name depends on where OneSignal
-> publishes this plugin. Substitute the real values from the OneSignal distribution channel; the
-> command *shape* above is from the official docs and is correct.
+Pick an install scope when prompted, then run `/reload-plugins`. To update later, run
+`/plugin marketplace update onesignal` then `/reload-plugins`.
 
 ### After install
 

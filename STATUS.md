@@ -53,37 +53,16 @@ nothing persistent. Full install options (marketplace, MCP, Cursor) are in the R
   discipline took Android + Expo gating from 0–67% up to 67–100%, and a
   companion-package fabrication bug we caught took Expo from 67% → 100%.
 
-## What's in flight (planned or spiked — NOT built yet)
+## What's not built
 
-Be precise about these when you share — they're direction, not features:
+The roadmap and the open decisions live in the internal project tracker, not in this
+repository. Two limits are worth stating here because the skills work around them:
 
-- **"We prove push arrives" as a *measured* metric.** The `verify` skill already
+- **Confirmed delivery is a guided flow, not a measured metric.** The `verify` skill
   walks the full closed loop (build → subscription → identity → real send →
-  server-confirmed delivery) as a *guided* flow needing a device + a human tap.
-  Turning that into a headless, eval-measured **confirmed-delivery rate** is
-  **spiked, not built** — the spike doc lives in the internal eval repo.
-  This is the intended differentiator.
-- **MCP credential provisioning — remaining phases.** Phase 1 shipped (see
-  "What's real today"). **Not** built yet: create-or-update/replace semantics and
-  the OAuth-only lockdown (later server-side phases), after which app-key support
-  is retired. Until then provisioning stays write-once, and app-key remains the
-  default auth mode.
-- **Flutter template + `flutter analyze` eval gate** — blocked on installing the
-  Flutter SDK.
-- **Cursor / Codex adapters and non-optional hooks** (verify + secret-scan) —
-  identified, not started.
-- **`npx` CLI** — blocked on the model-ownership decision (see Open decisions below).
-
-## Where it's going (roadmap, in leverage order)
-
-1. **Close the delivery loop** — make confirmed-delivery a real eval metric (the
-   spike above is step one). Highest leverage; it's the thing competitors don't do.
-2. **Finish the OAuth credential path** — Phase 1 (the MCP tool + OAuth
-   acceptance) shipped; what remains is replace/create-or-update semantics and
-   the OAuth-only lockdown (later server-side phases), then retiring app-key
-   support.
-3. **Regenerate reference docs from source** — kill doc rot while keeping the
-   exact-string fidelity embedded docs give us.
+  server-confirmed delivery), but it needs a device and a human tap.
+- **MCP credential provisioning is write-once.** Create-or-update semantics are not
+  built. App-key remains the default auth mode.
 
 ## How it's proven
 
@@ -93,12 +72,6 @@ deterministic structural checks, and LLM judges — with the compile/type gates
 kept as the load-bearing signal because judges are noisy at low trial counts. The
 guiding principle throughout: a check that can't fail on wrong input is worse than
 no check, so every gate ships with a negative control.
-
-## Open decisions (need a human, not code)
-
-Model ownership for a standalone CLI; whether to invest in deterministic iOS
-*native* (pbxproj) work; adopting confirmed-delivery as the north-star metric; and
-a couple of eval-hygiene calls.
 
 ## Repos
 
