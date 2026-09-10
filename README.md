@@ -212,24 +212,27 @@ Notes, per OneSignal's MCP docs (the
 
 ## Install in Codex
 
-> Needs Codex CLI 0.146 or newer (the `codex plugin` command must exist). The Codex IDE extension does
-> not load plugins; use the CLI or Codex in the ChatGPT desktop app. Commands below follow the
-> [OpenAI plugin docs](https://developers.openai.com/plugins/build/plugins).
+> Needs a recent Codex CLI (the `codex plugin` command must exist; run `codex --version` and update Codex
+> if it is missing). The Codex IDE extension does not load plugins; use the CLI or Codex in the ChatGPT
+> desktop app. Commands below follow the [OpenAI plugin docs](https://developers.openai.com/plugins/build/plugins).
 
-Codex reads the same plugin files as Claude Code. Pick one of 2 install paths:
+Codex installs from the same repository and runs the same skills. Pick one of 2 install paths:
 
 | Path | Best for | Update model |
 |------|----------|--------------|
-| **A. Plugin directory** | Most users | OpenAI reviews each release. The directory can lag this repository by a version. |
-| **B. GitHub repository** | The newest build | Tracks `main`. No review step. |
+| **A. Plugin directory** | Most users, once the listing is live | OpenAI reviews each release. The directory can lag this repository by a version. |
+| **B. GitHub repository** | The newest build, and the only path until the listing is live | Tracks `main`. No review step. |
 
 ### Option A — install from the plugin directory (reviewed release)
+
+> The OneSignal plugin directory listing follows the repository release. Until OneSignal publishes the
+> listing, this command reports that the plugin was not found; use Option B instead.
 
 ```bash
 codex plugin add onesignal@openai-curated
 ```
 
-You can also run `codex`, type `/plugins`, open the **OpenAI** tab, and install **OneSignal** there. In the
+You can also run `codex`, type `/plugins`, and install **OneSignal** from the OpenAI directory tab. In the
 ChatGPT desktop app, open **Plugins**, search for OneSignal, and select the plus button.
 
 ### Option B — install from the GitHub repository (newest build)
@@ -250,11 +253,11 @@ codex plugin add onesignal@onesignal
 
 ### After install
 
-- Start a new `codex` session. Codex loads plugin skills at session start.
-- Describe what you want ("set up OneSignal in this app"), or type `$` and pick a skill from the list.
+- Start a new `codex` session so the plugin's skills are available.
+- Describe what you want ("set up OneSignal in this app"); Codex picks the matching skill.
 - The plugin registers the OneSignal MCP server from `.mcp.json`. Sign in once with
-  `codex mcp login onesignal`, or accept the prompt the first time a skill needs the server. The browser
-  opens OneSignal's sign-in page; there is no App ID or key to paste.
+  `codex mcp login onesignal`. The browser opens OneSignal's sign-in page; there is no App ID or key to
+  paste. `codex mcp list` shows the server's login state.
 - The Python 3 prerequisite above applies in Codex too.
 
 ---
