@@ -210,6 +210,55 @@ Notes, per OneSignal's MCP docs (the
 
 ---
 
+## Install in Codex
+
+> Needs Codex CLI 0.146 or newer (the `codex plugin` command must exist). The Codex IDE extension does
+> not load plugins; use the CLI or Codex in the ChatGPT desktop app. Commands below follow the
+> [OpenAI plugin docs](https://developers.openai.com/plugins/build/plugins).
+
+Codex reads the same plugin files as Claude Code. Pick one of 2 install paths:
+
+| Path | Best for | Update model |
+|------|----------|--------------|
+| **A. Plugin directory** | Most users | OpenAI reviews each release. The directory can lag this repository by a version. |
+| **B. GitHub repository** | The newest build | Tracks `main`. No review step. |
+
+### Option A — install from the plugin directory (reviewed release)
+
+```bash
+codex plugin add onesignal@openai-curated
+```
+
+You can also run `codex`, type `/plugins`, open the **OpenAI** tab, and install **OneSignal** there. In the
+ChatGPT desktop app, open **Plugins**, search for OneSignal, and select the plus button.
+
+### Option B — install from the GitHub repository (newest build)
+
+This repository is its own marketplace. Register it once, then install the plugin from it:
+
+```bash
+codex plugin marketplace add OneSignal/onesignal-agent-plugin
+codex plugin add onesignal@onesignal
+```
+
+To update later, refresh the marketplace snapshot and install again:
+
+```bash
+codex plugin marketplace upgrade onesignal
+codex plugin add onesignal@onesignal
+```
+
+### After install
+
+- Start a new `codex` session. Codex loads plugin skills at session start.
+- Describe what you want ("set up OneSignal in this app"), or type `$` and pick a skill from the list.
+- The plugin registers the OneSignal MCP server from `.mcp.json`. Sign in once with
+  `codex mcp login onesignal`, or accept the prompt the first time a skill needs the server. The browser
+  opens OneSignal's sign-in page; there is no App ID or key to paste.
+- The Python 3 prerequisite above applies in Codex too.
+
+---
+
 ## Using this with Cursor (and other non–Claude-Code tools)
 
 **Cursor does not support Claude Code plugins.** There is no `/plugin` mechanism and no automatic skill
@@ -242,8 +291,8 @@ loading in Cursor. Be aware of what this plugin can and can't do there:
   triggering, and the plugin's `.mcp.json` auto-connecting. Those are Claude Code features. In Cursor you
   drive the skills manually by supplying them as context.
 
-No false promises: outside Claude Code this is "high-quality playbooks + an MCP connection you wire
-yourself," not a one-click plugin.
+No false promises: outside Claude Code and Codex this is "high-quality playbooks + an MCP connection you
+wire yourself," not a one-click plugin.
 
 ---
 
