@@ -16,7 +16,7 @@ App-scoped tokens can be created/rotated/revoked: `POST/PATCH/DELETE /api/v1/app
 
 **`POST /api/v1/apps/{app_id}/credentials`** — THE path for agent-driven credential setup. Verified against the implementation.
 
-- **Auth: app-key-class** (`Authorization: Key <key>`): the setup token from the onboarding prompt (env `ONESIGNAL_SETUP_TOKEN`) or the app's REST API key (env `ONESIGNAL_REST_API_KEY`). Org keys also work but are never needed here.
+- **Auth: app-key-class** (`Authorization: Key <key>`): the app's REST API key (env `ONESIGNAL_REST_API_KEY`) or the setup token from the onboarding prompt (env `ONESIGNAL_SETUP_TOKEN`). Org keys also work but are never needed here.
 - **Write-once per platform**: sets credentials only for a platform with nothing configured. An app with iOS configured can still provision FCM and web. Replacement/rotation is NOT possible through this endpoint — that stays dashboard (Settings > Push Platforms) or org-key update.
 - **Payloads** (all values must be strings — non-string params get a 400):
   FCM: `fcm_v1_service_account_json` (base64 of the JSON file; legacy `gcm_key` not accepted).

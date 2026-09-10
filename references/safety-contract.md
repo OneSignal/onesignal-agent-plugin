@@ -21,9 +21,9 @@ Any skill that reads or writes the user's repository MUST follow all of this. It
 - `git push` (any form), force-push, rebase/amend/reset --hard, `git clean`, branch deletion, `git add -A`.
 - `rm -rf` or any recursive delete; truncating files; editing global machine config.
 - Writing the REST API key or org key into ANY client code or committed file. Keys live in env vars; write `.env` (gitignored — verify) + `.env.example` with empty placeholder. Scan your own diff for secret-shaped strings before finishing; abort if found. (App ID is public — committing it in client init code is fine.)
-- Asking the user to paste secrets (.p8 contents, service-account JSON, REST keys) into chat. Reference file paths and env vars instead. (The setup key that arrives *with the invocation* is by design — see below.)
+- Asking the user to paste secrets (.p8 contents, service-account JSON, REST keys) into chat. Reference file paths and env vars instead. (The setup key that can arrive *with the invocation* is by design — see below.)
 
-## The setup key — arrives with the invocation, by design
+## The setup key — can arrive with the invocation, by design
 
 The onboarding flow can deliver the app-scoped key inside the invocation (`/onesignal:setup app=<APP_ID> token=<key>`) — an app-scoped, revocable credential meant exactly for this. The argument is optional; skills never ask for it. When it arrives, handling is simple:
 
