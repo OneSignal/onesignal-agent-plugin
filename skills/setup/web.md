@@ -1,6 +1,6 @@
 # Web integration (OneSignal Web Push SDK v16)
 
-Reference for the `setup` skill. Follow [SKILL.md](SKILL.md) Steps 0–8; this file is the Web install detail. There is no upstream sdk-ai-prompts flow for web — this is authored from the platform-matrix and the verified official docs (`web-push-custom-code-setup`, `onesignal-service-worker`) plus the OneSignal-Website-SDK repo. Do not contradict [../../references/platform-matrix.md](../../references/platform-matrix.md).
+Reference for the `setup` skill. Follow [SKILL.md](SKILL.md) Steps 0–8; this file is the Web install detail. `<plugin>` in the commands below is the plugin root as SKILL.md defines it: the directory two levels above this file. There is no upstream sdk-ai-prompts flow for web — this is authored from the platform-matrix and the verified official docs (`web-push-custom-code-setup`, `onesignal-service-worker`) plus the OneSignal-Website-SDK repo. Do not contradict [../../references/platform-matrix.md](../../references/platform-matrix.md).
 
 ## What the agent does vs. the human (matrix)
 
