@@ -13,8 +13,9 @@ Two audiences read this repository:
 - **Customers' agents** run the skills against customer repositories.
 - **The OneSignal Engineering team** edits the skills, scripts, and references.
 
-`README.md` is the customer-facing document. `STATUS.md` is the team-facing orientation
-document. Keep both current when your change affects what they describe.
+`README.md` is the customer-facing document. Keep it current when your change affects what
+it describes. Roadmap and planning notes live in the internal project tracker, not in this
+repository.
 
 ## Repository layout
 
@@ -25,6 +26,9 @@ document. Keep both current when your change affects what they describe.
 | `references/` | Shared contracts and verified facts. Skills link to them with relative paths. |
 | `scripts/` | Deterministic helpers: version resolution, platform detection, secret scan, structural verification, checkpoint transport. |
 | `.claude-plugin/plugin.json` | Plugin manifest. The `version` field controls when Claude Code pulls updates. |
+| `.claude-plugin/marketplace.json` | Marketplace catalog. This repository is its own marketplace, named `onesignal`. |
+| `.codex-plugin/plugin.json` | Codex manifest. The `interface` block holds the listing copy, legal URLs, and brand assets. |
+| `assets/` | Brand assets for the listings. The files come from the official OneSignal media kit. |
 | `.mcp.json` | Declares the hosted OneSignal MCP endpoint. |
 | `endpoint.conf` | The checkpoint ingestion endpoint. The comment block in the file explains the path. |
 
@@ -44,7 +48,10 @@ Do not break these without a decision from the team:
 
 - **API ground truth lives in `references/api-reference.md`.** If an endpoint or parameter is
   not verified there, the skill must say "verify against docs" instead of asserting it.
-- **Scripts are Python 3, stdlib only.** No pip installs. Two scripts are bash:
+- **Scripts are Python 3.7+, stdlib only.** No pip installs. The floor comes from
+  `subprocess.run(capture_output=True)` in `scripts/scan_secrets.py`; if you add a construct
+  that needs a newer Python, raise the floor here, in the setup preflight, and in the README
+  together. Two scripts are bash:
   `scripts/checkpoint.sh` and `scripts/compile_check_ios.sh` (the compile gate for the iOS
   templates — do not rewrite it in another language).
 - **Version pins are exact.** Skills and templates never emit a version range.
@@ -52,6 +59,11 @@ Do not break these without a decision from the team:
 - **Relative links stay inside the plugin directory.** Claude Code copies the plugin into a
   cache on install. A skill link such as `../../references/api-reference.md` must resolve after
   the copy. Never link outside the repository root.
+- **Script paths in skills use the `<plugin>` placeholder.** Every skill defines `<plugin>`
+  as the directory two levels above its `SKILL.md`, and commands read
+  `bash <plugin>/scripts/checkpoint.sh ...`. Never build a path from a host environment
+  variable such as `${CLAUDE_PLUGIN_ROOT}`: Claude Code substitutes it in skill text, but
+  Codex and other agents read the skill text verbatim and the path breaks.
 - **Secrets never enter the repository.** No REST API keys, org keys, `.p8` contents, or
   service-account JSON in any file or example. The App ID is public and can appear in examples.
 - **`checkpoint.sh` owns the run ID.** Skills never read, write, or reset `.onesignal/run_id`.
@@ -65,6 +77,8 @@ the real agent against fixture apps. For local checks:
 2. JSON files: `python3 -m json.tool` on `.claude-plugin/plugin.json`,
    `.claude-plugin/marketplace.json`, and `.mcp.json`.
 3. Skill links: confirm every relative link in a changed `SKILL.md` resolves to a file.
+   Then run the portability check; it must print nothing:
+   `grep -rn 'CLAUDE_PLUGIN_ROOT\|PLUGIN_ROOT}\|/Users/\|/home/' skills/ references/ --include='*.md'`
 4. iOS templates: run `scripts/compile_check_ios.sh` when a file under
    `skills/setup/assets/ios/` changes.
 5. Behavior changes: load the plugin with `claude --plugin-dir .` and run the changed skill

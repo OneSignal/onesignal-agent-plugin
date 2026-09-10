@@ -20,8 +20,8 @@ skill directly.
 | # | Skill | Invoke as | What it does |
 |---|-------|-----------|--------------|
 | 1 | **setup** | `/onesignal:setup` | Detects your platform/framework, installs and initializes the OneSignal SDK, and adds a debug-only verification helper. The entry point for "add push notifications" / "integrate OneSignal". |
-| 2 | **credentials** | `/onesignal:credentials` | Walks you through the human-only console steps to procure push credentials (Apple APNs `.p8`, Firebase FCM v1 service-account JSON, web Site URL / Safari certs, email SPF/DKIM/DMARC, SMS sender), then uploads the API-uploadable ones for you. |
-| 3 | **verify** | `/onesignal:verify` | Confirms a real message is actually **delivered** to an identified subscriber — the true "activated" milestone — not just that code compiles. |
+| 2 | **credentials** | `/onesignal:credentials` | Walks you through the human-only console steps to procure push credentials (Apple APNs `.p8`, Firebase FCM v1 service-account JSON, web Site URL / Safari certs, email SPF/DKIM/DMARC, SMS sender), then uploads the API-uploadable ones for you. The upload sets credentials only for a platform that has none yet; you replace credentials in the dashboard. |
+| 3 | **verify** | `/onesignal:verify` | Confirms a real message is actually **delivered** to an identified subscriber — the true "activated" milestone — not just that code compiles. Needs a device or browser that can receive the test push, and a human to accept the permission prompt. |
 
 **Recommended path:** `setup → credentials → verify`. Stages chain automatically: when one completes,
 the agent announces the transition and continues into the next — no re-prompting. A confirmed
@@ -37,11 +37,12 @@ before writes.
 
 ## Prerequisites
 
-- **Python 3** on your `PATH` (`python3`). The setup/verify skills run small
+- **Python 3.7 or newer** on your `PATH` (`python3`). The setup/verify skills run small
   stdlib-only helper scripts in `scripts/` (exact version resolver, platform
   detection, structural self-check, secret scan) — no pip installs, but the
   interpreter must be present. Check with `python3 --version`; most macOS/Linux
-  dev machines already have it.
+  dev machines already have it. If it is missing, the setup skill stops at its
+  preflight and offers to continue with by-hand checks instead.
 - **A OneSignal account** — free at [onesignal.com](https://onesignal.com).
 - **An App ID.** Your app's public identifier. Find it in the dashboard under **Settings → Keys & IDs**
   (or in the dashboard URL). The App ID is public and safe to commit in client code.
@@ -132,19 +133,18 @@ plugin, then add + install it.
    /reload-plugins
    ```
 
-### Option C — install from a hosted marketplace (for teams / distribution)
+### Option C — install from the GitHub repository (persistent)
 
-If this plugin is published to a git-hosted marketplace, add it by `owner/repo` or git URL and install
-the same way:
+This repository is its own marketplace (`.claude-plugin/marketplace.json`, name `onesignal`). Add it
+by `owner/repo` and install, inside Claude Code:
 
 ```text
-/plugin marketplace add <owner>/<repo>
-/plugin install onesignal@<marketplace-name>
+/plugin marketplace add OneSignal/onesignal-agent-plugin
+/plugin install onesignal@onesignal
 ```
 
-> **Unverified for this repo:** the exact `owner/repo` / marketplace name depends on where OneSignal
-> publishes this plugin. Substitute the real values from the OneSignal distribution channel; the
-> command *shape* above is from the official docs and is correct.
+Pick an install scope when prompted, then run `/reload-plugins`. To update later, run
+`/plugin marketplace update onesignal` then `/reload-plugins`.
 
 ### After install
 
@@ -210,6 +210,55 @@ Notes, per OneSignal's MCP docs (the
 
 ---
 
+## Install in Codex
+
+> Needs a recent Codex CLI (the `codex plugin` command must exist; run `codex --version` and update Codex
+> if it is missing). The Codex IDE extension does not load plugins; use the CLI or Codex in the ChatGPT
+> desktop app. Commands below follow the [OpenAI plugin docs](https://developers.openai.com/plugins/build/plugins).
+
+Codex installs from the same repository and runs the same skills. Pick one of 2 install paths:
+
+| Path | Best for | Update model |
+|------|----------|--------------|
+| **A. Plugin directory** | Most users | OpenAI reviews each release. The directory can lag this repository by a version. |
+| **B. GitHub repository** | The newest build | Tracks `main`. No review step. |
+
+### Option A — install from the plugin directory (reviewed release)
+
+```bash
+codex plugin add onesignal@openai-curated
+```
+
+You can also run `codex`, type `/plugins`, and install **OneSignal** from the OpenAI directory tab. In the
+ChatGPT desktop app, open **Plugins**, search for OneSignal, and select the plus button.
+
+### Option B — install from the GitHub repository (newest build)
+
+This repository is its own marketplace. Register it once, then install the plugin from it:
+
+```bash
+codex plugin marketplace add OneSignal/onesignal-agent-plugin
+codex plugin add onesignal@onesignal
+```
+
+To update later, refresh the marketplace snapshot and install again:
+
+```bash
+codex plugin marketplace upgrade onesignal
+codex plugin add onesignal@onesignal
+```
+
+### After install
+
+- Start a new `codex` session so the plugin's skills are available.
+- Describe what you want ("set up OneSignal in this app"); Codex picks the matching skill.
+- The plugin registers the OneSignal MCP server from `.mcp.json`. Sign in once with
+  `codex mcp login onesignal`. The browser opens OneSignal's sign-in page; there is no App ID or key to
+  paste. `codex mcp list` shows the server's login state.
+- The Python 3 prerequisite above applies in Codex too.
+
+---
+
 ## Using this with Cursor (and other non–Claude-Code tools)
 
 **Cursor does not support Claude Code plugins.** There is no `/plugin` mechanism and no automatic skill
@@ -242,8 +291,8 @@ loading in Cursor. Be aware of what this plugin can and can't do there:
   triggering, and the plugin's `.mcp.json` auto-connecting. Those are Claude Code features. In Cursor you
   drive the skills manually by supplying them as context.
 
-No false promises: outside Claude Code this is "high-quality playbooks + an MCP connection you wire
-yourself," not a one-click plugin.
+No false promises: outside Claude Code and Codex this is "high-quality playbooks + an MCP connection you
+wire yourself," not a one-click plugin.
 
 ---
 

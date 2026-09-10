@@ -1,6 +1,7 @@
 {
   "name": "onesignal",
-  "owner": { "name": "OneSignal" },
+  "description": "OneSignal onboarding skills for coding agents: install the OneSignal SDK, provision push credentials, and send a test notification to your device.",
+  "owner": { "name": "OneSignal", "url": "https://onesignal.com" },
   "plugins": [
     {
       "name": "onesignal",

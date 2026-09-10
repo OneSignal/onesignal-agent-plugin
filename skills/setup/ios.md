@@ -1,6 +1,6 @@
 # iOS native integration (OneSignal iOS SDK 5.x)
 
-Reference for the `setup` skill. Follow [SKILL.md](SKILL.md) Steps 0–8; this file is the iOS install detail. Mirrors `sdk-ai-prompts/docs/ios/integrate.md`. Do not contradict [../../references/platform-matrix.md](../../references/platform-matrix.md).
+Reference for the `setup` skill. Follow [SKILL.md](SKILL.md) Steps 0–8; this file is the iOS install detail. `<plugin>` in the commands below is the plugin root as SKILL.md defines it: the directory two levels above this file. Mirrors `sdk-ai-prompts/docs/ios/integrate.md`. Do not contradict [../../references/platform-matrix.md](../../references/platform-matrix.md).
 
 ## What the agent does vs. the human (matrix)
 
@@ -19,8 +19,8 @@ A Notification Service Extension is only needed for rich media, confirmed delive
 Detect the existing manager: `Podfile`/`Podfile.lock` → CocoaPods; `Package.swift`/`Package.resolved` or an SPM project → SPM. Match it; don't introduce a second package manager. Resolve the exact version with the script — do not read the feed by hand and do not use a range (on SPM that means an **exact-version** rule, never `upToNextMajorVersion` / `from:`):
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/resolve_sdk_version.py ios --format json   # for the version
-${CLAUDE_PLUGIN_ROOT}/scripts/resolve_sdk_version.py ios --format line --line-format podfile   # Podfile line
+<plugin>/scripts/resolve_sdk_version.py ios --format json   # for the version
+<plugin>/scripts/resolve_sdk_version.py ios --format line --line-format podfile   # Podfile line
 ```
 
 **Swift Package Manager** (smaller XCFramework download — matrix): add package `https://github.com/OneSignal/OneSignal-XCFramework` with an **Exact Version** rule set to the resolver's `version`, and add the **`OneSignalFramework`** library product to the app target (add `OneSignalInAppMessages` / `OneSignalLocation` only if those features are wanted). SPM add is partly GUI — if you cannot edit the pbxproj package references safely, give the human the exact File ▸ Add Packages steps.
