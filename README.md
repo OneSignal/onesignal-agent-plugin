@@ -220,13 +220,10 @@ Codex installs from the same repository and runs the same skills. Pick one of 2 
 
 | Path | Best for | Update model |
 |------|----------|--------------|
-| **A. Plugin directory** | Most users, once the listing is live | OpenAI reviews each release. The directory can lag this repository by a version. |
-| **B. GitHub repository** | The newest build, and the only path until the listing is live | Tracks `main`. No review step. |
+| **A. Plugin directory** | Most users | OpenAI reviews each release. The directory can lag this repository by a version. |
+| **B. GitHub repository** | The newest build | Tracks `main`. No review step. |
 
 ### Option A — install from the plugin directory (reviewed release)
-
-> The OneSignal plugin directory listing follows the repository release. Until OneSignal publishes the
-> listing, this command reports that the plugin was not found; use Option B instead.
 
 ```bash
 codex plugin add onesignal@openai-curated
