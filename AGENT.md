@@ -109,8 +109,9 @@ script changes, and adds `claude plugin validate` and a Python 3.7 pass. Branch 
 5. iOS templates: run `scripts/compile_check_ios.sh` when a file under
    `skills/setup/assets/ios/` changes.
 6. Behavior changes: load the plugin with `claude --plugin-dir .` and run the changed skill
-   against a scratch project. For Cursor, symlink the checkout into
-   `~/.cursor/plugins/local/` and reload the window.
+   against a scratch project. For Cursor, copy the checkout into
+   `~/.cursor/plugins/local/<name>/` with `rsync` (a symlink is rejected) and check the
+   "Cursor Plugins" output log for the load result.
 7. Behavior evals: when `checkpoint.sh` changes, run the checkpoint regression suite from
    the evals repository. When a skill, reference, script, or template changes, run the
    scenarios that cover the change, as the evals repository describes. Point the checkpoint
