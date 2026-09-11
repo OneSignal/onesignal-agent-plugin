@@ -259,40 +259,64 @@ codex plugin add onesignal@onesignal
 
 ---
 
-## Using this with Cursor (and other non–Claude-Code tools)
+## Install in Cursor
 
-**Cursor does not support Claude Code plugins.** There is no `/plugin` mechanism and no automatic skill
-loading in Cursor. Be aware of what this plugin can and can't do there:
+> Needs a Cursor version with plugin support (the **Customize** page lists plugins). Commands below
+> follow the [Cursor plugin docs](https://cursor.com/docs/plugins).
 
-- **Skills as context (works):** The skills in `skills/<name>/SKILL.md` and the shared docs in
-  `references/*.md` are plain Markdown playbooks. You can point Cursor's agent at them — attach the
-  relevant `SKILL.md` (and the `references/` files it links) as context, or paste the skill body into
-  the chat — and Cursor's model can follow the same steps. The safety contract in
-  `references/safety-contract.md` still applies; include it so the agent honors the read/write and
-  secrets rules.
-- **The OneSignal MCP (works):** Cursor *does* support MCP, and OneSignal has an official listing in
-  the [Cursor Marketplace](https://cursor.com/marketplace/onesignal). Install that plugin — it
-  configures the hosted MCP server for you — then authenticate from **Settings → MCP & Integrations**
-  (an OneSignal sign-in page opens in your browser; there is no App ID or key to paste). To wire the
-  connection by hand instead, add the endpoint to `~/.cursor/mcp.json` (all projects) or
-  `.cursor/mcp.json` (per project):
-  ```json
-  {
-    "mcpServers": {
-      "onesignal": {
-        "url": "https://api.onesignal.com/mcp/oauth"
-      }
-    }
-  }
-  ```
-  Then restart Cursor and authenticate the same way. (This mirrors OneSignal's own Cursor instructions
-  on the MCP docs page.)
-- **What won't happen automatically:** namespaced `/onesignal:*` commands, model-invoked skill
-  triggering, and the plugin's `.mcp.json` auto-connecting. Those are Claude Code features. In Cursor you
-  drive the skills manually by supplying them as context.
+Cursor reads the same skills and the same `.mcp.json` as Claude Code and Codex. The manifest for
+Cursor is `.cursor-plugin/plugin.json`. Pick one of 3 install paths:
 
-No false promises: outside Claude Code and Codex this is "high-quality playbooks + an MCP connection you
-wire yourself," not a one-click plugin.
+| Path | Best for | Status |
+|------|----------|--------|
+| **A. Cursor Marketplace** | Most users | Pending. The listing is not live yet. |
+| **B. Local plugin folder** | A try-out from a checkout | Works today. |
+| **C. Team marketplace** | Teams and Enterprise plans | Works today. |
+
+### Option A — install from the Cursor Marketplace (pending)
+
+The listing is not live yet. Until it is, use option B or C. Note that the existing
+[OneSignal listing](https://cursor.com/marketplace/onesignal) on the Cursor Marketplace is a
+different plugin: it configures the hosted MCP server only and does not include these skills.
+
+### Option B — load from a local plugin folder
+
+Cursor loads plugins from `~/.cursor/plugins/local/`. Symlink your checkout there:
+
+```bash
+mkdir -p ~/.cursor/plugins/local
+ln -s /absolute/path/to/onesignal-agent-plugin ~/.cursor/plugins/local/onesignal-sdk-onboarding
+```
+
+Then restart Cursor, or run **Developer: Reload Window**. Open **Customize** and confirm that the 3
+skills and the `onesignal` MCP server appear.
+
+On Teams and Enterprise plans, an admin must turn on **Allow Local Plugin Imports** under
+**Dashboard → Settings → Security & Identity → Marketplace and Plugins**. The setting is off by
+default on Enterprise.
+
+### Option C — add the repository as a team marketplace
+
+On Teams and Enterprise plans, an admin can import this repository as a team marketplace:
+
+1. Open **Dashboard → Plugins**.
+2. Under **Team Marketplaces**, select **Add Marketplace**, then **Import from Repo**.
+3. Enter `https://github.com/OneSignal/onesignal-agent-plugin`.
+4. Set the marketplace access and the install mode, then save.
+
+Team members then install the plugin from **Customize**.
+
+### After install
+
+- The skills appear under **Customize → Skills**. Describe what you want ("set up OneSignal in this
+  app"), or type `/` in Agent chat and pick `setup`, `credentials`, or `verify`. Cursor does not use
+  the `/onesignal:` prefix.
+- The plugin registers the OneSignal MCP server from `.mcp.json`. Sign in once from
+  **Settings → MCP & Integrations**: the browser opens OneSignal's sign-in page; there is no App ID or
+  key to paste.
+- The Python 3 prerequisite above applies in Cursor too.
+- Cloud Agents and self-hosted workers do not load plugins from `~/.cursor/plugins/local/`. Use a team
+  marketplace for those.
 
 ---
 
