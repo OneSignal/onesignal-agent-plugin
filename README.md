@@ -281,15 +281,19 @@ different plugin: it configures the hosted MCP server only and does not include 
 
 ### Option B — load from a local plugin folder
 
-Cursor loads plugins from `~/.cursor/plugins/local/`. Symlink your checkout there:
+Cursor loads plugins from `~/.cursor/plugins/local/`. Copy your checkout there:
 
 ```bash
-mkdir -p ~/.cursor/plugins/local
-ln -s /absolute/path/to/onesignal-agent-plugin ~/.cursor/plugins/local/onesignal-sdk-onboarding
+mkdir -p ~/.cursor/plugins/local/onesignal-sdk-onboarding
+rsync -a --delete --exclude .git /absolute/path/to/onesignal-agent-plugin/ ~/.cursor/plugins/local/onesignal-sdk-onboarding/
 ```
 
-Then restart Cursor, or run **Developer: Reload Window**. Open **Customize** and confirm that the 3
-skills and the `onesignal` MCP server appear.
+Do not use a symlink. Cursor 3.19 rejects a symlink whose target is outside `~/.cursor/plugins/local/`
+(the "Cursor Plugins" output log shows `rejected: symlink target ... is outside`). Run the `rsync`
+command again after each change to the checkout.
+
+Cursor picks up the folder within a few seconds. If it does not, run **Developer: Reload Window**.
+Open **Customize** and confirm that the 3 skills and the `onesignal` MCP server appear.
 
 On Teams and Enterprise plans, an admin must turn on **Allow Local Plugin Imports** under
 **Dashboard → Settings → Security & Identity → Marketplace and Plugins**. The setting is off by

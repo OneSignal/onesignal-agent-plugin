@@ -84,8 +84,9 @@ the real agent against fixture apps. For local checks:
 4. iOS templates: run `scripts/compile_check_ios.sh` when a file under
    `skills/setup/assets/ios/` changes.
 5. Behavior changes: load the plugin with `claude --plugin-dir .` and run the changed skill
-   against a scratch project. For Cursor, symlink the checkout into
-   `~/.cursor/plugins/local/` and reload the window.
+   against a scratch project. For Cursor, copy the checkout into
+   `~/.cursor/plugins/local/<name>/` with `rsync` (a symlink is rejected) and check the
+   "Cursor Plugins" output log for the load result.
 
 If a change affects setup, credentials, or verify behavior, ask for an eval run before merge.
 Do not trust a skill edit on read-through alone.
