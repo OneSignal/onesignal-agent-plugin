@@ -28,6 +28,7 @@ repository.
 | `.claude-plugin/plugin.json` | Plugin manifest. The `version` field controls when Claude Code pulls updates. |
 | `.claude-plugin/marketplace.json` | Marketplace catalog. This repository is its own marketplace, named `onesignal`. |
 | `.codex-plugin/plugin.json` | Codex manifest. The `interface` block holds the listing copy, legal URLs, and brand assets. |
+| `.cursor-plugin/plugin.json` | Cursor manifest. `mcpServers` points at `.mcp.json`, because Cursor looks for `mcp.json` by default. |
 | `assets/` | Brand assets for the listings. The files come from the official OneSignal media kit. |
 | `.mcp.json` | Declares the hosted OneSignal MCP endpoint. |
 | `endpoint.conf` | The checkpoint ingestion endpoint. The comment block in the file explains the path. |
@@ -75,25 +76,29 @@ the real agent against fixture apps. For local checks:
 
 1. Python scripts: `python3 -m py_compile scripts/*.py`.
 2. JSON files: `python3 -m json.tool` on `.claude-plugin/plugin.json`,
-   `.claude-plugin/marketplace.json`, and `.mcp.json`.
+   `.claude-plugin/marketplace.json`, `.codex-plugin/plugin.json`,
+   `.cursor-plugin/plugin.json`, and `.mcp.json`.
 3. Skill links: confirm every relative link in a changed `SKILL.md` resolves to a file.
    Then run the portability check; it must print nothing:
    `grep -rn 'CLAUDE_PLUGIN_ROOT\|PLUGIN_ROOT}\|/Users/\|/home/' skills/ references/ --include='*.md'`
 4. iOS templates: run `scripts/compile_check_ios.sh` when a file under
    `skills/setup/assets/ios/` changes.
 5. Behavior changes: load the plugin with `claude --plugin-dir .` and run the changed skill
-   against a scratch project.
+   against a scratch project. For Cursor, copy the checkout into
+   `~/.cursor/plugins/local/<name>/` with `rsync` (a symlink is rejected) and check the
+   "Cursor Plugins" output log for the load result.
 
 If a change affects setup, credentials, or verify behavior, ask for an eval run before merge.
 Do not trust a skill edit on read-through alone.
 
 ## Releases
 
-The plugin version lives in 3 places. Bump all 3 together — they must never disagree:
+The plugin version lives in 4 places. Bump all 4 together — they must never disagree:
 
 - `version` in `.claude-plugin/plugin.json` — Claude Code pulls updates only when this
   field changes.
 - `version` in `.codex-plugin/plugin.json`.
+- `version` in `.cursor-plugin/plugin.json`.
 - `PLUGIN_VERSION` in `scripts/checkpoint.sh` — every checkpoint reports this value as
   `skill_version`.
 

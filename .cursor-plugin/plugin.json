@@ -1,0 +1,22 @@
+{
+  "name": "onesignal-sdk-onboarding",
+  "displayName": "OneSignal SDK onboarding",
+  "description": "OneSignal onboarding & activation skills: install and initialize the SDK, provision your app and push credentials, and verify real delivery.",
+  "version": "0.5.12",
+  "author": {
+    "name": "OneSignal"
+  },
+  "homepage": "https://documentation.onesignal.com",
+  "repository": "https://github.com/OneSignal/onesignal-agent-plugin",
+  "license": "MIT",
+  "keywords": [
+    "onesignal",
+    "push-notifications",
+    "sdk-setup",
+    "onboarding",
+    "messaging"
+  ],
+  "logo": "assets/logomark.png",
+  "skills": "skills/",
+  "mcpServers": ".mcp.json"
+}
