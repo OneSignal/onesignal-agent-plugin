@@ -1,0 +1,115 @@
+# The local checks from AGENT.md ("How to verify a change"), run on every pull request
+# and on every push to main. Branch protection requires `checks` and `python-floor`;
+# `ios-templates` is path-filtered and skips on most pull requests.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Compile the Python scripts
+        run: python3 -m py_compile scripts/*.py
+
+      - name: Parse the JSON manifests
+        run: |
+          for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json .codex-plugin/plugin.json .mcp.json; do
+            python3 -m json.tool "$f" > /dev/null || { echo "::error file=$f::invalid JSON"; exit 1; }
+          done
+
+      - name: Check that the 3 version fields agree
+        run: |
+          CLAUDE=$(python3 -c 'import json; print(json.load(open(".claude-plugin/plugin.json"))["version"])')
+          CODEX=$(python3 -c 'import json; print(json.load(open(".codex-plugin/plugin.json"))["version"])')
+          CHECKPOINT=$(sed -nE 's/^PLUGIN_VERSION="([^"]+)"/\1/p' scripts/checkpoint.sh)
+          echo "claude=$CLAUDE codex=$CODEX checkpoint=$CHECKPOINT"
+          if [ -z "$CLAUDE" ] || [ "$CLAUDE" != "$CODEX" ] || [ "$CLAUDE" != "$CHECKPOINT" ]; then
+            echo "::error::the version differs between .claude-plugin/plugin.json, .codex-plugin/plugin.json, and PLUGIN_VERSION in scripts/checkpoint.sh"
+            exit 1
+          fi
+
+      - name: Portability check on the skill text
+        run: |
+          if grep -rn 'CLAUDE_PLUGIN_ROOT\|PLUGIN_ROOT}\|/Users/\|/home/' skills/ references/ --include='*.md'; then
+            echo "::error::skill text contains a host-specific path or environment variable"
+            exit 1
+          fi
+
+      - name: Bundle gate
+        run: |
+          python3 scripts/package_directory_bundle.py --self-test
+          python3 scripts/package_directory_bundle.py --check
+
+      - name: Build the directory bundle
+        run: |
+          mkdir -p dist
+          python3 scripts/package_directory_bundle.py --zip "dist/onesignal-skills-$(python3 -c 'import json; print(json.load(open(".claude-plugin/plugin.json"))["version"])').zip"
+
+      - name: Upload the directory bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: onesignal-skills-bundle
+          path: dist/*.zip
+          if-no-files-found: error
+
+      # Pinned so a CLI release cannot turn every PR red on its own. Bump on purpose.
+      - name: Install the Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code@2.1.272
+
+      - name: Validate the plugin with the Claude Code CLI
+        run: |
+          claude plugin validate .
+          claude plugin validate .claude-plugin/plugin.json
+          claude plugin validate --strict skills
+
+  # The scripts must stay on Python 3.7 (AGENT.md invariants). setup-python offers 3.7
+  # only on ubuntu-22.04.
+  python-floor:
+    name: python-floor
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.7'
+      - name: Compile and self-test on Python 3.7
+        run: |
+          python --version
+          python -m py_compile scripts/*.py
+          python scripts/package_directory_bundle.py --self-test
+          python scripts/package_directory_bundle.py --check
+
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    outputs:
+      ios: ${{ steps.filter.outputs.ios }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            ios:
+              - 'skills/setup/assets/ios/**'
+              - 'scripts/compile_check_ios.sh'
+
+  ios-templates:
+    name: ios-templates
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Compile-check the iOS templates
+        run: bash scripts/compile_check_ios.sh

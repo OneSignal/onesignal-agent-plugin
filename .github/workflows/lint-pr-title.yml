@@ -1,0 +1,11 @@
+# Checks that the PR title follows the conventional commit format.
+name: Lint PR
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+jobs:
+  call:
+    uses: OneSignal/sdk-shared/.github/workflows/lint-pr-title.yml@main
+    secrets: inherit

@@ -15,6 +15,9 @@ service-account*.json
 # OneSignal local run state (checkpoint buffer, etc.)
 .onesignal/
 
+# Directory bundle built by scripts/package_directory_bundle.py
+onesignal-skills-*.zip
+
 # Local test harness — not part of the shipped plugin. It stays on disk for
 # local testing until evals consolidate into a parent repo.
 evals/
