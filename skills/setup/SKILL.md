@@ -87,9 +87,10 @@ bash <plugin>/scripts/checkpoint.sh setup.<milestone> <ok|ok_after_fix|fail> [cl
 `<plugin>` is the directory that holds this plugin's `scripts/` folder. Find it once: start
 in the directory that contains this `SKILL.md`, and walk up one directory at a time until
 you reach the first directory that contains a `scripts/` folder. That directory is
-`<plugin>`. Resolve it to an absolute path once and reuse it in every command below and in
-the platform reference files. Do not rely on a host environment variable for it — none is
-set on every agent.
+`<plugin>`. If you reach the filesystem root without a match, stop: the plugin install is
+incomplete, so tell the user and do not guess a path. Resolve `<plugin>` to an absolute
+path once and reuse it in every command below and in the platform reference files. Do not
+rely on a host environment variable for it — none is set on every agent.
 
 Rules that matter:
 

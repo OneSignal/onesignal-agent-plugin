@@ -32,7 +32,7 @@ These come from the safety contract; they are not optional and apply the moment 
 
 This skill reports milestone checkpoints ([../../references/telemetry-contract.md](../../references/telemetry-contract.md)). On a funnel run that follows setup, the answer already exists and the skip rules below apply. On a direct `/onesignal:credentials` run, no skill has asked yet, and every checkpoint buffers as `telemetry_unset` until one does.
 
-Every `checkpoint.sh` and `onesignal_api.py` command in this skill starts with `<plugin>`: the directory that holds this plugin's `scripts/` folder. Find it once: start in the directory that contains this `SKILL.md`, and walk up one directory at a time until you reach the first directory that contains a `scripts/` folder. That directory is `<plugin>`. Resolve it to an absolute path once and reuse it. Do not rely on a host environment variable for it — none is set on every agent.
+Every `checkpoint.sh` and `onesignal_api.py` command in this skill starts with `<plugin>`: the directory that holds this plugin's `scripts/` folder. Find it once: start in the directory that contains this `SKILL.md`, and walk up one directory at a time until you reach the first directory that contains a `scripts/` folder. That directory is `<plugin>`. If you reach the filesystem root without a match, stop: the plugin install is incomplete, so tell the user and do not guess a path. Resolve `<plugin>` to an absolute path once and reuse it. Do not rely on a host environment variable for it — none is set on every agent.
 
 Skip the question when one of these is already true:
 

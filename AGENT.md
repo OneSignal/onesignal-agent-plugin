@@ -61,7 +61,8 @@ Do not break these without a decision from the team:
   the copy. Never link outside the repository root.
 - **Script paths in skills use the `<plugin>` placeholder.** Every skill defines `<plugin>`
   with the same walk-up rule: start in the directory that contains the `SKILL.md`, and walk
-  up to the first directory that contains a `scripts/` folder. Commands read
+  up to the first directory that contains a `scripts/` folder, and stop at the filesystem
+  root if there is none. Commands read
   `bash <plugin>/scripts/checkpoint.sh ...`. The rule holds in this repository tree, where
   it resolves to the repository root, and in the self-contained bundle for the OpenAI
   directory, where each skill folder carries its own `scripts/`. Never build a path from a
