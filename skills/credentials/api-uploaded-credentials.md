@@ -105,7 +105,7 @@ The upstream OneSignal ai-install-prompt that asks for `google-services.json` is
 | 404 on upload | Feature flag off for this app | Fall back to the dashboard upload walkthrough |
 
 ### Verifying which apps still use legacy
-Per the docs, the View apps API (`GET /api/v1/apps/{app_id}`, the view-app read in [api-reference.md](../../references/api-reference.md)) distinguishes:
+Per the OneSignal docs, the view-app read `GET /api/v1/apps/{app_id}` distinguishes the 3 states below by the fields in its response. [api-reference.md](../../references/api-reference.md) names this call as the post-failure config check but does not list its response fields; the OneSignal API docs do.
 - `"gcm_key"` present → legacy, needs migration
 - `"fcm_v1_service_account_json"` present → on v1 (good)
 - neither → the app doesn't use Android push

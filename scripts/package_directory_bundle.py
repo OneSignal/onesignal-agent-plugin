@@ -142,12 +142,19 @@ def relpath(path, start):
 # ---------------------------------------------------------------------------
 
 def read_versions(source):
+    """Return the 3 version values; a missing or malformed file reads as None."""
     versions = {}
     for key in ("claude", "codex"):
         path = os.path.join(source, VERSION_FILES[key])
-        with open(path, encoding="utf-8") as handle:
-            versions[key] = json.load(handle).get("version")
-    checkpoint = read_text(os.path.join(source, VERSION_FILES["checkpoint"]))
+        try:
+            with open(path, encoding="utf-8") as handle:
+                versions[key] = json.load(handle).get("version")
+        except (OSError, ValueError, AttributeError):
+            versions[key] = None
+    try:
+        checkpoint = read_text(os.path.join(source, VERSION_FILES["checkpoint"]))
+    except OSError:
+        checkpoint = ""
     match = re.search(r'^PLUGIN_VERSION="([^"]+)"', checkpoint, re.M)
     versions["checkpoint"] = match.group(1) if match else None
     return versions
@@ -401,6 +408,27 @@ def self_test(source):
             handle.write('\nSee [the notes](does-not-exist.md "Notes").\n')
         ok = expect_failure("titled link to a missing file", bad, os.path.join(tmp, "bad-titled-link-work"),
                             "link target does-not-exist.md does not resolve inside verify/") and ok
+
+        bad = os.path.join(tmp, "bad-version-mismatch")
+        copy_source_subset(source, bad)
+        path = os.path.join(bad, VERSION_FILES["checkpoint"])
+        write_text(path, re.sub(r'^PLUGIN_VERSION="[^"]*"', 'PLUGIN_VERSION="0.0.0"', read_text(path), count=1, flags=re.M))
+        ok = expect_failure("version mismatch across the 3 files", bad, os.path.join(tmp, "bad-version-mismatch-work"),
+                            "version mismatch") and ok
+
+        bad = os.path.join(tmp, "bad-walk-up-marker")
+        copy_source_subset(source, bad)
+        path = os.path.join(bad, "skills", "setup", "SKILL.md")
+        write_text(path, read_text(path).replace("walk up", "go up"))
+        ok = expect_failure("SKILL.md without the walk-up paragraph", bad, os.path.join(tmp, "bad-walk-up-marker-work"),
+                            "the <plugin> walk-up paragraph is missing") and ok
+
+        bad = os.path.join(tmp, "bad-host-path")
+        copy_source_subset(source, bad)
+        with open(os.path.join(bad, "skills", "setup", "SKILL.md"), "a", encoding="utf-8") as handle:
+            handle.write("\nRun `bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh flush`.\n")
+        ok = expect_failure("host environment variable in skill text", bad, os.path.join(tmp, "bad-host-path-work"),
+                            "host-specific path or environment variable") and ok
     return ok
 
 
