@@ -96,7 +96,7 @@ jobs:
         run: |
           git add .claude-plugin/plugin.json .codex-plugin/plugin.json scripts/checkpoint.sh
           git diff --staged --quiet && { echo "version already at $NEW_VERSION"; exit 0; }
-          git commit -m "Release $NEW_VERSION"
+          git commit -m "chore: Release $NEW_VERSION"
           git push
 
   create_pr:

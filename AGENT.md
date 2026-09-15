@@ -161,10 +161,11 @@ tag is the bare version (`1.0.1`, no `v` prefix), the same as the other SDK repo
 The workflows in `.github/workflows/` reuse `OneSignal/sdk-shared`:
 
 1. Run **Create Release PR** (`create-release-pr.yml`) from the Actions tab. It reads the
-   merged PR titles since the latest stable GitHub Release and picks the bump (`feat:` →
+   merged PR titles since the latest stable version tag and picks the bump (`feat:` →
    minor, `fix:`/`perf:` → patch, `!:` → major), or takes a version override. It creates or
-   rebases `rel/<version>`, writes the version into the 3 files, commits `Release <version>`,
-   and opens the `chore: Release <version>` PR with release notes built from the PR titles.
+   rebases `rel/<version>`, writes the version into the 3 files, commits
+   `chore: Release <version>`, and opens the `chore: Release <version>` PR with release
+   notes built from the PR titles.
 2. Before merge, the release PR needs 2 eval runs, both recorded in the PR: one against the
    repository tree, and one against the bundle built from the same commit. The per-PR gate
    `package_directory_bundle.py --check` runs in CI without an agent and does not replace
@@ -177,13 +178,19 @@ The workflows in `.github/workflows/` reuse `OneSignal/sdk-shared`:
    every release needs a new submission.
 
 The automation needs the org secret `GH_PUSH_TOKEN` granted to this repository. Without it
-the workflows fall back to `github.token`, which cannot trigger `cd.yml` from the release
-PR it opens, and a Release it creates does not trigger `linear-deployed.yml`.
+the workflows fall back to `github.token`: `ci.yml` does not run on the release PR that
+the workflow opens, and the Release that `cd.yml` creates does not trigger
+`linear-deployed.yml`.
 
-To release by hand instead: bump the 3 files, open the PR, merge, then
+`cd.yml` runs on every merged PR whose title starts with `chore: Release `, with or without
+the token. Do not tag or create the Release by hand after such a merge; the workflow does
+both, and a tag that already exists makes it skip the Release and the zip. To release by
+hand instead, open the release PR with a different title (for example
+`chore: manual release <version>`), merge it, then run
 `git tag <version> && git push origin <version>`, create the GitHub Release from the tag,
 build the zip with `python3 scripts/package_directory_bundle.py --ref <version>`, and
-attach it.
+attach it. If only the zip step of `cd.yml` failed, build the zip the same way and attach
+it with `gh release upload <version> onesignal-skills-<version>.zip`.
 
 ## Git conventions
 
