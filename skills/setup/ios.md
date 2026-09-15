@@ -1,6 +1,6 @@
 # iOS native integration (OneSignal iOS SDK 5.x)
 
-Reference for the `setup` skill. Follow [SKILL.md](SKILL.md) Steps 0–8; this file is the iOS install detail. `<plugin>` in the commands below is the plugin root as SKILL.md defines it: the directory two levels above this file. Mirrors `sdk-ai-prompts/docs/ios/integrate.md`. Do not contradict [../../references/platform-matrix.md](../../references/platform-matrix.md).
+Reference for the `setup` skill. Follow [SKILL.md](SKILL.md) Steps 0–8; this file is the iOS install detail. `<plugin>` in the commands below is the directory SKILL.md defines: walk up from this file's directory to the first directory that contains a `scripts/` folder. Mirrors `sdk-ai-prompts/docs/ios/integrate.md`. Do not contradict [../../references/platform-matrix.md](../../references/platform-matrix.md).
 
 ## What the agent does vs. the human (matrix)
 

@@ -1,6 +1,6 @@
 # Expo integration (react-native-onesignal + onesignal-expo-plugin)
 
-Reference for the `setup` skill. Follow [SKILL.md](SKILL.md) Steps 0–8; this file is the Expo install detail. Mirrors `sdk-ai-prompts/docs/react-native-expo/integrate.md`. Do not contradict [../../references/platform-matrix.md](../../references/platform-matrix.md). Expo is the **best mobile automatability** path — the config plugin generates the NSE, entitlements, App Group, and UIBackgroundModes at prebuild, so there is **zero manual Xcode work**.
+Reference for the `setup` skill. Follow [SKILL.md](SKILL.md) Steps 0–8; this file is the Expo install detail. `<plugin>` in the commands below is the directory SKILL.md defines: walk up from this file's directory to the first directory that contains a `scripts/` folder. Mirrors `sdk-ai-prompts/docs/react-native-expo/integrate.md`. Do not contradict [../../references/platform-matrix.md](../../references/platform-matrix.md). Expo is the **best mobile automatability** path — the config plugin generates the NSE, entitlements, App Group, and UIBackgroundModes at prebuild, so there is **zero manual Xcode work**.
 
 ## Ask up front: JS or TS
 
@@ -28,7 +28,7 @@ npx expo install react-native-onesignal onesignal-expo-plugin
 ```
 Use `npx expo install` (it aligns versions to the Expo SDK). If pinning explicitly, do **not** read versions by hand and do **not** guess the plugin version — run the resolver (SKILL.md Step 2) and paste both exact pins verbatim:
 ```
-scripts/resolve_sdk_version.py expo --format json
+<plugin>/scripts/resolve_sdk_version.py expo --format json
 ```
 It emits `dependency_line` for `react-native-onesignal` **and** `companion.line` for `onesignal-expo-plugin` (resolved from the `Expo` entry in releases.json; the plugin has no `stable` channel, so the resolver falls back to `current`). Copy both lines as-is into `package.json`. Never invent a companion version — a nonexistent exact pin (e.g. `onesignal-expo-plugin@3.0.0`) passes the range check but fails `expo prebuild` with npm `ETARGET`. No ranges/carets.
 

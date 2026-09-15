@@ -60,10 +60,13 @@ Do not break these without a decision from the team:
   cache on install. A skill link such as `../../references/api-reference.md` must resolve after
   the copy. Never link outside the repository root.
 - **Script paths in skills use the `<plugin>` placeholder.** Every skill defines `<plugin>`
-  as the directory two levels above its `SKILL.md`, and commands read
-  `bash <plugin>/scripts/checkpoint.sh ...`. Never build a path from a host environment
-  variable such as `${CLAUDE_PLUGIN_ROOT}`: Claude Code substitutes it in skill text, but
-  Codex and other agents read the skill text verbatim and the path breaks.
+  with the same walk-up rule: start in the directory that contains the `SKILL.md`, and walk
+  up to the first directory that contains a `scripts/` folder. Commands read
+  `bash <plugin>/scripts/checkpoint.sh ...`. The rule holds in this repository tree, where
+  it resolves to the repository root, and in the self-contained bundle for the OpenAI
+  directory, where each skill folder carries its own `scripts/`. Never build a path from a
+  host environment variable such as `${CLAUDE_PLUGIN_ROOT}`: Claude Code substitutes it in
+  skill text, but Codex and other agents read the skill text verbatim and the path breaks.
 - **Secrets never enter the repository.** No REST API keys, org keys, `.p8` contents, or
   service-account JSON in any file or example. The App ID is public and can appear in examples.
 - **`checkpoint.sh` owns the run ID.** Skills never read, write, or reset `.onesignal/run_id`.

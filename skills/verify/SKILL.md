@@ -28,7 +28,7 @@ Per-platform build/run gates and the full troubleshooting tree live in [`platfor
 
 This skill reports milestone checkpoints ([../../references/telemetry-contract.md](../../references/telemetry-contract.md)). On a funnel run that follows setup, the answer already exists and the skip rules below apply. On a direct `/onesignal:verify` run, no skill has asked yet: every checkpoint buffers as `telemetry_unset`, and this skill's final flush is the funnel's last send — without an answer those events never leave the machine.
 
-Every `checkpoint.sh` and `onesignal_api.py` command in this skill and in [`platform-verification.md`](platform-verification.md) starts with `<plugin>`: the plugin's root, the directory that contains `references/`, `scripts/`, and `skills/`. It is the directory **two levels above this `SKILL.md`** — take the absolute path of this file and go up two directories. Resolve it once and reuse it. Do not rely on a host environment variable for it — none is set on every agent.
+Every `checkpoint.sh` and `onesignal_api.py` command in this skill and in [`platform-verification.md`](platform-verification.md) starts with `<plugin>`: the directory that holds this plugin's `scripts/` folder. Find it once: start in the directory that contains this `SKILL.md`, and walk up one directory at a time until you reach the first directory that contains a `scripts/` folder. That directory is `<plugin>`. Resolve it to an absolute path once and reuse it. Do not rely on a host environment variable for it — none is set on every agent.
 
 Skip the question when one of these is already true:
 
