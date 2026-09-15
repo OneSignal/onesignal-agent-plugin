@@ -121,7 +121,7 @@ Commands:
 python3 scripts/package_directory_bundle.py --check                 # gate only; writes nothing
 python3 scripts/package_directory_bundle.py --out /tmp/bundle       # unzipped bundle, for a local load
 python3 scripts/package_directory_bundle.py                         # onesignal-skills-<version>.zip in the cwd
-python3 scripts/package_directory_bundle.py --ref 1.0.1             # build from a tag instead of the working tree
+python3 scripts/package_directory_bundle.py --ref 1.1.0             # build from a tag instead of the working tree
 python3 scripts/package_directory_bundle.py --self-test             # gate against known-good and known-bad trees
 ```
 
