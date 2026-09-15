@@ -1,5 +1,6 @@
 # The local checks from AGENT.md ("How to verify a change"), run on every pull request
-# and on every push to main. The `checks` job is the one that branch protection requires.
+# and on every push to main. Branch protection requires `checks` and `python-floor`;
+# `ios-templates` is path-filtered and skips on most pull requests.
 name: CI
 
 on:
@@ -61,8 +62,9 @@ jobs:
           path: dist/*.zip
           if-no-files-found: error
 
+      # Pinned so a CLI release cannot turn every PR red on its own. Bump on purpose.
       - name: Install the Claude Code CLI
-        run: npm install -g @anthropic-ai/claude-code
+        run: npm install -g @anthropic-ai/claude-code@2.1.272
 
       - name: Validate the plugin with the Claude Code CLI
         run: |
