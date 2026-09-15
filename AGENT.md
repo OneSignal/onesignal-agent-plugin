@@ -81,15 +81,19 @@ Do not break these without a decision from the team:
 ## How to verify a change
 
 This repository has no test suite. The eval harness lives in an internal repository and runs
-the real agent against fixture apps. `.github/workflows/ci.yml` runs checks 1 to 5 below on
-every pull request, plus `claude plugin validate` and a Python 3.7 pass; branch protection
-on `main` requires it. For local checks:
+the real agent against fixture apps. `.github/workflows/ci.yml` runs checks 1 to 4 below on
+every pull request, runs check 5 when an iOS template or its script changes, and adds
+`claude plugin validate` and a Python 3.7 pass. Branch protection on `main` must require
+the `checks` and `python-floor` jobs. For local checks:
 
 1. Python scripts: `python3 -m py_compile scripts/*.py`.
 2. JSON files: `python3 -m json.tool` on `.claude-plugin/plugin.json`,
-   `.claude-plugin/marketplace.json`, and `.mcp.json`.
-3. Skill links: confirm every relative link in a changed `SKILL.md` resolves to a file.
-   Then run the portability check; it must print nothing:
+   `.claude-plugin/marketplace.json`, `.codex-plugin/plugin.json`, and `.mcp.json`. Then
+   confirm the 3 version fields agree (see "Releases"); `package_directory_bundle.py --check`
+   in step 4 fails on a mismatch.
+3. Skill links: confirm every relative link in a changed `SKILL.md` resolves to a file. The
+   bundle gate in step 4 checks every link in `skills/` for you. Then run the portability
+   check; it must print nothing:
    `grep -rn 'CLAUDE_PLUGIN_ROOT\|PLUGIN_ROOT}\|/Users/\|/home/' skills/ references/ --include='*.md'`
 4. Bundle gate: `python3 scripts/package_directory_bundle.py --check`. The check builds the
    directory bundle in a temporary directory and fails on any path that does not resolve
