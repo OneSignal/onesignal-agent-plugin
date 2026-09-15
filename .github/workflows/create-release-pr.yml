@@ -24,6 +24,17 @@ jobs:
       version: ${{ inputs.version || steps.next_version.outputs.version }}
       release_needed: ${{ inputs.version != '' || steps.next_version.outputs.release-needed == 'true' }}
     steps:
+      # Fail here, before prep-release creates a rel/<version> branch from a bad name.
+      - name: Validate the version override
+        if: inputs.version != ''
+        env:
+          OVERRIDE: ${{ inputs.version }}
+        run: |
+          if ! printf '%s' "$OVERRIDE" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+            echo "::error::version override '$OVERRIDE' is not a semantic version (expected 1.2.3, no v prefix)"
+            exit 1
+          fi
+
       - name: Determine the next version
         if: inputs.version == ''
         id: next_version
@@ -49,6 +60,7 @@ jobs:
         with:
           ref: ${{ needs.prep.outputs.release_branch }}
           token: ${{ secrets.GH_PUSH_TOKEN || github.token }}
+          fetch-depth: 0
 
       - name: Set up the git user
         uses: OneSignal/sdk-shared/.github/actions/setup-git-user@main
@@ -90,13 +102,21 @@ jobs:
           python3 -m py_compile scripts/*.py
           python3 scripts/package_directory_bundle.py --check
 
-      - name: Commit the version bump
+      # The release PR needs at least one commit on rel/<version>, or GitHub refuses to
+      # open it. When a change set already bumped the tree, the release commit is empty.
+      - name: Commit the release
         env:
           NEW_VERSION: ${{ needs.determine_version.outputs.version }}
         run: |
           git add .claude-plugin/plugin.json .codex-plugin/plugin.json scripts/checkpoint.sh
-          git diff --staged --quiet && { echo "version already at $NEW_VERSION"; exit 0; }
-          git commit -m "chore: Release $NEW_VERSION"
+          if git diff --staged --quiet; then
+            if [ "$(git rev-list --count origin/main..HEAD)" != "0" ]; then
+              echo "version already at $NEW_VERSION and the release branch has commits; nothing to do"
+              exit 0
+            fi
+            echo "version already at $NEW_VERSION; adding an empty release commit"
+          fi
+          git commit --allow-empty -m "chore: Release $NEW_VERSION"
           git push
 
   create_pr:

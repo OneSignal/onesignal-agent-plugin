@@ -164,8 +164,8 @@ The workflows in `.github/workflows/` reuse `OneSignal/sdk-shared`:
    merged PR titles since the latest stable version tag and picks the bump (`feat:` →
    minor, `fix:`/`perf:` → patch, `!:` → major), or takes a version override. It creates or
    rebases `rel/<version>`, writes the version into the 3 files, commits
-   `chore: Release <version>`, and opens the `chore: Release <version>` PR with release
-   notes built from the PR titles.
+   `chore: Release <version>` (an empty commit when a change set already bumped the tree),
+   and opens the `chore: Release <version>` PR with release notes built from the PR titles.
 2. Before merge, the release PR needs 2 eval runs, both recorded in the PR: one against the
    repository tree, and one against the bundle built from the same commit. The per-PR gate
    `package_directory_bundle.py --check` runs in CI without an agent and does not replace

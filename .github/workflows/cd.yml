@@ -33,6 +33,12 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
           VERSION=$(python3 -c 'import json; print(json.load(open(".claude-plugin/plugin.json"))["version"])')
+          CODEX=$(python3 -c 'import json; print(json.load(open(".codex-plugin/plugin.json"))["version"])')
+          CHECKPOINT=$(sed -nE 's/^PLUGIN_VERSION="([^"]+)"/\1/p' scripts/checkpoint.sh)
+          if [ -z "$VERSION" ] || [ "$VERSION" != "$CODEX" ] || [ "$VERSION" != "$CHECKPOINT" ]; then
+            echo "::error::the version differs between the 3 files (claude=$VERSION codex=$CODEX checkpoint=$CHECKPOINT); nothing tagged"
+            exit 1
+          fi
           TITLE_VERSION="${PR_TITLE#chore: Release }"
           if [ "$VERSION" != "$TITLE_VERSION" ]; then
             echo "::error::plugin.json says $VERSION but the PR title says $TITLE_VERSION"
