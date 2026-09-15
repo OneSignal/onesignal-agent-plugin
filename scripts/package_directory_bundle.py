@@ -75,7 +75,8 @@ BARE_SCRIPT_RE = re.compile(r"(?<!<plugin>/)\bscripts/[A-Za-z0-9_]")
 SOURCE_REFERENCE_RE = re.compile(r"\.\./\.\./references/([A-Za-z0-9_\-]+\.md)")
 BARE_REFERENCE_RE = re.compile(r"(?<!\.\./\.\./)\breferences/[A-Za-z0-9_]")
 BUNDLE_REFERENCE_RE = re.compile(r"\breferences/([A-Za-z0-9_\-]+\.md)")
-MARKDOWN_LINK_RE = re.compile(r"\]\(([^)\s]+)\)")
+# The target of an inline link, with or without a quoted title after it.
+MARKDOWN_LINK_RE = re.compile(r"\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 HOST_PATH_RE = re.compile(r"CLAUDE_PLUGIN_ROOT|PLUGIN_ROOT\}|/Users/|/home/")
 # A `../` path segment. An ellipsis such as `.../identity` is prose, not a path.
 PARENT_SEGMENT_RE = re.compile(r"(?<![.\w])\.\./")
@@ -174,6 +175,11 @@ def check_source(source):
     skills_dir = os.path.join(source, "skills")
     scripts_dir = os.path.join(source, "scripts")
     references_dir = os.path.join(source, "references")
+
+    if os.path.isdir(skills_dir):
+        for name in sorted(os.listdir(skills_dir)):
+            if os.path.isdir(os.path.join(skills_dir, name)) and name not in SKILLS:
+                findings.append("skills/%s is not in the SKILLS table and would not ship in the bundle" % name)
 
     for skill in SKILLS:
         skill_dir = os.path.join(skills_dir, skill)
@@ -381,6 +387,20 @@ def self_test(source):
             handle.write("\nSee [the notes](../../references/does-not-exist.md).\n")
         ok = expect_failure("link to a missing reference", bad, os.path.join(tmp, "bad-missing-reference-work"),
                             "references/does-not-exist.md does not exist") and ok
+
+        bad = os.path.join(tmp, "bad-unknown-skill")
+        copy_source_subset(source, bad)
+        os.makedirs(os.path.join(bad, "skills", "extra"))
+        write_text(os.path.join(bad, "skills", "extra", "SKILL.md"), "---\nname: extra\n---\n")
+        ok = expect_failure("skill directory missing from the SKILLS table", bad, os.path.join(tmp, "bad-unknown-skill-work"),
+                            "skills/extra is not in the SKILLS table") and ok
+
+        bad = os.path.join(tmp, "bad-titled-link")
+        copy_source_subset(source, bad)
+        with open(os.path.join(bad, "skills", "verify", "SKILL.md"), "a", encoding="utf-8") as handle:
+            handle.write('\nSee [the notes](does-not-exist.md "Notes").\n')
+        ok = expect_failure("titled link to a missing file", bad, os.path.join(tmp, "bad-titled-link-work"),
+                            "link target does-not-exist.md does not resolve inside verify/") and ok
     return ok
 
 
