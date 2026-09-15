@@ -81,7 +81,9 @@ Do not break these without a decision from the team:
 ## How to verify a change
 
 This repository has no test suite. The eval harness lives in an internal repository and runs
-the real agent against fixture apps. For local checks:
+the real agent against fixture apps. `.github/workflows/ci.yml` runs checks 1 to 5 below on
+every pull request, plus `claude plugin validate` and a Python 3.7 pass; branch protection
+on `main` requires it. For local checks:
 
 1. Python scripts: `python3 -m py_compile scripts/*.py`.
 2. JSON files: `python3 -m json.tool` on `.claude-plugin/plugin.json`,
