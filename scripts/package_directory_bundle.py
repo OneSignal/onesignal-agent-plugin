@@ -108,7 +108,10 @@ def export_ref(ref, dest):
     if proc.returncode != 0:
         raise GateError(["git archive %s failed: %s" % (ref, proc.stderr.decode(errors="replace").strip())])
     with tarfile.open(fileobj=io.BytesIO(proc.stdout), mode="r:") as tar:
-        tar.extractall(dest)
+        try:
+            tar.extractall(dest, filter="data")
+        except TypeError:  # Python < 3.12 has no filter argument
+            tar.extractall(dest)
 
 
 def read_text(path):
