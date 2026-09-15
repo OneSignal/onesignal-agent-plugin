@@ -154,7 +154,7 @@ release do not bump it again.
 
 Each release ships 2 artifacts: the tagged tree (Claude Code and the Codex marketplace
 install from it) and `onesignal-skills-<version>.zip` (the OpenAI directory upload). The
-tag is the bare version (`1.0.1`, no `v` prefix), the same as the other SDK repositories.
+tag is the bare version (`1.1.0`, no `v` prefix), the same as the other SDK repositories.
 
 ### The release process
 
