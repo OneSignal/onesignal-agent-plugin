@@ -1,0 +1,74 @@
+# Runs when a `chore: Release <version>` PR merges into main: creates the GitHub Release
+# and the bare-version tag from the PR body, then builds the OpenAI directory bundle
+# from that tag and attaches it to the Release. The submitter downloads the zip from
+# the Release page and uploads it on the Skills tab of the OneSignal listing.
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  version:
+    if: >-
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.title, 'chore: Release ')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+
+      - name: Read the version from the merged tree
+        id: read
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          VERSION=$(python3 -c 'import json; print(json.load(open(".claude-plugin/plugin.json"))["version"])')
+          TITLE_VERSION="${PR_TITLE#chore: Release }"
+          if [ "$VERSION" != "$TITLE_VERSION" ]; then
+            echo "::error::plugin.json says $VERSION but the PR title says $TITLE_VERSION"
+            exit 1
+          fi
+          if git rev-parse "refs/tags/$VERSION" >/dev/null 2>&1; then
+            echo "tag $VERSION already exists; nothing to release"
+            exit 0
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  github_release:
+    needs: version
+    if: needs.version.outputs.version != ''
+    uses: OneSignal/sdk-shared/.github/workflows/github-release.yml@main
+    secrets:
+      GH_PUSH_TOKEN: ${{ secrets.GH_PUSH_TOKEN }}
+    with:
+      version: ${{ needs.version.outputs.version }}
+
+  attach_bundle:
+    needs: [version, github_release]
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ secrets.GH_PUSH_TOKEN || github.token }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+
+      - name: Build the directory bundle from the tag
+        run: |
+          git fetch --tags origin
+          python3 scripts/package_directory_bundle.py --ref "$VERSION" --zip "onesignal-skills-$VERSION.zip"
+
+      - name: Attach the bundle to the GitHub Release
+        run: gh release upload "$VERSION" "onesignal-skills-$VERSION.zip" --clobber --repo "$GITHUB_REPOSITORY"

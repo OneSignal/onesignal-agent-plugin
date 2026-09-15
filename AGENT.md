@@ -153,14 +153,37 @@ leave the version stale. One bump per release is enough: if an unreleased change
 release do not bump it again.
 
 Each release ships 2 artifacts: the tagged tree (Claude Code and the Codex marketplace
-install from it) and `onesignal-skills-<version>.zip` (the OpenAI directory upload). Build
-the zip from the tag with `python3 scripts/package_directory_bundle.py --ref <version>` and
-attach it to the GitHub Release.
+install from it) and `onesignal-skills-<version>.zip` (the OpenAI directory upload). The
+tag is the bare version (`1.0.1`, no `v` prefix), the same as the other SDK repositories.
 
-A release PR needs 2 eval runs before merge, both recorded in the PR: one against the
-repository tree, and one against the bundle built from the same commit. The per-PR gate is
-`package_directory_bundle.py --check`; it runs in CI without an agent and does not replace
-the bundle-arm eval.
+### The release process
+
+The workflows in `.github/workflows/` reuse `OneSignal/sdk-shared`:
+
+1. Run **Create Release PR** (`create-release-pr.yml`) from the Actions tab. It reads the
+   merged PR titles since the latest stable GitHub Release and picks the bump (`feat:` →
+   minor, `fix:`/`perf:` → patch, `!:` → major), or takes a version override. It creates or
+   rebases `rel/<version>`, writes the version into the 3 files, commits `Release <version>`,
+   and opens the `chore: Release <version>` PR with release notes built from the PR titles.
+2. Before merge, the release PR needs 2 eval runs, both recorded in the PR: one against the
+   repository tree, and one against the bundle built from the same commit. The per-PR gate
+   `package_directory_bundle.py --check` runs in CI without an agent and does not replace
+   the bundle-arm eval. Smoke-test the tree in Claude Code and Codex by hand.
+3. Merge the release PR. `cd.yml` creates the GitHub Release and the tag from the PR body,
+   builds `onesignal-skills-<version>.zip` from the tag, and attaches it to the Release.
+4. `linear-deployed.yml` moves every `SDK-####` in the release body to Deployed.
+5. Download the zip from the Release page and submit it on the Skills tab of the OneSignal
+   listing in the OpenAI directory. Directory installs pin to the reviewed snapshot, so
+   every release needs a new submission.
+
+The automation needs the org secret `GH_PUSH_TOKEN` granted to this repository. Without it
+the workflows fall back to `github.token`, which cannot trigger `cd.yml` from the release
+PR it opens, and a Release it creates does not trigger `linear-deployed.yml`.
+
+To release by hand instead: bump the 3 files, open the PR, merge, then
+`git tag <version> && git push origin <version>`, create the GitHub Release from the tag,
+build the zip with `python3 scripts/package_directory_bundle.py --ref <version>`, and
+attach it.
 
 ## Git conventions
 

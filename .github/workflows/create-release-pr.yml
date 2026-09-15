@@ -1,0 +1,108 @@
+# Opens the release PR. Run it from the Actions tab when main holds the changes for
+# the next release. It picks the next version from the merged PR titles since the
+# latest stable GitHub Release (or takes an override), creates or rebases the
+# rel/<version> branch, writes the version into the 3 files, and opens the
+# `chore: Release <version>` PR with generated release notes.
+name: Create Release PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Override the detected version (e.g. 1.0.2). Leave blank to detect it from merged PR titles.'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  determine_version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ inputs.version || steps.next_version.outputs.version }}
+      release_needed: ${{ inputs.version != '' || steps.next_version.outputs.release-needed == 'true' }}
+    steps:
+      - name: Determine the next version
+        if: inputs.version == ''
+        id: next_version
+        uses: OneSignal/sdk-shared/.github/actions/determine-next-version@main
+        with:
+          github-token: ${{ secrets.GH_PUSH_TOKEN || github.token }}
+          target-repo: ${{ github.repository }}
+
+  prep:
+    needs: determine_version
+    if: needs.determine_version.outputs.release_needed == 'true'
+    uses: OneSignal/sdk-shared/.github/workflows/prep-release.yml@main
+    secrets:
+      GH_PUSH_TOKEN: ${{ secrets.GH_PUSH_TOKEN }}
+    with:
+      version: ${{ needs.determine_version.outputs.version }}
+
+  update_version:
+    needs: [determine_version, prep]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prep.outputs.release_branch }}
+          token: ${{ secrets.GH_PUSH_TOKEN || github.token }}
+
+      - name: Set up the git user
+        uses: OneSignal/sdk-shared/.github/actions/setup-git-user@main
+
+      - name: Write the version into the 3 files
+        env:
+          NEW_VERSION: ${{ needs.determine_version.outputs.version }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re
+
+          version = os.environ["NEW_VERSION"]
+          if not re.fullmatch(r"\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?", version):
+              raise SystemExit("not a semantic version: %r" % version)
+
+          for path in (".claude-plugin/plugin.json", ".codex-plugin/plugin.json"):
+              with open(path, encoding="utf-8") as handle:
+                  text = handle.read()
+              current = json.loads(text)["version"]
+              updated = text.replace('"version": "%s"' % current, '"version": "%s"' % version, 1)
+              if json.loads(updated)["version"] != version:
+                  raise SystemExit("could not update %s" % path)
+              with open(path, "w", encoding="utf-8") as handle:
+                  handle.write(updated)
+
+          path = "scripts/checkpoint.sh"
+          with open(path, encoding="utf-8") as handle:
+              text = handle.read()
+          updated, count = re.subn(r'^PLUGIN_VERSION="[^"]*"', 'PLUGIN_VERSION="%s"' % version, text, count=1, flags=re.M)
+          if count != 1:
+              raise SystemExit("could not update PLUGIN_VERSION in %s" % path)
+          with open(path, "w", encoding="utf-8") as handle:
+              handle.write(updated)
+          PY
+          git diff --stat
+
+      - name: Run the local checks on the bumped tree
+        run: |
+          python3 -m py_compile scripts/*.py
+          python3 scripts/package_directory_bundle.py --check
+
+      - name: Commit the version bump
+        env:
+          NEW_VERSION: ${{ needs.determine_version.outputs.version }}
+        run: |
+          git add .claude-plugin/plugin.json .codex-plugin/plugin.json scripts/checkpoint.sh
+          git diff --staged --quiet && { echo "version already at $NEW_VERSION"; exit 0; }
+          git commit -m "Release $NEW_VERSION"
+          git push
+
+  create_pr:
+    needs: [prep, update_version]
+    uses: OneSignal/sdk-shared/.github/workflows/create-release.yml@main
+    secrets:
+      GH_PUSH_TOKEN: ${{ secrets.GH_PUSH_TOKEN }}
+    with:
+      release_branch: ${{ needs.prep.outputs.release_branch }}
