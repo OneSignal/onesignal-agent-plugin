@@ -80,12 +80,14 @@ Do not break these without a decision from the team:
 
 ## How to verify a change
 
-This repository has no test suite, and no automated eval harness exists yet. The behavior
-spec is `evals/scenarios.md`: 26 scenarios, each with a fixture app, a user prompt, and must
-and must-not assertions. The `evals/` directory is untracked (see `.gitignore`) and lives on
-the maintainers' machines; ask a maintainer for a copy. It also holds
-`checkpoint-transport-test.sh`, a hermetic regression suite for `scripts/checkpoint.sh`. Until
-a runner lands, a person runs the scenarios by hand (check 7 below). `.github/workflows/ci.yml`
+This repository has no test suite. The behavior evals (scenario specs, fixture apps, and the
+regression suite for `scripts/checkpoint.sh`) live in a separate repository, at the time of
+this writing
+[sherwinski/onesignal-agent-plugin-evals](https://github.com/sherwinski/onesignal-agent-plugin-evals).
+That repository's README is the source of truth for its layout and for how to run it; the
+text here does not repeat those details. Clone it as `evals/` next to this file (the path is
+gitignored here), and send eval changes to that repository, not to this one. Check 7 below
+says when to run it. `.github/workflows/ci.yml`
 runs checks 1 to 4 below on every pull request, runs check 5 when an iOS template or its
 script changes, and adds `claude plugin validate` and a Python 3.7 pass. Branch protection on
 `main` must require the `checks` and `python-floor` jobs. For local checks:
@@ -107,22 +109,11 @@ script changes, and adds `claude plugin validate` and a Python 3.7 pass. Branch 
    `skills/setup/assets/ios/` changes.
 6. Behavior changes: load the plugin with `claude --plugin-dir .` and run the changed skill
    against a scratch project.
-7. Checkpoint transport: run `bash evals/checkpoint-transport-test.sh` when `checkpoint.sh`
-   changes. Then run the scenarios in `evals/scenarios.md` that cover the change, one Claude
-   Code session per scenario:
-   1. `cd` into the fixture working copy under `evals/evals-work/<scenario>/`.
-   2. Start a loopback mock for the checkpoint endpoint and export
-      `ONESIGNAL_SKILL_ENDPOINT="http://127.0.0.1:<port>/sdk/log"`. The mock must accept
-      `GET` with query parameters and answer 202; the one inside
-      `checkpoint-transport-test.sh` is the reference.
-   3. Run `claude --plugin-dir <repo>` (or `claude -p` with the prompt on stdin) with the
-      scenario prompt. Answer the consent and confirmation questions as the scenario says.
-   4. Grade against the must and must-not columns: `git status` in the fixture,
-      `.onesignal/checkpoints.jsonl`, `.onesignal/transport.log`, the mock's request log,
-      and the canary string in the session transcript.
-   5. Reset the fixture: `git checkout -f main && git branch -D onesignal-integration;
-      git checkout . && git clean -fd && rm -rf .onesignal`. Keep the planted edit in
-      `ckpt_dirty_tree`.
+7. Behavior evals: when `checkpoint.sh` changes, run the checkpoint regression suite from
+   the evals repository. When a skill, reference, script, or template changes, run the
+   scenarios that cover the change, as the evals repository describes. Point the checkpoint
+   endpoint at a loopback mock through `ONESIGNAL_SKILL_ENDPOINT`; never at the real
+   service.
 
 If a change affects setup, credentials, or verify behavior, run the covering scenarios before
 merge and record the verdicts and session IDs in the PR. Do not trust a skill edit on
@@ -188,16 +179,16 @@ The workflows in `.github/workflows/` reuse `OneSignal/sdk-shared`:
    `chore: Release <version>` (an empty commit when a change set already bumped the tree),
    and opens the `chore: Release <version>` PR with release notes built from the PR titles.
 2. Before merge, the release PR records 3 results, each with its session IDs or command:
-   - The scenario subset against the repository tree in Claude Code (check 7 in "How to
-     verify a change"). The minimum is `setup_web_happy`, `ckpt_dirty_tree`, and
-     `ckpt_refusal`, plus every scenario that covers a skill changed since the last release.
+   - The behavior evals against the repository tree in Claude Code (check 7 in "How to
+     verify a change"): the release subset that the evals repository names, plus every
+     scenario that covers a skill changed since the last release.
    - The Codex bundle smoke: build the bundle from the release commit with
      `package_directory_bundle.py --out`, install it from a clean `CODEX_HOME` through a
      local marketplace, run `setup` on one fixture, and confirm that `checkpoint.sh` ran
      from the skill's own `scripts/` folder.
-   - `bash evals/checkpoint-transport-test.sh` green on the release commit.
+   - The checkpoint regression suite from the evals repository, green on the release commit.
    The per-PR gate `package_directory_bundle.py --check` runs in CI without an agent and
-   does not replace these. When an automated runner exists, it replaces the first item.
+   does not replace these.
 3. Merge the release PR. `cd.yml` creates the GitHub Release and the tag from the PR body,
    builds `onesignal-skills-<version>.zip` from the tag, and attaches it to the Release.
 4. `linear-deployed.yml` moves every `SDK-####` in the release body to Deployed.
