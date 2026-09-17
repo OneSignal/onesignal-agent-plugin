@@ -80,11 +80,17 @@ Do not break these without a decision from the team:
 
 ## How to verify a change
 
-This repository has no test suite. The eval harness lives in an internal repository and runs
-the real agent against fixture apps. `.github/workflows/ci.yml` runs checks 1 to 4 below on
-every pull request, runs check 5 when an iOS template or its script changes, and adds
-`claude plugin validate` and a Python 3.7 pass. Branch protection on `main` must require
-the `checks` and `python-floor` jobs. For local checks:
+This repository has no test suite. The behavior evals (scenario specs, fixture apps, and the
+regression suite for `scripts/checkpoint.sh`) live in a separate repository, at the time of
+this writing
+[sherwinski/onesignal-agent-plugin-evals](https://github.com/sherwinski/onesignal-agent-plugin-evals).
+That repository's README is the source of truth for its layout and for how to run it; the
+text here does not repeat those details. Clone it as `evals/` next to this file (the path is
+gitignored here), and send eval changes to that repository, not to this one. Check 7 below
+says when to run it. `.github/workflows/ci.yml`
+runs checks 1 to 4 below on every pull request, runs check 5 when an iOS template or its
+script changes, and adds `claude plugin validate` and a Python 3.7 pass. Branch protection on
+`main` must require the `checks` and `python-floor` jobs. For local checks:
 
 1. Python scripts: `python3 -m py_compile scripts/*.py`.
 2. JSON files: `python3 -m json.tool` on `.claude-plugin/plugin.json`,
@@ -103,9 +109,15 @@ the `checks` and `python-floor` jobs. For local checks:
    `skills/setup/assets/ios/` changes.
 6. Behavior changes: load the plugin with `claude --plugin-dir .` and run the changed skill
    against a scratch project.
+7. Behavior evals: when `checkpoint.sh` changes, run the checkpoint regression suite from
+   the evals repository. When a skill, reference, script, or template changes, run the
+   scenarios that cover the change, as the evals repository describes. Point the checkpoint
+   endpoint at a loopback mock through `ONESIGNAL_SKILL_ENDPOINT`; never at the real
+   service.
 
-If a change affects setup, credentials, or verify behavior, ask for an eval run before merge.
-Do not trust a skill edit on read-through alone.
+If a change affects setup, credentials, or verify behavior, run the covering scenarios before
+merge and record the verdicts and session IDs in the PR. Do not trust a skill edit on
+read-through alone.
 
 ## The OpenAI directory bundle
 
@@ -166,10 +178,17 @@ The workflows in `.github/workflows/` reuse `OneSignal/sdk-shared`:
    rebases `rel/<version>`, writes the version into the 3 files, commits
    `chore: Release <version>` (an empty commit when a change set already bumped the tree),
    and opens the `chore: Release <version>` PR with release notes built from the PR titles.
-2. Before merge, the release PR needs 2 eval runs, both recorded in the PR: one against the
-   repository tree, and one against the bundle built from the same commit. The per-PR gate
-   `package_directory_bundle.py --check` runs in CI without an agent and does not replace
-   the bundle-arm eval. Smoke-test the tree in Claude Code and Codex by hand.
+2. Before merge, the release PR records 3 results, each with its session IDs or command:
+   - The behavior evals against the repository tree in Claude Code (check 7 in "How to
+     verify a change"): the release subset that the evals repository names, plus every
+     scenario that covers a skill changed since the last release.
+   - The Codex bundle smoke: build the bundle from the release commit with
+     `package_directory_bundle.py --out`, install it from a clean `CODEX_HOME` through a
+     local marketplace, run `setup` on one fixture, and confirm that `checkpoint.sh` ran
+     from the skill's own `scripts/` folder.
+   - The checkpoint regression suite from the evals repository, green on the release commit.
+   The per-PR gate `package_directory_bundle.py --check` runs in CI without an agent and
+   does not replace these.
 3. Merge the release PR. `cd.yml` creates the GitHub Release and the tag from the PR body,
    builds `onesignal-skills-<version>.zip` from the tag, and attaches it to the Release.
 4. `linear-deployed.yml` moves every `SDK-####` in the release body to Deployed.
