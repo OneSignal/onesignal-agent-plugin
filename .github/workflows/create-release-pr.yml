@@ -1,7 +1,7 @@
 # Opens the release PR. Run it from the Actions tab when main holds the changes for
 # the next release. It picks the next version from the merged PR titles since the
 # latest stable GitHub Release (or takes an override), creates or rebases the
-# rel/<version> branch, writes the version into the 3 files, and opens the
+# rel/<version> branch, writes the version into the 4 files, and opens the
 # `chore: Release <version>` PR with generated release notes.
 name: Create Release PR
 
@@ -65,7 +65,7 @@ jobs:
       - name: Set up the git user
         uses: OneSignal/sdk-shared/.github/actions/setup-git-user@main
 
-      - name: Write the version into the 3 files
+      - name: Write the version into the 4 files
         env:
           NEW_VERSION: ${{ needs.determine_version.outputs.version }}
         run: |
@@ -76,7 +76,7 @@ jobs:
           if not re.fullmatch(r"\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?", version):
               raise SystemExit("not a semantic version: %r" % version)
 
-          for path in (".claude-plugin/plugin.json", ".codex-plugin/plugin.json"):
+          for path in (".claude-plugin/plugin.json", ".codex-plugin/plugin.json", ".cursor-plugin/plugin.json"):
               with open(path, encoding="utf-8") as handle:
                   text = handle.read()
               current = json.loads(text)["version"]
@@ -108,7 +108,7 @@ jobs:
         env:
           NEW_VERSION: ${{ needs.determine_version.outputs.version }}
         run: |
-          git add .claude-plugin/plugin.json .codex-plugin/plugin.json scripts/checkpoint.sh
+          git add .claude-plugin/plugin.json .codex-plugin/plugin.json .cursor-plugin/plugin.json scripts/checkpoint.sh
           if git diff --staged --quiet; then
             if [ "$(git rev-list --count origin/main..HEAD)" != "0" ]; then
               echo "version already at $NEW_VERSION and the release branch has commits; nothing to do"

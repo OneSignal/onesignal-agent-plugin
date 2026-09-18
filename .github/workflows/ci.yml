@@ -23,18 +23,19 @@ jobs:
 
       - name: Parse the JSON manifests
         run: |
-          for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json .codex-plugin/plugin.json .mcp.json; do
+          for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json .codex-plugin/plugin.json .cursor-plugin/plugin.json .mcp.json; do
             python3 -m json.tool "$f" > /dev/null || { echo "::error file=$f::invalid JSON"; exit 1; }
           done
 
-      - name: Check that the 3 version fields agree
+      - name: Check that the 4 version fields agree
         run: |
           CLAUDE=$(python3 -c 'import json; print(json.load(open(".claude-plugin/plugin.json"))["version"])')
           CODEX=$(python3 -c 'import json; print(json.load(open(".codex-plugin/plugin.json"))["version"])')
+          CURSOR=$(python3 -c 'import json; print(json.load(open(".cursor-plugin/plugin.json"))["version"])')
           CHECKPOINT=$(sed -nE 's/^PLUGIN_VERSION="([^"]+)"/\1/p' scripts/checkpoint.sh)
-          echo "claude=$CLAUDE codex=$CODEX checkpoint=$CHECKPOINT"
-          if [ -z "$CLAUDE" ] || [ "$CLAUDE" != "$CODEX" ] || [ "$CLAUDE" != "$CHECKPOINT" ]; then
-            echo "::error::the version differs between .claude-plugin/plugin.json, .codex-plugin/plugin.json, and PLUGIN_VERSION in scripts/checkpoint.sh"
+          echo "claude=$CLAUDE codex=$CODEX cursor=$CURSOR checkpoint=$CHECKPOINT"
+          if [ -z "$CLAUDE" ] || [ "$CLAUDE" != "$CODEX" ] || [ "$CLAUDE" != "$CURSOR" ] || [ "$CLAUDE" != "$CHECKPOINT" ]; then
+            echo "::error::the version differs between .claude-plugin/plugin.json, .codex-plugin/plugin.json, .cursor-plugin/plugin.json, and PLUGIN_VERSION in scripts/checkpoint.sh"
             exit 1
           fi
 

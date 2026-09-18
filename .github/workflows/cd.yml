@@ -34,9 +34,10 @@ jobs:
         run: |
           VERSION=$(python3 -c 'import json; print(json.load(open(".claude-plugin/plugin.json"))["version"])')
           CODEX=$(python3 -c 'import json; print(json.load(open(".codex-plugin/plugin.json"))["version"])')
+          CURSOR=$(python3 -c 'import json; print(json.load(open(".cursor-plugin/plugin.json"))["version"])')
           CHECKPOINT=$(sed -nE 's/^PLUGIN_VERSION="([^"]+)"/\1/p' scripts/checkpoint.sh)
-          if [ -z "$VERSION" ] || [ "$VERSION" != "$CODEX" ] || [ "$VERSION" != "$CHECKPOINT" ]; then
-            echo "::error::the version differs between the 3 files (claude=$VERSION codex=$CODEX checkpoint=$CHECKPOINT); nothing tagged"
+          if [ -z "$VERSION" ] || [ "$VERSION" != "$CODEX" ] || [ "$VERSION" != "$CURSOR" ] || [ "$VERSION" != "$CHECKPOINT" ]; then
+            echo "::error::the version differs between the 4 files (claude=$VERSION codex=$CODEX cursor=$CURSOR checkpoint=$CHECKPOINT); nothing tagged"
             exit 1
           fi
           TITLE_VERSION="${PR_TITLE#chore: Release }"

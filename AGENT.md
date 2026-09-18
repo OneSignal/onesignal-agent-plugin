@@ -28,6 +28,7 @@ repository.
 | `.claude-plugin/plugin.json` | Plugin manifest. The `version` field controls when Claude Code pulls updates. |
 | `.claude-plugin/marketplace.json` | Marketplace catalog. This repository is its own marketplace, named `onesignal`. |
 | `.codex-plugin/plugin.json` | Codex manifest. The `interface` block holds the listing copy, legal URLs, and brand assets. |
+| `.cursor-plugin/plugin.json` | Cursor manifest. `mcpServers` points at `.mcp.json`, because Cursor looks for `mcp.json` by default. |
 | `assets/` | Brand assets for the listings. The files come from the official OneSignal media kit. |
 | `.mcp.json` | Declares the hosted OneSignal MCP endpoint. |
 | `endpoint.conf` | The checkpoint ingestion endpoint. The comment block in the file explains the path. |
@@ -94,9 +95,9 @@ script changes, and adds `claude plugin validate` and a Python 3.7 pass. Branch 
 
 1. Python scripts: `python3 -m py_compile scripts/*.py`.
 2. JSON files: `python3 -m json.tool` on `.claude-plugin/plugin.json`,
-   `.claude-plugin/marketplace.json`, `.codex-plugin/plugin.json`, and `.mcp.json`. Then
-   confirm the 3 version fields agree (see "Releases"); `package_directory_bundle.py --check`
-   in step 4 fails on a mismatch.
+   `.claude-plugin/marketplace.json`, `.codex-plugin/plugin.json`,
+   `.cursor-plugin/plugin.json`, and `.mcp.json`. Then confirm the 4 version fields agree
+   (see "Releases"); `package_directory_bundle.py --check` in step 4 fails on a mismatch.
 3. Skill links: confirm every relative link in a changed `SKILL.md` resolves to a file. The
    bundle gate in step 4 checks every link in `skills/` for you. Then run the portability
    check; it must print nothing:
@@ -108,7 +109,9 @@ script changes, and adds `claude plugin validate` and a Python 3.7 pass. Branch 
 5. iOS templates: run `scripts/compile_check_ios.sh` when a file under
    `skills/setup/assets/ios/` changes.
 6. Behavior changes: load the plugin with `claude --plugin-dir .` and run the changed skill
-   against a scratch project.
+   against a scratch project. For Cursor, copy the checkout into
+   `~/.cursor/plugins/local/<name>/` with `rsync` (a symlink is rejected) and check the
+   "Cursor Plugins" output log for the load result.
 7. Behavior evals: when `checkpoint.sh` changes, run the checkpoint regression suite from
    the evals repository. When a skill, reference, script, or template changes, run the
    scenarios that cover the change, as the evals repository describes. Point the checkpoint
@@ -131,7 +134,7 @@ builds that artifact from this tree at release time:
 - It rewrites `../../references/` to `references/` in the skill Markdown. The `<plugin>`
   walk-up rule resolves to the skill folder without a rewrite.
 - It runs a structural gate on the result: every link and every `<plugin>/scripts/<name>`
-  call must resolve inside its skill folder, and the 3 version fields must agree.
+  call must resolve inside its skill folder, and the 4 version fields must agree.
 
 Commands:
 
@@ -150,11 +153,12 @@ To load the bundle by hand, put the `--out` result under `skills/` next to a cop
 
 ## Releases
 
-The plugin version lives in 3 places. Bump all 3 together — they must never disagree:
+The plugin version lives in 4 places. Bump all 4 together — they must never disagree:
 
 - `version` in `.claude-plugin/plugin.json` — Claude Code pulls updates only when this
   field changes.
 - `version` in `.codex-plugin/plugin.json`.
+- `version` in `.cursor-plugin/plugin.json`.
 - `PLUGIN_VERSION` in `scripts/checkpoint.sh` — every checkpoint reports this value as
   `skill_version`.
 
@@ -175,7 +179,7 @@ The workflows in `.github/workflows/` reuse `OneSignal/sdk-shared`:
 1. Run **Create Release PR** (`create-release-pr.yml`) from the Actions tab. It reads the
    merged PR titles since the latest stable version tag and picks the bump (`feat:` →
    minor, `fix:`/`perf:` → patch, `!:` → major), or takes a version override. It creates or
-   rebases `rel/<version>`, writes the version into the 3 files, commits
+   rebases `rel/<version>`, writes the version into the 4 files, commits
    `chore: Release <version>` (an empty commit when a change set already bumped the tree),
    and opens the `chore: Release <version>` PR with release notes built from the PR titles.
 2. Before merge, the release PR records 3 results, each with its session IDs or command:
