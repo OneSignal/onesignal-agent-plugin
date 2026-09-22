@@ -8,6 +8,9 @@ This encodes the fiddly, verified details that models keep getting wrong:
   - response codes carry meaning: 409 = already configured (relay, don't retry),
     404 = feature flag off (fall back to dashboard), 401 = wrong app key
   - delivery stat `failed` counts UNSUBSCRIBED targets, not errors
+  - the view-app read decides credential presence from the non-secret fields
+    (apns_env, apns_key_id, apns_team_id, fcm_sender_id, chrome_web_origin),
+    never from the plaintext credential fields the server plans to remove
 
 Prefer the OneSignal MCP server's tools when connected (better auth story);
 this script is the generic curl-equivalent fallback that needs no MCP.
@@ -58,6 +61,15 @@ def _json(body):
         return json.loads(body)
     except Exception:
         return None
+
+
+def _present(value):
+    # null, "" and an absent key (None here) all read as "not configured".
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return value.strip() != ""
+    return bool(value)
 
 
 def _resolve_key(args):
@@ -173,9 +185,46 @@ def cmd_app(args):
     if not (200 <= status < 300):
         print(json.dumps({"probe": "app", "app_id": args.app_id, "http": status, "status": "error",
                           "detail": f"HTTP {status}", "raw": data}, indent=2)); return
-    # Surface which platforms look configured without asserting exact schema.
+    if not isinstance(data, dict):
+        print(json.dumps({"probe": "app", "app_id": args.app_id, "http": status, "status": "error",
+                          "detail": "Response body is not a JSON object."}, indent=2)); return
+    # Presence verdict from the non-secret fields only (api-reference.md "View an app").
+    # The plaintext credential fields are scheduled for removal, so never read them.
+    # null, "" and an absent key all mean "not configured". Values are never printed.
+    apns_configured = _present(data.get("apns_env"))
+    if _present(data.get("apns_key_id")) and _present(data.get("apns_team_id")):
+        apns_auth = "p8"
+    elif apns_configured:
+        apns_auth = "p12"
+    else:
+        apns_auth = None
+    fcm_configured = _present(data.get("fcm_sender_id"))
+    web_configured = _present(data.get("chrome_web_origin"))
+
+    # channels.push.platforms is a cross-check only: it derives from the
+    # enabled-platform flags, not from credential presence, and the server
+    # marks it as temporary. It never changes the verdict above.
+    channels = data.get("channels")
+    push = channels.get("push") if isinstance(channels, dict) else None
+    listed = push.get("platforms") if isinstance(push, dict) else None
+    cross_check = None
+    if isinstance(listed, list):
+        apns_listed = "apns" in listed
+        gcm_listed = "gcm" in listed
+        cross_check = {"source": "channels.push.platforms",
+                       "apns_listed": apns_listed, "fcm_listed": gcm_listed,
+                       "mismatch": (apns_listed != apns_configured) or (gcm_listed != fcm_configured)}
+
     out = {"probe": "app", "app_id": args.app_id, "http": status, "status": "ok",
-           "keys_present": sorted(data.keys()) if isinstance(data, dict) else None}
+           "platforms": {
+               "apns": {"configured": apns_configured, "auth_type": apns_auth},
+               "fcm": {"configured": fcm_configured},
+               "web": {"configured": web_configured},
+           },
+           "cross_check": cross_check,
+           "note": "Presence only, from non-secret fields (apns_env, apns_key_id, apns_team_id, "
+                   "fcm_sender_id, chrome_web_origin). Not a validity check: the test send in "
+                   "the verify skill proves the credential works."}
     print(json.dumps(out, indent=2))
 
 
