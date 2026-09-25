@@ -46,7 +46,7 @@ The plugin needs one answer per platform: does the platform already have credent
 Rules for the read:
 
 - Treat `null`, `""`, and an absent key the same: **not configured**. A missing platform record gives `null`; an existing record with an empty attribute gives `""`; the planned server change removes the key.
-- `channels.push.platforms` (a list such as `["apns", "gcm"]`) is a **cross-check only**. The server marks the field as temporary and internal, and it derives from the enabled-platforms flags, not from credential presence. Report a mismatch; never let it change the verdict.
+- `channels.push.platforms` (a list such as `["apns", "gcm"]`) is a **cross-check only**. The server marks the field as temporary and internal, and it derives from the enabled-platforms flags, not from credential presence. Never let it change the verdict. A mismatch usually means the platform toggle and the stored credentials disagree — credentials stored but the platform switched off in the dashboard, or a platform switched on with no credentials yet. Tell the user in one sentence to check Settings > Push Platforms, and keep the verdict.
 - Do not fetch `android_params.js` as a cross-check before an upload: on a fresh app that read primes the CDN cache with the empty response (see the setup skill's Android note).
 - Presence is not validity. A stored credential can still be wrong; the test send in the verify skill is the validity proof.
 

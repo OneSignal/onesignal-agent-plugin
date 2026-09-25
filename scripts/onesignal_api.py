@@ -175,7 +175,7 @@ def cmd_notification_stats(args):
 def cmd_app(args):
     key = _require_key(args)
     status, body = _get(f"{API}/api/v1/apps/{args.app_id}", key=key)
-    data = _json(body) or {}
+    data = _json(body)
     if status in (401, 403):
         print(json.dumps({"probe": "app", "app_id": args.app_id, "http": status, "status": "auth_error",
                           "detail": "Key does not belong to this app (or lacks access)."}, indent=2)); return
@@ -186,8 +186,12 @@ def cmd_app(args):
         print(json.dumps({"probe": "app", "app_id": args.app_id, "http": status, "status": "error",
                           "detail": f"HTTP {status}", "raw": data}, indent=2)); return
     if not isinstance(data, dict):
+        # Fail closed: a 2xx with a body that is not a JSON object (a proxy page,
+        # a truncated read) must not turn into a confident "not configured".
         print(json.dumps({"probe": "app", "app_id": args.app_id, "http": status, "status": "error",
-                          "detail": "Response body is not a JSON object."}, indent=2)); return
+                          "detail": "Response body is not a JSON object — presence unknown, not zero. "
+                                    "Re-run, or fall back to the dashboard (Settings > Push Platforms)."},
+                         indent=2)); return
     # Presence verdict from the non-secret fields only (api-reference.md "View an app").
     # The plaintext credential fields are scheduled for removal, so never read them.
     # null, "" and an absent key all mean "not configured". Values are never printed.
