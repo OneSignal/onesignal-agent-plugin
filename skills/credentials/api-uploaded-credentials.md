@@ -104,11 +104,7 @@ The upstream OneSignal ai-install-prompt that asks for `google-services.json` is
 | 409 on upload | Platform already has credentials (write-once) | Relay the response message verbatim; replacement happens in the dashboard (Settings > Push Platforms) or with an org key — never retry this endpoint |
 | 404 on upload | Feature flag off for this app | Fall back to the dashboard upload walkthrough |
 
-### Verifying which apps still use legacy
-Per the OneSignal docs, the view-app read `GET /api/v1/apps/{app_id}` distinguishes the 3 states below by the fields in its response. [api-reference.md](../../references/api-reference.md) names this call as the post-failure config check but does not list its response fields; the OneSignal API docs do.
-- `"gcm_key"` present → legacy, needs migration
-- `"fcm_v1_service_account_json"` present → on v1 (good)
-- neither → the app doesn't use Android push
+Whether an app already has FCM credentials is a presence check, owned by [SKILL.md](SKILL.md) → "Step 1" through `onesignal_api.py app` and the `fcm_sender_id` field ([../../references/api-reference.md](../../references/api-reference.md) → "View an app"). No non-secret field separates FCM v1 from a legacy key, and the write-once endpoint accepts only v1, so do not try to tell them apart.
 
 ---
 
