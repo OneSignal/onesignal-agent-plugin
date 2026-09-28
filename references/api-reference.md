@@ -39,7 +39,7 @@ The plugin needs one answer per platform: does the platform already have credent
 
 | Platform | Configured when | Notes |
 |---|---|---|
-| APNs | `apns_env` is non-empty (`production` or `sandbox`) | Auth type: `apns_key_id` and `apns_team_id` both set → p8 key; both empty with `apns_env` set → p12 certificate. Both upload paths always set `apns_env`; only the p8 path sets the key and team IDs. |
+| APNs | `apns_env` is non-empty (`production` or `sandbox`) | Auth type: `apns_key_id` and `apns_team_id` both set → p8 key; both empty with `apns_env` set → p12 certificate; exactly one set → unknown (report `null`). Both upload paths always set `apns_env`; only the p8 path sets the key and team IDs. |
 | FCM | `fcm_sender_id` is non-empty | Match the exact name `fcm_sender_id`. Do not match `gcm_sender_id` or `chrome_web_gcm_sender_id`: a web-only app has `chrome_web_gcm_sender_id` set while `fcm_sender_id` is `null`. No non-secret field separates FCM v1 from the legacy key; do not try to tell them apart. |
 | Web | `chrome_web_origin` is non-empty | The unauthenticated "Web platform config probe" below is the preferred web read; this field is the authenticated equivalent. |
 

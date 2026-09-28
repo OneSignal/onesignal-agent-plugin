@@ -192,13 +192,13 @@ def cmd_app(args):
                           "detail": "Response body is not a JSON object — presence unknown, not zero. "
                                     "Re-run, or fall back to the dashboard (Settings > Push Platforms)."},
                          indent=2)); return
-    # Presence verdict from the non-secret fields only (api-reference.md "View an app").
-    # The plaintext credential fields are scheduled for removal, so never read them.
-    # null, "" and an absent key all mean "not configured". Values are never printed.
+    # Never read the plaintext credential fields: the server plans to remove them.
     apns_configured = _present(data.get("apns_env"))
-    if _present(data.get("apns_key_id")) and _present(data.get("apns_team_id")):
+    key_id_set = _present(data.get("apns_key_id"))
+    team_id_set = _present(data.get("apns_team_id"))
+    if key_id_set and team_id_set:
         apns_auth = "p8"
-    elif apns_configured:
+    elif apns_configured and not key_id_set and not team_id_set:
         apns_auth = "p12"
     else:
         apns_auth = None
