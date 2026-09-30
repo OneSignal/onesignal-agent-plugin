@@ -37,7 +37,7 @@ FEED_URL = "https://onesignal.github.io/sdk-releases/releases.json"
 # Platforms pinned to a pre-release build that is not in the release feed. The
 # build is published only to the developer's local Maven repository, so these
 # skip the feed and the caller must also add `mavenLocal()` (see android.md).
-FORCED_VERSIONS = {"android": "5.11.0-rc"}
+FORCED_VERSIONS = {"android": "5.11.0-staging"}
 
 PLATFORMS = {
     "android": {

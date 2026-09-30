@@ -38,16 +38,16 @@ Do not compose the dependency line by hand — that is how ranges (`[5.6.1, 5.9.
 <plugin>/scripts/resolve_sdk_version.py android --format line --line-format gradle-groovy
 ```
 
-The script emits an exact pin and cannot emit a range. Drop the output inside the module's `dependencies { }` block unchanged. For Android the resolver is currently **forced to `5.11.0-rc`**: that build supports the Firebase Installation ID (FID) path and is published only to the developer's local Maven repository, so it skips the release feed. It returns:
+The script emits an exact pin and cannot emit a range. Drop the output inside the module's `dependencies { }` block unchanged. For Android the resolver is currently **forced to `5.11.0-staging`**: that build supports the Firebase Installation ID (FID) path and is published only to the developer's local Maven repository, so it skips the release feed. It returns:
 ```kotlin
 dependencies {
-    implementation("com.onesignal:OneSignal:5.11.0-rc") // onesignal:managed v1
+    implementation("com.onesignal:OneSignal:5.11.0-staging") // onesignal:managed v1
 }
 ```
 
 ### `mavenLocal()` (required for the forced pin)
 
-`5.11.0-rc` does not exist on Maven Central or Google, so add `mavenLocal()` as the **first** repository or resolution fails. Follow the project's style: in `settings.gradle(.kts)` inside `dependencyResolutionManagement { repositories { ... } }`, or else in the root `allprojects { repositories { ... } }` / the module `repositories { }` block. Include the line in the Step-5 reviewed change set. If `~/.m2/repository/com/onesignal/OneSignal/5.11.0-rc` does not exist on this machine, stop and ask the user to publish it locally (`publishToMavenLocal`) rather than falling back to another version. The build will not resolve on other machines or CI that lack that local artifact; say so in the summary.
+`5.11.0-staging` does not exist on Maven Central or Google, so add `mavenLocal()` as the **first** repository or resolution fails. Follow the project's style: in `settings.gradle(.kts)` inside `dependencyResolutionManagement { repositories { ... } }`, or else in the root `allprojects { repositories { ... } }` / the module `repositories { }` block. Include the line in the Step-5 reviewed change set. If `~/.m2/repository/com/onesignal/OneSignal/5.11.0-staging` does not exist on this machine, stop and ask the user to publish it locally (`publishToMavenLocal`) rather than falling back to another version. The build will not resolve on other machines or CI that lack that local artifact; say so in the summary.
 
 ### Kotlin floor (check it deterministically — don't guess, don't half-bump)
 
