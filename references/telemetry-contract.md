@@ -78,10 +78,14 @@ verification helper both exist, because the prerequisites span both steps:
   does not match and the capability toggle goes to the human in Xcode, report
   `fail capability_manual` at the hand-off and continue. Like `deferred` on the
   credentials gate, this records a drop out of agent automation, not a skill stop.
-- `android` — the permission state: `INTERNET` present in the manifest, no manual
-  `POST_NOTIFICATIONS` line (the SDK manifest-merges it), and the `requestPermission`
-  call in the verification helper. If `INTERNET` was missing and the approved change
-  set added it, that is part of the minimal integration — still plain `ok`.
+- `android` — the permission and Firebase client-config state: `INTERNET` present in
+  the manifest, no manual `POST_NOTIFICATIONS` line (the SDK manifest-merges it), the
+  `requestPermission` call in the verification helper, and matching
+  `google-services.json` plus the Google Services Gradle plugin when FID is enabled
+  or the current run configured a previously-missing service account. If `INTERNET`
+  was missing and the approved change set added it, that is part of the minimal
+  integration — still plain `ok`. A required client config the user declined is
+  `fail firebase_client_config`.
 - `web` — the service worker: the one-line `importScripts` worker at the origin-root
   path, or a subdirectory scope with both `serviceWorkerPath` and `serviceWorkerParam`
   set. A pre-existing worker that forced the combine or the subdirectory scope is
@@ -173,7 +177,7 @@ the call site. Current set:
 `dependency_conflict`, `buildconfig_disabled`, `coroutines_missing`, `manifest_merger`,
 `already_configured`, `endpoint_flag_off`, `apns_propagation`, `apns_ids_swapped`,
 `apns_wrong_file`, `wrong_firebase_project`, `capability_manual`,
-`worker_scope_conflict`, `unknown`.
+`firebase_client_config`, `worker_scope_conflict`, `unknown`.
 
 The 6 classes from `already_configured` to `wrong_firebase_project` name the mapped causes
 in the credentials validation loop: the definite 409, the 404 feature-flag miss, the APNs
