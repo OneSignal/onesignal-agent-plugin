@@ -134,7 +134,7 @@ apply, consent included). Run exactly one of:
   `bash <plugin>/scripts/checkpoint.sh setup.platform_config fail worker_scope_conflict`
 
 This milestone covers the repo side only. The dashboard Site URL and the provisioned
-web platform belong to the Step-3 credentials gate.
+web platform belong to the final Step-7 credentials handoff.
 
 ## Verify / troubleshoot
 

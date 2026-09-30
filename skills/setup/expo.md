@@ -18,8 +18,8 @@ or use EAS Build. Do not tell them push will work in Expo Go.
 
 ## What the agent does vs. the human (matrix)
 
-- **Agent:** install packages; add the config plugin to `app.json` (**plugin FIRST in the plugins array**, set `mode`, `smallIcons`); init in `App.tsx`/`_layout.tsx`; wrapper + verification helper; set `expo.android.googleServicesFile` when the Step-3 Firebase client-config branch requires it.
-- **Human:** procure Apple **`.p8`** + Firebase **service-account JSON**; when required, register the Android package and download `google-services.json`; ensure EAS credentials match; run the dev build. Push credentials → **credentials** skill.
+- **Agent:** install packages; add the config plugin to `app.json` (**plugin FIRST in the plugins array**, set `mode`, `smallIcons`); init in `App.tsx`/`_layout.tsx`; wrapper + verification helper; always set `expo.android.googleServicesFile` for Android; upload the service account last.
+- **Human:** procure Apple **`.p8`** + Firebase **service-account JSON**; register the Android package and download `google-services.json`; ensure EAS credentials match; run the dev build. Push credentials → **credentials** skill after setup.
 
 ## Install
 
@@ -48,7 +48,7 @@ Requires `expo.ios.bundleIdentifier` and `expo.android.package` set (prebuild fa
 ```
 Plugin options (matrix + upstream): `mode` (`development`/`production`), `devTeam` (iOS Apple Team ID, needed for physical-device builds), `iPhoneDeploymentTarget`, `smallIcons`/`largeIcons` (Android). Requires Expo SDK 53+ / RN 0.79+ for New Architecture (matrix); if the project is older, note the constraint rather than force-upgrading (safety contract §7 — no unrelated bumps).
 
-When Step 3 requires Firebase client config, validate the package and Sender ID as [android.md](android.md) specifies, copy the file to a stable project path, and set:
+For every Android target, validate the package as [android.md](android.md) specifies, copy the file to a stable project path, and set:
 
 ```json
 {

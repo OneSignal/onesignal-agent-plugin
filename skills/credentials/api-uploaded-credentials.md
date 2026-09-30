@@ -89,9 +89,9 @@ If it's a custom service account, it needs `roles/firebasemessaging.admin` and `
 ### google-services.json is separate client configuration
 OneSignal authenticates to FCM server-side using the service-account JSON above. `google-services.json` cannot replace that credential and is never uploaded to OneSignal.
 
-The setup skill also asks for the client file when Android credentials were missing at the start of the run, so a new integration is ready for Firebase Installation ID registration. For an existing FCM setup, it requires the file only when `firebase_messaging_installation_id_enabled=true` (or when the app already uses Firebase client SDKs). The file must describe the same Firebase project as the service account: its package must match the Android app and its `project_number` must match OneSignal's `android_sender_id`.
+The setup skill requires the client file for every Android integration and applies it before this credentials flow runs. The file must describe the same Firebase project as the service account: its package must match the Android app and its `project_number` must match OneSignal's `android_sender_id`.
 
-The setup skill owns copying the file and enabling the Google Services Gradle plugin. This credentials skill only uploads the service account.
+The setup skill owns copying the file and enabling the Google Services Gradle plugin. This credentials skill runs afterward as the final setup step and only uploads the service account.
 
 ### FCM failure modes → what to tell the user (surface the raw error first)
 | Symptom | Likely cause | Fix |

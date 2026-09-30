@@ -1,6 +1,6 @@
 ---
 name: setup
-description: Entry-point OneSignal onboarding skill. Use when a developer wants to add, install, integrate, initialize, or "set up" the OneSignal SDK in their own codebase (web, iOS, Android, React Native, Expo, Flutter, Cordova/Ionic/Capacitor, Unity) — triggers on "set up OneSignal", "add push notifications", "install the OneSignal SDK", "integrate OneSignal", "onboard onto OneSignal", or a fresh project with no OneSignal present. Supports one-command invocation with arguments, e.g. "/onesignal:setup app=<APP_ID>". Detects the platform/framework from project manifests, gates on push credentials FIRST (uploading them via the provisioning endpoint before any SDK code is written), installs and initializes the SDK, adds a debug-only verification helper, and hands off to the verify skill.
+description: Entry-point OneSignal onboarding skill. Use when a developer wants to add, install, integrate, initialize, or "set up" the OneSignal SDK in their own codebase (web, iOS, Android, React Native, Expo, Flutter, Cordova/Ionic/Capacitor, Unity) — triggers on "set up OneSignal", "add push notifications", "install the OneSignal SDK", "integrate OneSignal", "onboard onto OneSignal", or a fresh project with no OneSignal present. Supports one-command invocation with arguments, e.g. "/onesignal:setup app=<APP_ID>". Detects the platform/framework, installs and initializes the SDK, requires Android Firebase client config, adds a debug-only verification helper, then uploads platform credentials as the final step before verification.
 argument-hint: app=<APP_ID>
 ---
 
@@ -62,7 +62,7 @@ Do not ask again. Do not reach the network by another route.
 ## Network access — declare it once, after checkpoint consent
 
 This skill needs the network for the SDK version endpoint (Step 4) and the app and
-credential API calls (Steps 2–3). If the user consented above, checkpoints also use the
+credential API calls (Steps 2 and 7). If the user consented above, checkpoints also use the
 network. All of them are `api.onesignal.com` or `onesignal.github.io`.
 
 **If your runtime sandboxes network access, request approval once, before Step 0**, and
@@ -71,7 +71,7 @@ question already happened. A request made in advance can be granted; a syscall d
 part-way through a command cannot.
 
 If the user declines network access, everything still runs: Step 4 falls back to asking
-them to confirm a version, and Step 3 falls back to a dashboard check. Checkpoints
+them to confirm a version, and Step 7 falls back to a dashboard check. Checkpoints
 follow the recorded answer in `.onesignal/telemetry`, not this refusal: blocked sends
 stay local and wait for a later flush. Do not treat a network refusal as a checkpoint
 opt-out — never write `0` over a recorded `1`. Ask once. Never route around a refusal.
@@ -122,8 +122,8 @@ Rules that matter:
 The production entry point is **`/onesignal:setup app=<APP_ID>`**. If arguments are present, parse them before Step 0:
 
 - `app=` → the OneSignal App ID (public UUID). Use it and skip the Step-2 ask.
-- `token=` (also accept `key=`) → **optional**. Do not ask for it. If present, it is the **app-scoped key** for this app (the setup token from the OneSignal setup page, or an API key). It authenticates the credentials gate (Step 3) and server-side verification — use it in the commands you run. Per the safety contract ("The setup key" section): don't repeat it in your text output or summaries, and never write it into the repo or any committed/client file. If it's a long-lived API key rather than a disposable setup token, add one line to the final summary suggesting they rotate it in Keys & IDs, since chat transcripts persist.
-- No `token=` → read the app-scoped key from the environment (`$ONESIGNAL_REST_API_KEY` / `$ONESIGNAL_SETUP_TOKEN`), as Step 3 describes. Never ask the user to paste a key into chat (safety contract "Never"). If no key is available, Step 3 falls back to the dashboard check.
+- `token=` (also accept `key=`) → **optional**. Do not ask for it. If present, it is the **app-scoped key** for this app (the setup token from the OneSignal setup page, or an API key). It authenticates the final credentials step (Step 7) and server-side verification — use it in the commands you run. Per the safety contract ("The setup key" section): don't repeat it in your text output or summaries, and never write it into the repo or any committed/client file. If it's a long-lived API key rather than a disposable setup token, add one line to the final summary suggesting they rotate it in Keys & IDs, since chat transcripts persist.
+- No `token=` → read the app-scoped key from the environment (`$ONESIGNAL_REST_API_KEY` / `$ONESIGNAL_SETUP_TOKEN`) in Step 7. Never ask the user to paste a key into chat (safety contract "Never"). If no key is available, the credentials skill offers MCP authentication or the dashboard path.
 - No arguments → proceed normally: ask for the App ID in Step 2, look for keys already exported in the environment.
 
 ---
@@ -133,7 +133,7 @@ The production entry point is **`/onesignal:setup app=<APP_ID>`**. If arguments 
 1. Run `git status --porcelain`. Dirty tree → STOP and ask: stash / proceed on top / abort. **Report the dropout before ending the turn to ask** — a session that never resumes otherwise leaves no trace of why: `bash <plugin>/scripts/checkpoint.sh setup.preflight fail dirty_tree` (it buffers; no App ID exists yet). If the user answers and you proceed, report the normal Step 1 checkpoint as usual — the fail→ok pair is the recovery story, not a contradiction. No `.git` present → tell the user there is no VCS safety net; you will write `<file>.onesignal.bak` siblings before edits, and proceed only if they accept.
 2. **Check the script runtime.** The helpers in `<plugin>/scripts/` are Python 3 (3.7 or newer, standard library only); `checkpoint.sh` is bash and does not need it. Run `python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 7) else 1)'`. If `python3` is not found, try the same one-liner with `python`, then with `py -3` — Windows installs put `python` and `py` on `PATH`, not `python3`. The first interpreter that exits 0 is the one for this run: if it is not `python3`, put it in front of every script path below (`python <plugin>/scripts/detect_platform.py`), because the scripts' shebang line names `python3`. If none passes → **report the dropout, then STOP and ask**: `bash <plugin>/scripts/checkpoint.sh setup.preflight fail runtime_missing` (it buffers; no App ID exists yet). Ask one structured question (safety contract §14) with 2 choices:
    - **Install Python 3 and retry** (recommended). Give the command for the user's OS and let them run it: macOS `xcode-select --install`; Debian/Ubuntu `sudo apt install python3`; Fedora `sudo dnf install python3`; Windows `winget install Python.Python.3.12`. Never install system packages yourself. **End the turn after you give the command.** The answer to the question is not the confirmation; the install has not run yet. Re-run the 3 interpreter checks only after the user says the install is done. On Windows, tell them to open a new terminal first, because the current shell does not see the new `PATH`. If every check still fails, ask the same question again; do not fall through to the by-hand path on your own. When a check passes, continue; the normal Step 1 checkpoint records the recovery.
-   - **Continue without the scripts.** The by-hand fallbacks apply for the rest of the run: do the Step 0.3 detection by hand (below); run the Step 3.3 config probes with `curl` (Step 3); read the exact version from the feed with `curl` (Step 4); walk the Step 8 checklist by eye; scan your own diff for key-shaped strings before you finish. Report the Step 1 checkpoint and the Step 8 completion checkpoint as `ok_after_fix runtime_missing`, and state in the Step 8 summary that the deterministic checks did not run.
+   - **Continue without the scripts.** The by-hand fallbacks apply for the rest of the run: do the Step 0.3 detection by hand (below); read the exact version from the feed with `curl` (Step 4); run the final Android/web config probes with `curl` in Step 7; walk the Step 8 checklist by eye; scan your own diff for key-shaped strings before you finish. Report the Step 1 checkpoint and the Step 8 completion checkpoint as `ok_after_fix runtime_missing`, and state in the Step 8 summary that the deterministic checks did not run.
 3. **Detect platform and prior install deterministically.** If the runtime check passed, run `<plugin>/scripts/detect_platform.py` (defaults to CWD). It returns detected platform(s) + language + package manager per package (monorepo-aware), and a `prior_onesignal` block that greps for the dependency line, init calls (`OneSignal.init`/`initialize`/`initWithContext`), `OneSignalSDKWorker.js`, and our `onesignal:managed` marker. If the run continues without the scripts, produce the same 2 results by hand: match the platform from the Step 1 signal table, and search the tree (read-only, `grep -rn` or the editor search) for the 4 prior-install signals — the OneSignal dependency line in the manifest, an `OneSignal.init` / `initialize` / `initWithContext` call, a `OneSignalSDKWorker.js` file, and the `onesignal:managed` marker. Treat any hit as `prior_onesignal.found`. If `prior_onesignal.found` is true → propose **update/repair**, never a duplicate install; if a **different App ID** is already wired in, ask which is correct, never silently overwrite. If `ambiguous` is true (multiple packages / no clear signal) → ASK which package(s) to integrate; do not guess. Read-only; never executes repo code (safety contract §12).
 4. Propose a new `onesignal-integration` branch (default). The user may opt to write to the current branch instead.
 5. You will declare the full file allow-list in Step 5 before writing. Include `.onesignal/` (checkpoint run state) and `.gitignore`.
@@ -206,41 +206,31 @@ run the `flush` from the checkpoint block above.
 
 **Never** hardcode a demo/placeholder App ID as a working fallback. Use a clearly-fake sentinel like `YOUR_ONESIGNAL_APP_ID` only inside code you are about to have the user replace, and replace it with the real ID before the final diff if you have it.
 
-## Step 3 — Push-credentials gate (MANDATORY ORDER: credentials before any install)
+## Step 3 — Android Firebase client config
 
-The single worst onboarding failure is installing the SDK before push credentials exist: the app builds, the device registers, and it shows up **unsubscribed** because OneSignal has nothing to hand APNs/FCM. Close credentials FIRST. Never skip this step silently.
+For every Android-bearing app — native Android, Expo, React Native, Flutter, Cordova,
+Capacitor, or Unity — `google-services.json` is required. Do not inspect the FID flag and
+do not make the file conditional on whether OneSignal already has server credentials.
+The client config is part of the app integration; the service-account JSON is a separate
+server credential uploaded in Step 7.
 
-1. **Check what's configured.** With an app-scoped key available (`$ONESIGNAL_SETUP_TOKEN` / `$ONESIGNAL_REST_API_KEY`), `GET /api/v1/apps/{APP_ID}` (app auth works) and check the platform you're about to install: Android → FCM service-account configured? iOS → APNs key configured? Web → Site URL/origin configured? No key available → ask the user to check the dashboard (Settings > Push Platforms) and tell you. Preserve whether Android credentials were present **before this run**; the Android client-config branch below depends on that initial state.
-2. **Missing → run the credentials skill NOW**, before writing any code. It walks the human through the Apple/Firebase console steps and uploads the file itself via the write-once endpoint (`POST /api/v1/apps/{APP_ID}/credentials`). Do not proceed until it reports success or the user explicitly defers.
-3. **Confirm the config is LIVE before any device ever runs** — use the API script, which encodes the cache-bust and poll-ordering quirks (no MCP tool covers these config reads — see api-reference "OneSignal MCP server"):
-   - **Android:** `<plugin>/scripts/onesignal_api.py android-params <APP_ID>` — polls until `android_sender_id` appears (`status: fcm_live`). ⚠️ Run only AFTER the credential upload; fetching before credentials exist primes a CDN cache with the empty response on a fresh app.
-   - **iOS:** the upload's success response is the config confirmation. (New APNs keys can take ~10–15 min to propagate on Apple's side — that affects delivery, not this gate.)
-   - **Web:** `<plugin>/scripts/onesignal_api.py web-probe <APP_ID>` — free, unauthenticated. `status: provisioned` = live; `status: not_configured` (feed `code: 2`) = the dashboard web step never happened (the signup flow does not do it automatically). The script always appends the `?fresh=<ts>` cache-bust for you — responses are CDN-cached ~1 h, so probing by hand without it can read a stale error (api-reference "Web platform config probe"). ⚠️ Probe only AFTER the config/upload.
-   - **Without Python (Step 0.2):** run the same 2 probes with `curl`, and keep the same rules. Web: `curl -fsS "https://api.onesignal.com/sync/<APP_ID>/web?fresh=$(date +%s)"` — always with the `?fresh=` cache-bust; `success: true` = live, `code: 2` = not configured, `code: 1` = no such app (api-reference "Web platform config probe"). Android: `curl -fsS "https://api.onesignal.com/apps/<APP_ID>/android_params.js"` — FCM is live once `android_sender_id` is present in the body; poll at most 60 seconds, still only AFTER the upload. A non-2xx status on every poll is a request failure (bad App ID or route unavailable), not "not live" — stop and tell the user; do not keep waiting.
+1. Ask the user for the path to `google-services.json`. If they do not have it, guide
+   them through Firebase **Project settings → General → Your apps**: register the exact
+   Android package and download the file.
+2. Read the JSON and verify
+   `client[].client_info.android_client_info.package_name` matches the Android
+   application ID. Stop on a mismatch.
+3. Include the client file and its build integration in the Step-5 reviewed change set.
+   Native Android uses the app-module file plus the Google Services Gradle plugin;
+   generated frameworks use their supported config field. Follow [android.md](android.md)
+   and the framework reference.
+4. Keep `project_info.project_number` for the final credential step. After the service
+   account is uploaded and `android_sender_id` becomes live, Step 7 must compare them
+   before verification. A mismatch means the client and server files came from different
+   Firebase projects.
 
-**Checkpoint — this is the one that matters most.** This step encodes our belief that missing credentials are the single worst onboarding failure; the data either confirms it or does not:
-
-```bash
-bash <plugin>/scripts/checkpoint.sh setup.credentials_gate ok                       # already configured
-bash <plugin>/scripts/checkpoint.sh setup.credentials_gate ok_after_fix uploaded_during_run
-bash <plugin>/scripts/checkpoint.sh setup.credentials_gate fail credentials_missing
-bash <plugin>/scripts/checkpoint.sh setup.credentials_gate fail deferred            # user chose to skip
-```
-
-**Report the fail before ending the turn** — the same rule as Steps 0–2. This gate blocks
-on human steps (console work, an upload, a defer decision), and a session that stops here
-must leave a record: `fail credentials_missing` the moment the gate blocks, `fail deferred`
-the moment the user chooses to skip. If credentials then land and the gate passes, report
-`ok_after_fix uploaded_during_run` — the fail→fix pair is the recovery story, not a
-contradiction.
-
-4. **The user may explicitly defer** ("just install the SDK, I'll do credentials later"). Honor it, but say plainly: the device will register as unsubscribed until credentials land, and the verify skill must be re-run afterwards. Note the deferral in the final summary.
-5. **Android-bearing apps — resolve Firebase client config separately.** This applies to native Android and to an Android project inside Expo, React Native, Flutter, Cordova, Capacitor, or Unity. The service-account JSON remains mandatory server-side; `google-services.json` is a different, client-side input and never substitutes for it.
-   - Inspect the source Android manifest and any existing merged manifest for the effective `firebase_messaging_installation_id_enabled` value. A library can inject the flag. If no effective value can be established, ask the user whether the app enables Firebase Installation ID registration; do not infer `false` from a missing source declaration.
-   - Require `google-services.json` plus the Google Services Gradle plugin when **either** the FID flag is true **or** the FCM service account was missing at the start of this run. The second case makes a newly configured integration FID-ready.
-   - If credentials existed at the start and the flag is false/absent, leave Firebase client config alone unless the app already uses it.
-   - Follow [android.md](android.md) for the file-path ask, package/Sender-ID validation, destination, and Gradle plugin changes. The file and service account must represent the same Firebase project.
-   - If the user declines client config while FID is true, STOP: the selected FID registration path cannot obtain a token without the host Firebase configuration. If FID is false and client config was required only because credentials were initially missing, the user may explicitly defer it; state that the current legacy path can run but the app is not FID-ready.
+For iOS and web, Step 3 has no repo-side credential action. Their platform credentials
+are also resolved in Step 7, after the SDK change set is complete.
 
 ## Step 4 — SDK version selection (deterministic — do NOT read the feed by hand)
 
@@ -266,7 +256,7 @@ Open the platform reference file for the detected platform and follow its instal
 - the SDK init / lifecycle file (AppDelegate, Application subclass, `App.tsx`/`_layout.tsx`, `main.dart`, `<head>`/root layout for web)
 - ONE centralized wrapper module (see below)
 - platform config files strictly required by the matrix (AndroidManifest, Info.plist + pbxproj, entitlements, web service worker in `public/`)
-- Android Firebase client config when Step 3 requires it (`google-services.json`, the root/app Gradle plugin declarations, or the framework's equivalent config field)
+- Android Firebase client config (`google-services.json`, the root/app Gradle plugin declarations, or the framework's equivalent config field)
 - ONE debug-only verification helper file
 - `.gitignore` and, if needed, `.env` + `.env.example`
 
@@ -300,18 +290,40 @@ The verification helper is the **only** place a direct SDK call outside the wrap
 
 ## Step 7 — Handoffs (automatic — announce, don't ask)
 
-The funnel is `setup → credentials → verify`. After the Step-8 summary, **continue straight into the next skill** — announce the transition in one line ("Setup complete — continuing to verify.") instead of asking "want me to continue?". Pause only at a real human gate (checkpoint consent, console/portal steps, test-send consent, diff confirmation) or on a failure.
+The funnel is `setup → credentials → verify`. After the Step-8 summary, credentials are
+the final setup action. **Continue straight into the credentials skill** — announce
+"SDK setup complete — configuring push credentials before verification." Do not ask
+whether to continue.
 
-Decide what is still missing:
-- **Push credentials** should already be closed by the Step-3 gate. If the user deferred them there, restate it now: push will NOT deliver until credentials are set — continue into the **credentials** skill and say so plainly.
-- **Ready to confirm delivery** → continue into the **verify** skill, which drives the activation ladder (subscription → external ID → first delivered message).
-- **Web only:** remind the user of the dashboard step you can't do — the web platform's **Site URL must EXACTLY match the deployed origin**, and the site must serve the worker same-origin over HTTPS with `Content-Type: application/javascript`. This is a human dashboard action.
+1. The credentials skill detects whether the target platform is already configured.
+2. If it is missing, procure and upload the credential now. Do not launch or verify the
+   app before this resolves unless the user explicitly defers.
+3. For Android, after upload run
+   `<plugin>/scripts/onesignal_api.py android-params <APP_ID>` until
+   `android_sender_id` appears. Compare it with the retained
+   `google-services.json` `project_info.project_number`; stop on a mismatch.
+4. Report the setup credential gate after the credentials skill resolves:
+
+```bash
+bash <plugin>/scripts/checkpoint.sh setup.credentials_gate ok                       # already configured
+bash <plugin>/scripts/checkpoint.sh setup.credentials_gate ok_after_fix uploaded_during_run
+bash <plugin>/scripts/checkpoint.sh setup.credentials_gate fail credentials_missing
+bash <plugin>/scripts/checkpoint.sh setup.credentials_gate fail deferred
+```
+
+Report `fail credentials_missing` when the final step first blocks and `fail deferred`
+when the user explicitly skips it. A later successful upload reports
+`ok_after_fix uploaded_during_run`.
+
+Only after credentials are live, continue into **verify**, which drives the activation
+ladder (subscription → external ID → first delivered message). Web still requires the
+Site URL to match the deployed origin and the worker to be served same-origin over HTTPS.
 
 ## Step 8 — Summary & rollback (safety contract §9–10)
 
 Emit a copy-ready summary: files changed; SDK version + that it came from the releases.json endpoint; the dashboard/console steps the human still owns (from the platform's "Human must do" column in the matrix); verification steps (run the debug build → accept the permission prompt → the verify skill confirms the subscription and sends the test push); the verification helper's filename + call site (debug-only; safe to keep, deletable on request); and rollback commands (`git checkout -- <files>` / delete the `onesignal-integration` branch / restore `.onesignal.bak` files). **Do NOT auto-commit or open a PR** — offer the commands; the user runs them.
 
-Before finishing, **run the structural self-check and fix anything it flags** — do not rely on the build or on your own reading: `<plugin>/scripts/verify_integration.py <project_dir> --platform <platform> --app-id <APP_ID>`. It deterministically verifies the constraint-following facts a compiler cannot see (exact version pin, no placeholder/fabricated App ID, init in an Application subclass, the verification file guarded by `BuildConfig.DEBUG` so it can't ship to release, `onesignal:managed` markers, complete Firebase client config when the FID flag is enabled, no unrelated `google-services.json`, no deprecated `addOutcome`). If `verdict` is `fail`, repair each error-level check and re-run until it passes; only then declare done. This is the deterministic close of the loop — the agent catches its own slips (e.g. a verification file that names `installIfDebug` but forgets the guard) instead of shipping them. If the script cannot run because Python is missing (Step 0.2), check each item in that list by reading the files you wrote, and say in the summary that the structural self-check did not run.
+Before finishing, **run the structural self-check and fix anything it flags** — do not rely on the build or on your own reading: `<plugin>/scripts/verify_integration.py <project_dir> --platform <platform> --app-id <APP_ID>`. It deterministically verifies the constraint-following facts a compiler cannot see (exact version pin, no placeholder/fabricated App ID, init in an Application subclass, the verification file guarded by `BuildConfig.DEBUG` so it can't ship to release, `onesignal:managed` markers, required Android Firebase client config, no deprecated `addOutcome`). If `verdict` is `fail`, repair each error-level check and re-run until it passes; only then declare done. This is the deterministic close of the loop — the agent catches its own slips (e.g. a verification file that names `installIfDebug` but forgets the guard) instead of shipping them. If the script cannot run because Python is missing (Step 0.2), check each item in that list by reading the files you wrote, and say in the summary that the structural self-check did not run.
 
 Before finishing, **scan your own diff for secret-shaped strings** deterministically: `<plugin>/scripts/scan_secrets.py` (scans the working-tree diff; add `--staged` for staged changes, or pass file paths). It flags REST/org keys, `.p8`/service-account contents, and `Authorization: Key` headers while ignoring the public App ID and obvious placeholders, and never prints the matched value — only its file, line, column, and rule. If it exits non-zero, abort and remove the secret — keys live in env vars only (safety contract §"Never"). If the script cannot run because Python is missing (Step 0.2), read `git diff` yourself and look for the same shapes: long key-like strings, `Authorization: Key` headers, `-----BEGIN PRIVATE KEY-----`, and `"private_key"` JSON fields. If you find one, the rule is the same as the scripted path: abort, remove the secret, and do not declare done until the diff is clean.
 

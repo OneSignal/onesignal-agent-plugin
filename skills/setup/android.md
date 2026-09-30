@@ -4,19 +4,17 @@ Reference for the `setup` skill. Follow [SKILL.md](SKILL.md) Steps 0–8; this f
 
 ## Firebase server credential and client config are separate
 
-OneSignal always needs the server-side **FCM v1 service-account JSON** on the OneSignal app. `google-services.json` cannot replace it. The client file is additionally required in either of these cases:
+OneSignal always needs both sides of Firebase configuration:
 
-1. `firebase_messaging_installation_id_enabled` resolves to `true` in the Android manifest. The FID registration path uses the host app's default Firebase configuration.
-2. The FCM service account was missing when this setup run started. Add the client config while configuring the new Firebase project so the integration is FID-ready.
+- `google-services.json` configures the Android client and is required for every integration.
+- The FCM v1 service-account JSON authorizes OneSignal's servers to send and is uploaded
+  only after the SDK and client config have been applied.
 
-If the service account was already configured and the FID flag is false or absent, do not add `google-services.json` solely for OneSignal.
-
-Inspect the app manifest and any existing merged manifest. A dependency can inject the FID flag, so an explicit source-manifest absence is not proof that it resolves false. If the effective value cannot be determined, ask the user whether the app intentionally enables Firebase Installation ID registration; do not guess.
-
-When client config is required:
+Neither file replaces the other. Do not inspect `firebase_messaging_installation_id_enabled`
+to decide whether to add the client file.
 
 1. Have the user register the app's exact package name in Firebase **Project settings → General → Your apps**, then download `google-services.json`. Ask only for its file path.
-2. Read the JSON and verify `client[].client_info.android_client_info.package_name` matches the app package. Verify `project_info.project_number` matches OneSignal's `android_sender_id`; if the sender ID is not available yet, perform this check after the service-account upload becomes live. A mismatch means the files came from different Firebase projects — stop instead of copying it.
+2. Read the JSON and verify `client[].client_info.android_client_info.package_name` matches the app package. Retain `project_info.project_number`; after the final service-account upload, verify it matches OneSignal's live `android_sender_id`. A mismatch means the files came from different Firebase projects — stop instead of verifying the app.
 3. Copy it to the Android application module root (normally `app/google-services.json`).
 4. Enable the Google Services Gradle plugin. Follow the project's existing plugin style; when no version is already managed, use the exact Firebase-documented pin `4.4.4`: root plugin `com.google.gms.google-services` with `apply false`, then apply `com.google.gms.google-services` in the app module. The JSON file without the plugin does not produce the Firebase resources the FID path reads.
 
@@ -26,8 +24,8 @@ When client config is required:
 
 ## What the agent does vs. the human (matrix)
 
-- **Agent:** Gradle dependency; `Application` subclass with `OneSignal.initWithContext`; register it in `AndroidManifest`; `requestPermission` call (inside the verification helper only); wrapper + verification helper; add the validated Firebase client config when the rules above require it.
-- **Human (Firebase console):** create a Firebase project if none exists and generate the **service-account JSON** → handed to the **credentials** skill for upload; when required, register the Android package and download `google-services.json`. Push will not deliver until the FCM v1 credential is on the OneSignal app.
+- **Agent:** validated Firebase client config; Gradle dependency; `Application` subclass with `OneSignal.initWithContext`; register it in `AndroidManifest`; `requestPermission` call (inside the verification helper only); wrapper + verification helper; then upload the server credential as the final step before verification.
+- **Human (Firebase console):** register the Android package and download `google-services.json`; generate the **service-account JSON** when the final credentials step asks for it. Push will not deliver until that server credential is on the OneSignal app.
 
 ## Dependency (exact pin — NEVER a Gradle version range)
 
@@ -156,10 +154,10 @@ Step-5 change set and the verification helper both exist (telemetry contract rul
 apply, consent included):
 
 - `INTERNET` present in the manifest, no manual `POST_NOTIFICATIONS` line (the SDK
-  manifest-merges it), the `requestPermission` call wired in the helper, and any
-  required Firebase client config validated and applied:
+  manifest-merges it), the `requestPermission` call wired in the helper, and
+  `google-services.json` plus its Gradle plugin validated and applied:
   `bash <plugin>/scripts/checkpoint.sh setup.platform_config ok`
-- A required `google-services.json` or Gradle plugin is missing because the user
+- `google-services.json` or its Gradle plugin is missing because the user
   declined that change:
   `bash <plugin>/scripts/checkpoint.sh setup.platform_config fail firebase_client_config`
 
@@ -168,5 +166,5 @@ minimal integration — still plain `ok`.
 
 ## Handoffs
 
-- Almost always hand off to **credentials** next — Android push does not deliver without the FCM v1 service-account JSON on the OneSignal app.
+- Hand off to **credentials** as the final setup step — Android push does not deliver without the FCM v1 service-account JSON on the OneSignal app.
 - Then **verify** for the activation ladder. Test on a device/emulator WITH Google Play Services.

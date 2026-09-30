@@ -20,7 +20,7 @@ skill directly.
 | # | Skill | Invoke as | What it does |
 |---|-------|-----------|--------------|
 | 1 | **setup** | `/onesignal:setup` | Detects your platform/framework, installs and initializes the OneSignal SDK, and adds a debug-only verification helper. The entry point for "add push notifications" / "integrate OneSignal". |
-| 2 | **credentials** | `/onesignal:credentials` | Walks you through the human-only console steps to procure push credentials (Apple APNs `.p8`, Firebase FCM v1 service-account JSON, web Site URL / Safari certs, email SPF/DKIM/DMARC, SMS sender), then uploads the API-uploadable ones for you. For a new Android setup it also obtains the separate `google-services.json` client config for the setup skill. The upload sets credentials only for a platform that has none yet; you replace credentials in the dashboard. |
+| 2 | **credentials** | `/onesignal:credentials` | Runs after the SDK change set as the final setup step. It walks you through procuring push credentials (Apple APNs `.p8`, Firebase FCM v1 service-account JSON, web Site URL / Safari certs, email SPF/DKIM/DMARC, SMS sender), then uploads the API-uploadable ones. The upload sets credentials only for a platform that has none yet; you replace credentials in the dashboard. |
 | 3 | **verify** | `/onesignal:verify` | Confirms a real message is actually **delivered** to an identified subscriber — the true "activated" milestone — not just that code compiles. Needs a device or browser that can receive the test push, and a human to accept the permission prompt. |
 
 **Recommended path:** `setup → credentials → verify`. Stages chain automatically: when one completes,
@@ -46,7 +46,7 @@ before writes.
 - **A OneSignal account** — free at [onesignal.com](https://onesignal.com).
 - **An App ID.** Your app's public identifier. Find it in the dashboard under **Settings → Keys & IDs**
   (or in the dashboard URL). The App ID is public and safe to commit in client code.
-- **For Android:** the Firebase service-account JSON is the server credential OneSignal needs to send. New setups also use the separate `google-services.json` client config; existing setups require it when Firebase Installation ID registration is enabled. The plugin keeps the service account out of the repo and validates that both files represent the same Firebase project.
+- **For Android:** every integration requires the separate `google-services.json` client config. The plugin adds it with the SDK change set, then uploads the Firebase service-account JSON as the final step before verification. The service account stays out of the repo, and both files must represent the same Firebase project.
 - **A REST API key**, exported as an environment variable:
   ```bash
   export ONESIGNAL_REST_API_KEY="<your REST API key>"

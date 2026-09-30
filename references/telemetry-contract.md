@@ -61,7 +61,7 @@ Each is `skill.milestone`. Status is `ok`, `ok_after_fix`, or `fail`.
 |---|---|---|
 | `setup.preflight` | after Step 0–1: tree checked, script runtime present, prior install detected, platform identified | platform distribution; how often we meet an existing install; how often `python3` is missing |
 | `setup.app_id` | App ID obtained (Step 2) | how often users arrive without an app |
-| `setup.credentials_gate` | Step 3 resolves | **the headline metric.** `ok` = configured, `ok_after_fix` = uploaded during the run, `fail` = missing, class `deferred` when the user chose to skip |
+| `setup.credentials_gate` | final credentials handoff resolves after the SDK change set | **the headline metric.** `ok` = configured, `ok_after_fix` = uploaded during the run, `fail` = missing, class `deferred` when the user chose to skip |
 | `setup.sdk_pinned` | exact version resolved from releases.json (Step 4) | catches releases.json being unreachable |
 | `setup.install_applied` | change set approved and written (Step 5) | how often users reject the diff |
 | `setup.verification_added` | verification helper written (Step 6) | — |
@@ -81,8 +81,8 @@ verification helper both exist, because the prerequisites span both steps:
 - `android` — the permission and Firebase client-config state: `INTERNET` present in
   the manifest, no manual `POST_NOTIFICATIONS` line (the SDK manifest-merges it), the
   `requestPermission` call in the verification helper, and matching
-  `google-services.json` plus the Google Services Gradle plugin when FID is enabled
-  or the current run configured a previously-missing service account. If `INTERNET`
+  `google-services.json` plus the Google Services Gradle plugin on every Android
+  integration. If `INTERNET`
   was missing and the approved change set added it, that is part of the minimal
   integration — still plain `ok`. A required client config the user declined is
   `fail firebase_client_config`.

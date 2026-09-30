@@ -189,12 +189,12 @@ Full portal detail (screenshots-equivalent steps, .p8-vs-.p12 disambiguation, tr
 
 Full portal detail (enable-FCM-v1 detour, required service-account permissions, wrong-project error) is in [api-uploaded-credentials.md](api-uploaded-credentials.md#firebase-fcm-v1). Summary:
 
-1. **Human, in the Firebase console:** open or create the project → gear → **Project settings**.
-2. **Enable-FCM-v1 detour (only if needed):** on the **Cloud Messaging** tab, if **Firebase Cloud Messaging API (V1)** shows **disabled**, use the 3-dot menu → **Open in Cloud Console** → **Enable**, then wait a few minutes.
-3. **Generate the key:** Project settings → **Service accounts** → **Generate new private key** → confirm → a `.json` downloads. This file is a secret.
-4. **Prepare the client config for this new setup:** because Step 1 established that Android credentials were missing, go to **Project settings → General → Your apps**, register the app's exact Android package if needed, and download `google-services.json`. This is a separate client-config file, not the service account. Ask for both file paths and keep them distinct.
+1. **Client-config precondition:** confirm setup already added `google-services.json` and its build integration. If not, route to setup first and resume this flow afterward. Credentials are the final setup step, not the place that writes app configuration.
+2. **Human, in the Firebase console:** open the same project represented by `google-services.json` → gear → **Project settings**.
+3. **Enable-FCM-v1 detour (only if needed):** on the **Cloud Messaging** tab, if **Firebase Cloud Messaging API (V1)** shows **disabled**, use the 3-dot menu → **Open in Cloud Console** → **Enable**, then wait a few minutes.
+4. **Generate the key:** Project settings → **Service accounts** → **Generate new private key** → confirm → a `.json` downloads. This file is a secret.
 5. **You (agent):** confirm the service-account JSON is gitignored / outside the repo, ask the consent question ([The API-upload mechanism](#the-api-upload-mechanism-shared-by-apple-p8-and-firebase)), then Base64-encode it and upload via the apps API with param `fcm_v1_service_account_json` (the only required Android API param per the reference page). Validate the response.
-6. **Hand the client config to setup; never upload it to OneSignal.** OneSignal authenticates to FCM server-side with the service account. The setup skill validates the package and Sender ID, copies `google-services.json` into the Android app, and enables the Google Services Gradle plugin. It also requires that client config for an existing OneSignal FCM setup when `firebase_messaging_installation_id_enabled=true`.
+6. **Cross-check the projects:** after upload, poll `android_params` until `android_sender_id` is live and compare it with `google-services.json` `project_info.project_number`. Stop before verify if they differ.
 
 
 

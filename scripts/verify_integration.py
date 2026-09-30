@@ -252,47 +252,29 @@ class Checks:
             ),
         )
 
-    def _android_fid_enabled(self):
-        flag = re.compile(
-            r"""<meta-data\b(?=[^>]*android:name\s*=\s*['"]firebase_messaging_installation_id_enabled['"])"""
-            r"""(?=[^>]*android:value\s*=\s*['"]true['"])[^>]*>""",
-            re.I | re.S,
-        )
-        for fp in walk_files(self.root):
-            if os.path.basename(fp) != "AndroidManifest.xml":
-                continue
-            text = re.sub(r"<!--.*?-->", "", read(fp), flags=re.S)
-            if flag.search(text):
-                return True
-        return False
-
-    def android_fid_client_config(self):
-        if self.platform in ("ios", "web") or not self._android_fid_enabled():
-            self.add("android_fid_client_config", True, "error")
+    def android_client_config(self):
+        if self.platform in ("ios", "web"):
+            self.add("android_client_config", True, "error")
             return
         gs = [fp for fp in walk_files(self.root) if os.path.basename(fp) == "google-services.json"]
         plugin = grep(self.root, re.compile(r"com\.google\.gms\.google-services"))
         expo_field = grep(self.root, re.compile(r"""googleServicesFile\s*["']?\s*:"""))
-        ok = bool(gs) and bool(plugin or expo_field)
+        if self.platform == "expo":
+            ok = bool(gs) and bool(expo_field)
+        elif self.platform in ("cordova", "capacitor", "unity"):
+            # These frameworks generate or manage the native Gradle application.
+            ok = bool(gs)
+        else:
+            ok = bool(gs) and bool(plugin)
         self.add(
-            "android_fid_client_config",
+            "android_client_config",
             ok,
             "error",
             "" if ok else (
-                "firebase_messaging_installation_id_enabled=true requires google-services.json "
-                "and the Google Services Gradle plugin (or Expo googleServicesFile)"
+                "Android integration requires google-services.json and the Google Services "
+                "Gradle plugin (or Expo googleServicesFile)"
             ),
         )
-
-    def android_no_stray_google_services(self):
-        gs = [fp for fp in walk_files(self.root) if os.path.basename(fp) == "google-services.json"]
-        firebase = grep(self.root, r"com\.google\.firebase")
-        plugin = grep(self.root, re.compile(r"com\.google\.gms\.google-services|googleServicesFile"))
-        client_config_needed = self._android_fid_enabled()
-        # New FCM setups can intentionally add this before any Firebase dependency uses it.
-        bad = bool(gs) and not firebase and not plugin and not client_config_needed
-        self.add("android_no_stray_google_services", not bad, "warn",
-                 "" if not bad else "google-services.json present but no Firebase client usage or FID flag was detected")
 
     def android_requestpermission_not_callback(self):
         # OneSignal.Notifications.requestPermission is `suspend fun(Boolean): Boolean`
@@ -620,11 +602,11 @@ class Checks:
     def run(self):
         universal = [self.no_version_range, self.managed_marker_present, self.no_placeholder_app_id,
                      self.app_id_present, self.no_deprecated_addoutcome, self.no_committed_secrets,
-                     self.android_fid_client_config]
+                     self.android_client_config]
         by_platform = {
             "android": [self.android_init_in_application, self.android_manifest_registers_app,
                         self.android_manifest_no_node_replace,
-                        self.android_no_stray_google_services, self.android_verification_debug_guarded,
+                        self.android_verification_debug_guarded,
                         self.android_requestpermission_not_callback, self.android_buildconfig_feature_enabled,
                         self.android_coroutines_on_classpath],
             # Unity ships via .unitypackage/UPM (a GUI step, no text manifest we can
