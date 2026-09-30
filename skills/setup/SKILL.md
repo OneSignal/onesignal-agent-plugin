@@ -295,14 +295,24 @@ the final setup action. **Continue straight into the credentials skill** — ann
 "SDK setup complete — configuring push credentials before verification." Do not ask
 whether to continue.
 
-1. The credentials skill detects whether the target platform is already configured.
-2. If it is missing, procure and upload the credential now. Do not launch or verify the
-   app before this resolves unless the user explicitly defers.
-3. For Android, after upload run
+1. **Build and launch first — credentials are not a prerequisite for this.** Run the
+   platform's build and launch from the verify skill's Build/run gate
+   (`platform-verification.md` in the verify skill, e.g. Android
+   `./gradlew assembleDebug`, install, and start on an emulator/device with Google Play
+   Services). Fix compile errors you introduced and re-run. Launching before the upload
+   proves the integration compiles and starts, and lets the app register its first
+   subscription where the platform allows it. Do not send a test push and do not claim
+   delivery works; the **verify** skill owns that, after credentials. If no device or
+   emulator is available, report that and continue — do not block on it.
+2. The credentials skill detects whether the target platform is already configured.
+3. If it is missing, procure and upload the credential now. Do not start the verify
+   ladder (subscription poll, test send) before this resolves unless the user explicitly
+   defers.
+4. For Android, after upload run
    `<plugin>/scripts/onesignal_api.py android-params <APP_ID>` until
    `android_sender_id` appears. Compare it with the retained
    `google-services.json` `project_info.project_number`; stop on a mismatch.
-4. Report the setup credential gate after the credentials skill resolves:
+5. Report the setup credential gate after the credentials skill resolves:
 
 ```bash
 bash <plugin>/scripts/checkpoint.sh setup.credentials_gate ok                       # already configured
