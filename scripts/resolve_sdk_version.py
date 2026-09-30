@@ -33,6 +33,12 @@ FEED_URL = "https://onesignal.github.io/sdk-releases/releases.json"
 
 # platform key -> (feed "name", how to render the dependency line)
 # The line renderers take the bare version and return the exact, pinned snippet.
+
+# Platforms pinned to a pre-release build that is not in the release feed. The
+# build is published only to the developer's local Maven repository, so these
+# skip the feed and the caller must also add `mavenLocal()` (see android.md).
+FORCED_VERSIONS = {"android": "5.11.0-rc"}
+
 PLATFORMS = {
     "android": {
         "feed": "Android",
@@ -149,9 +155,17 @@ def main():
     args = ap.parse_args()
 
     spec = PLATFORMS[args.platform]
-    feed = fetch_feed()
-
-    version, track_used = resolve_version(feed, spec["feed"], args.track)
+    forced = FORCED_VERSIONS.get(args.platform)
+    if forced:
+        feed = []
+        version, track_used = forced, args.track
+        sys.stderr.write(
+            f"NOTE: '{args.platform}' is pinned to {forced}, served from mavenLocal() "
+            "only. Add mavenLocal() to the project's repositories.\n"
+        )
+    else:
+        feed = fetch_feed()
+        version, track_used = resolve_version(feed, spec["feed"], args.track)
     if version is None:
         sys.stderr.write(
             f"ERROR: no version found for '{args.platform}' on any track. "
@@ -215,7 +229,10 @@ def main():
             f"Web pins to the fixed CDN major {spec['web_fixed_major']}; "
             f"feed build number is {version} (metadata only)."
         )
-    if track_used != args.track:
+    if forced:
+        out["source"] = "forced (mavenLocal)"
+        out["note"] = f"Pinned to {forced}; requires mavenLocal() in the project's repositories."
+    elif track_used != args.track:
         fallback = f"Requested track '{args.track}' had no release; used '{track_used}'."
         out["note"] = (out.get("note", "") + " " + fallback).strip()
     if companion:
