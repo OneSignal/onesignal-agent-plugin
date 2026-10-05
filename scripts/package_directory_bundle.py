@@ -529,7 +529,7 @@ def self_test(source):
         copy_source_subset(source, bad)
         os.remove(os.path.join(bad, ASSETS_DIR, "logomark.png"))
         ok = expect_failure("manifest logo that points to a missing file", bad, os.path.join(tmp, "bad-brand-asset-work"),
-                            "does not exist") and ok
+                            "interface.logo points to ./assets/logomark.png, which does not exist") and ok
     return ok
 
 

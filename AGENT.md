@@ -124,8 +124,8 @@ read-through alone.
 The OpenAI plugin directory does not accept the plugin tree. Its Skills tab accepts a zip with
 a plugin root at the top level: `.codex-plugin/plugin.json`, the skills under `skills/`, and
 the brand assets under `assets/`. The manifest `name` (`onesignal`) is the skill namespace that
-Codex shows (`onesignal:setup`); without the manifest the directory names the plugin after its
-app identifier. Each skill folder must be self-contained. `scripts/package_directory_bundle.py`
+Codex shows (`onesignal:setup`). Earlier zips had no manifest, and the listing took its name
+from the app identifier (`app-6a3d…`). Each skill folder must be self-contained. `scripts/package_directory_bundle.py`
 builds that artifact from this tree at release time:
 
 - It writes `.codex-plugin/plugin.json` from the repository manifest without `mcpServers`,
