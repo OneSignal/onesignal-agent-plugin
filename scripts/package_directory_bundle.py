@@ -63,6 +63,7 @@ SHARED_ROOT_FILES = ("endpoint.conf",)
 VERSION_FILES = {
     "claude": ".claude-plugin/plugin.json",
     "codex": ".codex-plugin/plugin.json",
+    "cursor": ".cursor-plugin/plugin.json",
     "checkpoint": "scripts/checkpoint.sh",
 }
 
@@ -142,9 +143,9 @@ def relpath(path, start):
 # ---------------------------------------------------------------------------
 
 def read_versions(source):
-    """Return the 3 version values; a missing or malformed file reads as None."""
+    """Return the 4 version values; a missing or malformed file reads as None."""
     versions = {}
-    for key in ("claude", "codex"):
+    for key in ("claude", "codex", "cursor"):
         path = os.path.join(source, VERSION_FILES[key])
         try:
             with open(path, encoding="utf-8") as handle:
@@ -337,7 +338,7 @@ def write_zip(bundle_dir, zip_path):
 def copy_source_subset(source, dest):
     """Copy only the parts of the tree the packager reads."""
     os.makedirs(dest)
-    for name in ("skills", "references", "scripts", ".claude-plugin", ".codex-plugin"):
+    for name in ("skills", "references", "scripts", ".claude-plugin", ".codex-plugin", ".cursor-plugin"):
         shutil.copytree(os.path.join(source, name), os.path.join(dest, name), ignore=COPY_IGNORE)
     for name in SHARED_ROOT_FILES:
         shutil.copy2(os.path.join(source, name), os.path.join(dest, name))
@@ -413,7 +414,7 @@ def self_test(source):
         copy_source_subset(source, bad)
         path = os.path.join(bad, VERSION_FILES["checkpoint"])
         write_text(path, re.sub(r'^PLUGIN_VERSION="[^"]*"', 'PLUGIN_VERSION="0.0.0"', read_text(path), count=1, flags=re.M))
-        ok = expect_failure("version mismatch across the 3 files", bad, os.path.join(tmp, "bad-version-mismatch-work"),
+        ok = expect_failure("version mismatch across the 4 files", bad, os.path.join(tmp, "bad-version-mismatch-work"),
                             "version mismatch") and ok
 
         bad = os.path.join(tmp, "bad-walk-up-marker")
