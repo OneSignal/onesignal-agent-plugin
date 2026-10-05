@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """Build and check the self-contained skill bundle for the OpenAI plugin directory.
 
-The directory accepts a zip whose top level is one skill root or a directory of
-skill roots. Each skill root must be self-contained. In this repository the 3
-skills share `scripts/`, `references/`, and `endpoint.conf` at the plugin root,
-so this script builds a copy in which every skill folder carries its own copy
-of the shared files, then rewrites the reference links to point inside the
-skill folder.
+The directory's Skills-only upload accepts a zip with a plugin root at the top
+level: `.codex-plugin/plugin.json`, the skills under `skills/`, and the brand
+assets under `assets/`. The manifest `name` becomes the skill namespace in
+Codex (`onesignal:setup`). Each skill folder must be self-contained. In this
+repository the 3 skills share `scripts/`, `references/`, and `endpoint.conf`
+at the plugin root, so this script builds a copy in which every skill folder
+carries its own copy of the shared files, then rewrites the reference links to
+point inside the skill folder. The bundled manifest is the repository manifest
+without `mcpServers`: a Skills-only upload rejects MCP configuration, and the
+listing's MCP server is attached in the portal.
 
 Usage:
     package_directory_bundle.py                 # write onesignal-skills-<version>.zip in the cwd
@@ -59,6 +63,14 @@ SCRIPTS_FOR_SKILL = {
 }
 
 SHARED_ROOT_FILES = ("endpoint.conf",)
+
+CODEX_MANIFEST = ".codex-plugin/plugin.json"
+ASSETS_DIR = "assets"
+BUNDLE_SKILLS_PATH = "./skills/"
+# The directory keys the plugin on this field. Lowercase letters, digits, and
+# single hyphens are what the submission rules accept.
+PLUGIN_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+BRAND_ASSET_FIELDS = ("logo", "composerIcon")
 
 VERSION_FILES = {
     "claude": ".claude-plugin/plugin.json",
@@ -173,12 +185,62 @@ def check_versions(source, findings):
 
 
 # ---------------------------------------------------------------------------
+# Manifest
+# ---------------------------------------------------------------------------
+
+def read_manifest(source):
+    """Return the Codex manifest as a dict, or None when it is missing or malformed."""
+    try:
+        with open(os.path.join(source, CODEX_MANIFEST), encoding="utf-8") as handle:
+            manifest = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    return manifest if isinstance(manifest, dict) else None
+
+
+def bundle_manifest(manifest):
+    """The manifest that ships in the bundle: the repository manifest without MCP configuration."""
+    bundled = dict(manifest)
+    bundled.pop("mcpServers", None)
+    bundled["skills"] = BUNDLE_SKILLS_PATH
+    return bundled
+
+
+def check_manifest(source, findings):
+    """Check the fields the directory reads from the manifest and the files they point to."""
+    manifest = read_manifest(source)
+    if manifest is None:
+        findings.append("%s is missing or is not a JSON object" % CODEX_MANIFEST)
+        return
+    name = manifest.get("name")
+    if not isinstance(name, str) or not PLUGIN_NAME_RE.match(name):
+        findings.append("%s: name must be lowercase letters, digits, and single hyphens (got %r)" % (CODEX_MANIFEST, name))
+    for key in ("version", "description"):
+        if not isinstance(manifest.get(key), str) or not manifest[key]:
+            findings.append("%s: %s is missing" % (CODEX_MANIFEST, key))
+    author = manifest.get("author")
+    if not isinstance(author, dict) or not author.get("name"):
+        findings.append("%s: author.name is missing" % CODEX_MANIFEST)
+    interface = manifest.get("interface")
+    if not isinstance(interface, dict):
+        findings.append("%s: interface is missing" % CODEX_MANIFEST)
+        return
+    for field in BRAND_ASSET_FIELDS:
+        path = interface.get(field)
+        if not isinstance(path, str) or not path.startswith("./%s/" % ASSETS_DIR):
+            findings.append("%s: interface.%s must point into ./%s/ (got %r)" % (CODEX_MANIFEST, field, ASSETS_DIR, path))
+        elif not os.path.isfile(os.path.join(source, path[2:])):
+            findings.append("%s: interface.%s points to %s, which does not exist" % (CODEX_MANIFEST, field, path))
+
+
+# ---------------------------------------------------------------------------
 # Source gate: the path convention
 # ---------------------------------------------------------------------------
 
 def check_source(source):
     findings = []
     version = check_versions(source, findings)
+    check_manifest(source, findings)
     skills_dir = os.path.join(source, "skills")
     scripts_dir = os.path.join(source, "scripts")
     references_dir = os.path.join(source, "references")
@@ -239,10 +301,15 @@ def check_source(source):
 # ---------------------------------------------------------------------------
 
 def build_bundle(source, bundle_dir):
-    """Copy the 3 skills into bundle_dir, vendor the shared files, rewrite links."""
-    os.makedirs(bundle_dir, exist_ok=True)
+    """Write the manifest and assets, copy the 3 skills under skills/, vendor the shared files, rewrite links."""
+    os.makedirs(os.path.join(bundle_dir, os.path.dirname(CODEX_MANIFEST)), exist_ok=True)
+    manifest = bundle_manifest(read_manifest(source))
+    write_text(os.path.join(bundle_dir, CODEX_MANIFEST), json.dumps(manifest, indent=2) + "\n")
+    shutil.copytree(os.path.join(source, ASSETS_DIR), os.path.join(bundle_dir, ASSETS_DIR), ignore=COPY_IGNORE)
+    skills_dir = os.path.join(bundle_dir, "skills")
+    os.makedirs(skills_dir)
     for skill in SKILLS:
-        dest = os.path.join(bundle_dir, skill)
+        dest = os.path.join(skills_dir, skill)
         shutil.copytree(os.path.join(source, "skills", skill), dest, ignore=COPY_IGNORE)
         shutil.copytree(os.path.join(source, "references"), os.path.join(dest, "references"), ignore=COPY_IGNORE)
         for name in SHARED_ROOT_FILES:
@@ -268,13 +335,32 @@ def is_external_link(target):
     return target.startswith(("http://", "https://", "mailto:", "#"))
 
 
+def check_bundle_manifest(bundle_dir, findings):
+    manifest = read_manifest(bundle_dir)
+    if manifest is None:
+        findings.append("%s is missing from the bundle" % CODEX_MANIFEST)
+        return
+    if manifest.get("skills") != BUNDLE_SKILLS_PATH:
+        findings.append("%s: skills must be %r in the bundle (got %r)" % (CODEX_MANIFEST, BUNDLE_SKILLS_PATH, manifest.get("skills")))
+    if "mcpServers" in manifest:
+        findings.append("%s: mcpServers must not ship in a Skills-only bundle" % CODEX_MANIFEST)
+    if os.path.exists(os.path.join(bundle_dir, ".mcp.json")):
+        findings.append(".mcp.json must not ship in a Skills-only bundle")
+    interface = manifest.get("interface") or {}
+    for field in BRAND_ASSET_FIELDS:
+        path = interface.get(field)
+        if not isinstance(path, str) or not os.path.isfile(os.path.join(bundle_dir, path)):
+            findings.append("%s: interface.%s (%r) does not resolve inside the bundle" % (CODEX_MANIFEST, field, path))
+
+
 def check_bundle(bundle_dir):
     findings = []
+    check_bundle_manifest(bundle_dir, findings)
     for skill in SKILLS:
-        skill_dir = os.path.join(bundle_dir, skill)
+        skill_dir = os.path.join(bundle_dir, "skills", skill)
         skill_md = os.path.join(skill_dir, "SKILL.md")
         if not os.path.isfile(skill_md):
-            findings.append("%s/SKILL.md is missing from the bundle" % skill)
+            findings.append("skills/%s/SKILL.md is missing from the bundle" % skill)
             continue
         for name in SHARED_ROOT_FILES:
             if not os.path.isfile(os.path.join(skill_dir, name)):
@@ -337,7 +423,7 @@ def write_zip(bundle_dir, zip_path):
 def copy_source_subset(source, dest):
     """Copy only the parts of the tree the packager reads."""
     os.makedirs(dest)
-    for name in ("skills", "references", "scripts", ".claude-plugin", ".codex-plugin"):
+    for name in ("skills", "references", "scripts", ASSETS_DIR, ".claude-plugin", ".codex-plugin"):
         shutil.copytree(os.path.join(source, name), os.path.join(dest, name), ignore=COPY_IGNORE)
     for name in SHARED_ROOT_FILES:
         shutil.copy2(os.path.join(source, name), os.path.join(dest, name))
@@ -429,6 +515,21 @@ def self_test(source):
             handle.write("\nRun `bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh flush`.\n")
         ok = expect_failure("host environment variable in skill text", bad, os.path.join(tmp, "bad-host-path-work"),
                             "host-specific path or environment variable") and ok
+
+        bad = os.path.join(tmp, "bad-plugin-name")
+        copy_source_subset(source, bad)
+        path = os.path.join(bad, CODEX_MANIFEST)
+        manifest = json.loads(read_text(path))
+        manifest["name"] = "OneSignal"
+        write_text(path, json.dumps(manifest, indent=2) + "\n")
+        ok = expect_failure("display name in the manifest name field", bad, os.path.join(tmp, "bad-plugin-name-work"),
+                            "name must be lowercase letters, digits, and single hyphens") and ok
+
+        bad = os.path.join(tmp, "bad-brand-asset")
+        copy_source_subset(source, bad)
+        os.remove(os.path.join(bad, ASSETS_DIR, "logomark.png"))
+        ok = expect_failure("manifest logo that points to a missing file", bad, os.path.join(tmp, "bad-brand-asset-work"),
+                            "does not exist") and ok
     return ok
 
 

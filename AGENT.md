@@ -27,7 +27,7 @@ repository.
 | `scripts/` | Deterministic helpers: version resolution, platform detection, secret scan, structural verification, checkpoint transport. Two files are development tooling and never ship to customers: `compile_check_ios.sh` and `package_directory_bundle.py`. |
 | `.claude-plugin/plugin.json` | Plugin manifest. The `version` field controls when Claude Code pulls updates. |
 | `.claude-plugin/marketplace.json` | Marketplace catalog. This repository is its own marketplace, named `onesignal`. |
-| `.codex-plugin/plugin.json` | Codex manifest. The `interface` block holds the listing copy, legal URLs, and brand assets. |
+| `.codex-plugin/plugin.json` | Codex manifest. The `name` is the skill namespace in Codex (`onesignal:setup`). The `interface` block holds the listing copy, legal URLs, and brand assets. The directory bundle ships a copy without `mcpServers`. |
 | `assets/` | Brand assets for the listings. The files come from the official OneSignal media kit. |
 | `.mcp.json` | Declares the hosted OneSignal MCP endpoint. |
 | `endpoint.conf` | The checkpoint ingestion endpoint. The comment block in the file explains the path. |
@@ -121,17 +121,25 @@ read-through alone.
 
 ## The OpenAI directory bundle
 
-The OpenAI plugin directory does not accept the plugin tree. Its Skills tab accepts a zip
-whose top level is a directory of self-contained skill roots. `scripts/package_directory_bundle.py`
+The OpenAI plugin directory does not accept the plugin tree. Its Skills tab accepts a zip with
+a plugin root at the top level: `.codex-plugin/plugin.json`, the skills under `skills/`, and
+the brand assets under `assets/`. The manifest `name` (`onesignal`) is the skill namespace that
+Codex shows (`onesignal:setup`); without the manifest the directory names the plugin after its
+app identifier. Each skill folder must be self-contained. `scripts/package_directory_bundle.py`
 builds that artifact from this tree at release time:
 
-- It copies each skill folder to the top level of the bundle (`setup/`, `credentials/`,
-  `verify/`), and gives each one its own `references/`, `endpoint.conf`, and the runtime
-  scripts that skill calls (a table in the script names them).
+- It writes `.codex-plugin/plugin.json` from the repository manifest without `mcpServers`,
+  because a Skills-only upload rejects MCP configuration (the listing's MCP server is attached
+  in the portal). It copies `assets/` so `interface.logo` and `interface.composerIcon` resolve.
+- It copies each skill folder under `skills/` (`skills/setup/`, `skills/credentials/`,
+  `skills/verify/`), and gives each one its own `references/`, `endpoint.conf`, and the
+  runtime scripts that skill calls (a table in the script names them).
 - It rewrites `../../references/` to `references/` in the skill Markdown. The `<plugin>`
   walk-up rule resolves to the skill folder without a rewrite.
-- It runs a structural gate on the result: every link and every `<plugin>/scripts/<name>`
-  call must resolve inside its skill folder, and the 3 version fields must agree.
+- It runs a structural gate on the result: the manifest has a kebab-case `name`, `skills`
+  is `./skills/`, no MCP configuration ships, the brand assets exist, every link and every
+  `<plugin>/scripts/<name>` call resolves inside its skill folder, and the 3 version fields
+  agree.
 
 Commands:
 
@@ -145,8 +153,11 @@ python3 scripts/package_directory_bundle.py --self-test             # gate again
 
 The build step is optional for local work. It touches only the directory artifact; the
 repository layout, the Claude Code install, and the Codex marketplace install do not use it.
-To load the bundle by hand, put the `--out` result under `skills/` next to a copy of
-`.claude-plugin/plugin.json` and run `claude --plugin-dir <that directory>`.
+The `--out` result is a plugin directory. To load it in Codex, point a local marketplace
+entry at it and run `codex plugin add`; `codex debug prompt-input` then lists the skills as
+`onesignal:setup`, `onesignal:credentials`, and `onesignal:verify`. To load it in Claude
+Code, copy `.claude-plugin/plugin.json` into the `--out` directory and run
+`claude --plugin-dir <that directory>`.
 
 ## Releases
 
