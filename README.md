@@ -251,7 +251,9 @@ codex plugin add onesignal@onesignal
 ### After install
 
 - Start a new `codex` session so the plugin's skills are available.
-- Describe what you want ("set up OneSignal in this app"); Codex picks the matching skill.
+- Describe what you want ("set up OneSignal in this app"); Codex picks the matching skill. The
+  skills are listed under the `onesignal` namespace: `onesignal:setup`, `onesignal:credentials`,
+  and `onesignal:verify`.
 - The plugin registers the OneSignal MCP server from `.mcp.json`. Sign in once with
   `codex mcp login onesignal`. The browser opens OneSignal's sign-in page; there is no App ID or key to
   paste. `codex mcp list` shows the server's login state.
