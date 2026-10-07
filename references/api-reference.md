@@ -33,7 +33,7 @@ App-scoped tokens can be created/rotated/revoked: `POST/PATCH/DELETE /api/v1/app
 
 ## View an app — the credential presence read (app-key-class)
 
-**`GET /api/v1/apps/{app_id}`** — the only read that reports per-app platform config (no MCP tool does; see "OneSignal MCP server"). Auth: the same app-key-class key as the write-once endpoint. `<plugin>/scripts/onesignal_api.py app <app_id>` encodes the rules below and prints a per-platform verdict; prefer it over a hand-rolled read.
+**`GET /api/v1/apps/{app_id}`** — the only read that reports per-app platform config (no MCP tool does; see "OneSignal MCP server"). Auth: the same app-key-class key as the write-once endpoint. `python3 <plugin>/scripts/onesignal_api.py app <app_id>` encodes the rules below and prints a per-platform verdict; prefer it over a hand-rolled read.
 
 The plugin needs one answer per platform: does the platform already have credentials? Read that answer from the **non-secret presence fields** below. Do not read the plaintext credential fields (`apns_p8`, `apns_certificates`, `fcm_v1_service_account_json`, `gcm_key`): the server plans to remove them from this response, and a skill that reads them will report a configured platform as unconfigured. Verified against live responses (a p8 + FCM app and a web-only app) and against the server's platform-update code (September 2026).
 

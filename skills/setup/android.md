@@ -19,9 +19,9 @@ Do not compose the dependency line by hand — that is how ranges (`[5.6.1, 5.9.
 
 ```bash
 # Kotlin DSL (build.gradle.kts):
-<plugin>/scripts/resolve_sdk_version.py android --format line
+python3 <plugin>/scripts/resolve_sdk_version.py android --format line
 # Groovy DSL (build.gradle):
-<plugin>/scripts/resolve_sdk_version.py android --format line --line-format gradle-groovy
+python3 <plugin>/scripts/resolve_sdk_version.py android --format line --line-format gradle-groovy
 ```
 
 The script emits an exact pin and cannot emit a range. Drop the output inside the module's `dependencies { }` block unchanged. Example of the shape it returns (the version will be the current Stable, not necessarily this one):
@@ -39,7 +39,7 @@ The exact floor is NOT fetchable from Maven metadata (it lives deep in OpenTelem
 
 ```bash
 ./gradlew -q :app:dependencies --configuration debugRuntimeClasspath \
-  | <plugin>/scripts/android_kotlin_check.py . --deps -
+  | python3 <plugin>/scripts/android_kotlin_check.py . --deps -
 ```
 
 It reads the host's declared Kotlin version and the resolved `kotlin-stdlib`, then returns `compatible` (build it) or `bump_or_blocker` with the exact `required_floor`. On `bump_or_blocker`, **do not silently change the toolchain** (safety contract §7) — surface the decision the script spells out:

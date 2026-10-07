@@ -63,7 +63,13 @@ Do not break these without a decision from the team:
   with the same walk-up rule: start in the directory that contains the `SKILL.md`, and walk
   up to the first directory that contains a `scripts/` folder, and stop at the filesystem
   root if there is none. Commands read
-  `bash <plugin>/scripts/checkpoint.sh ...`. The rule holds in this repository tree, where
+  `bash <plugin>/scripts/checkpoint.sh ...` and `python3 <plugin>/scripts/<name>.py ...`.
+  A Python helper always runs through the interpreter that the setup preflight selected
+  (`python3`, or the `python` / `py -3` fallback), never by its path alone, so a call does
+  not depend on the file's executable permission after an install.
+  `scripts/package_directory_bundle.py --check` rejects a `.py` call site without the
+  prefix, and `--self-test` strips the exec bit from the bundled helpers and runs each one
+  through the interpreter. The rule holds in this repository tree, where
   it resolves to the repository root, and in the self-contained bundle for the OpenAI
   directory, where each skill folder carries its own `scripts/`. Never build a path from a
   host environment variable such as `${CLAUDE_PLUGIN_ROOT}`: Claude Code substitutes it in

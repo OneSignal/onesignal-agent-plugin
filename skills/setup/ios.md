@@ -19,8 +19,8 @@ A Notification Service Extension is only needed for rich media, confirmed delive
 Detect the existing manager: `Podfile`/`Podfile.lock` → CocoaPods; `Package.swift`/`Package.resolved` or an SPM project → SPM. Match it; don't introduce a second package manager. Resolve the exact version with the script — do not read the feed by hand and do not use a range (on SPM that means an **exact-version** rule, never `upToNextMajorVersion` / `from:`):
 
 ```bash
-<plugin>/scripts/resolve_sdk_version.py ios --format json   # for the version
-<plugin>/scripts/resolve_sdk_version.py ios --format line --line-format podfile   # Podfile line
+python3 <plugin>/scripts/resolve_sdk_version.py ios --format json   # for the version
+python3 <plugin>/scripts/resolve_sdk_version.py ios --format line --line-format podfile   # Podfile line
 ```
 
 **Swift Package Manager** (smaller XCFramework download — matrix): add package `https://github.com/OneSignal/OneSignal-XCFramework` with an **Exact Version** rule set to the resolver's `version`, and add the **`OneSignalFramework`** library product to the app target (add `OneSignalInAppMessages` / `OneSignalLocation` only if those features are wanted). SPM add is partly GUI — if you cannot edit the pbxproj package references safely, give the human the exact File ▸ Add Packages steps.
