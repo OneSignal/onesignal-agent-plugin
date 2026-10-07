@@ -260,14 +260,11 @@ codex plugin add onesignal@onesignal
   - Option A attaches the **OneSignal** connector, the same app as OneSignal's MCP listing in the
     directory. The OneSignal tools arrive through that connector; sign in where Codex asks you to
     connect it. `codex mcp list` does not show `onesignal` on this path.
-  - Option B registers the server from the plugin's `.mcp.json`, and `codex mcp list` shows it.
-    Codex's own sign-in does not work against this server yet: `codex mcp login onesignal` (and
-    `codex mcp add onesignal --url …`) stop with `OAuth authorization endpoint origin does not
-    match the authorization server origin without issuer-bound callbacks`, because OneSignal's
-    sign-in page is on `dashboard.onesignal.com` while the server is on `api.onesignal.com`
-    (Codex applies RFC 9207). Until the server advertises issuer-bound callbacks, use Option A
-    for the tools, or give the skills an app API key through `ONESIGNAL_REST_API_KEY` (the
-    skills ask for this path when no tools are present; never paste the key into the chat).
+  - Option B registers the server from the plugin's `.mcp.json`, and `codex mcp list` shows it as
+    `Not logged in`. Codex's own MCP sign-in does not work against this server yet, so leave it
+    there. Use Option A for the tools, or give the skills an app API key through
+    `ONESIGNAL_REST_API_KEY` (the skills ask for this path when no tools are present; never paste
+    the key into the chat).
 - The Python 3 prerequisite above applies in Codex too.
 
 ---
