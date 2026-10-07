@@ -26,7 +26,8 @@ Path convention that the gate enforces in the source tree:
   * a skill refers to a shared script only as `<plugin>/scripts/<name>`;
   * a skill runs a Python helper through an interpreter, as
     `python3 <plugin>/scripts/<name>.py` (`python` and `py -3` are the
-    preflight fallbacks), never by the path alone;
+    preflight fallbacks), never by the path alone; the path may be quoted,
+    as in `python3 "<plugin>/scripts/<name>.py"`;
   * a skill refers to a reference only as `[...](../../references/<name>.md)`;
   * every `SKILL.md` carries the walk-up definition of `<plugin>`.
 Any other spelling fails `--check`.
@@ -286,7 +287,8 @@ def check_source(source):
                         findings.append("%s:%d: %s is not in the script table for the %s skill" % (rel, lineno, name, skill))
                     elif not os.path.isfile(os.path.join(scripts_dir, name)):
                         findings.append("%s:%d: scripts/%s does not exist" % (rel, lineno, name))
-                    if name.endswith(".py") and not line[:match.start()].endswith(INTERPRETER_PREFIXES):
+                    before_path = line[:match.start()].rstrip("\"'")
+                    if name.endswith(".py") and not before_path.endswith(INTERPRETER_PREFIXES):
                         findings.append("%s:%d: %s runs without an interpreter prefix (write `python3 <plugin>/scripts/%s`)" % (rel, lineno, name, name))
                 for name in SOURCE_REFERENCE_RE.findall(line):
                     if not os.path.isfile(os.path.join(references_dir, name)):
