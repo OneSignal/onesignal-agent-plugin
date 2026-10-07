@@ -256,9 +256,18 @@ codex plugin add onesignal@onesignal
 - Describe what you want ("set up OneSignal in this app"); Codex picks the matching skill. The
   skills are listed under the `onesignal` namespace: `onesignal:setup`, `onesignal:credentials`,
   and `onesignal:verify`.
-- The plugin registers the OneSignal MCP server from `.mcp.json`. Sign in once with
-  `codex mcp login onesignal`. The browser opens OneSignal's sign-in page; there is no App ID or key to
-  paste. `codex mcp list` shows the server's login state.
+- Connect the OneSignal MCP server once. `codex mcp list` shows the server's login state.
+  - Option B registers the server from the plugin's `.mcp.json`. Sign in with
+    `codex mcp login onesignal`. The browser opens OneSignal's sign-in page; there is no App ID or
+    key to paste.
+  - Option A ships the skills without `.mcp.json` (the directory's Skills upload does not accept
+    MCP configuration), so `codex mcp list` does not show `onesignal`. Add the server by hand, then
+    sign in:
+
+    ```bash
+    codex mcp add onesignal --url https://api.onesignal.com/mcp/oauth
+    codex mcp login onesignal
+    ```
 - The Python 3 prerequisite above applies in Codex too.
 
 ---
