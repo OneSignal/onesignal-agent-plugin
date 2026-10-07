@@ -261,8 +261,10 @@ codex plugin add onesignal@onesignal
     `codex mcp login onesignal`. The browser opens OneSignal's sign-in page; there is no App ID or
     key to paste.
   - Option A ships the skills without `.mcp.json` (the directory's Skills upload does not accept
-    MCP configuration), so `codex mcp list` does not show `onesignal`. Add the server by hand, then
-    sign in:
+    MCP configuration). The listing attaches the **OneSignal** connector instead, the same app as
+    OneSignal's MCP listing in the directory, so the OneSignal tools arrive through that connector
+    and you sign in where Codex asks you to connect it. `codex mcp list` does not show `onesignal`
+    on this path. If a session has no OneSignal tools at all, add the server by hand, then sign in:
 
     ```bash
     codex mcp add onesignal --url https://api.onesignal.com/mcp/oauth
