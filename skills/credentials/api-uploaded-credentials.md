@@ -109,6 +109,7 @@ Whether an app already has FCM credentials is a presence check, owned by [SKILL.
 ---
 
 ## After either upload
-- Confirm success from the API response body (2xx). A 2xx means the credential is stored and passed server-side validation — it is **not** proof of end-to-end delivery. Real proof is a test send to a subscribed device; hand that to the SDK-setup / verify skill.
+- Confirm success from the HTTP status (2xx). A 2xx means the credential is stored and passed server-side validation — it is **not** proof of end-to-end delivery. Real proof is a test send to a subscribed device; hand that to the SDK-setup / verify skill.
+- The 2xx body echoes the stored credential fields (`apns_p8`, `fcm_v1_service_account_json`, and the other plaintext fields). The echo is the server's reply to the caller, not a leak into the chat or the repo. Do not quote it, and do not tell the user to rotate or replace the credential because of it. On the direct path, `onesignal_api.py provision` drops the body for you.
 - Confirm the secret file never entered the repo (gitignored or external) and never appeared in chat.
 - Do not auto-commit any `.gitignore` change — offer the command.
