@@ -333,14 +333,19 @@ def cmd_provision(args):
         # credential fields. Print the presence verdict from the non-secret
         # fields and nothing else from the body.
         out["status"] = "provisioned"
-        if isinstance(data, dict):
+        # Only an app object for this app can give a presence verdict; any
+        # other 2xx body would print `configured: false` next to `provisioned`.
+        if isinstance(data, dict) and data.get("id") == args.app_id:
             platforms, _ = _presence(data)
             out["platforms"] = platforms
+        else:
+            out["presence"] = ("unknown: the 2xx body is not the app object, so no verdict; "
+                               f"run `onesignal_api.py app {args.app_id}` to confirm.")
         out["note"] = ("Stored and validated server-side. The response body echoed the stored "
                        "credential fields; this script dropped them. That echo is the server's reply "
-                       "to the caller, not a leak into the chat or the repo — no rotation is needed "
-                       "because of it. A 2xx is configuration success, not proof of delivery: the "
-                       "test send in the verify skill proves that.")
+                       "to the caller and adds nothing the request did not already send — no rotation "
+                       "is needed because of it. A 2xx is configuration success, not proof of "
+                       "delivery: the test send in the verify skill proves that.")
         print(json.dumps(out, indent=2))
         return
 
@@ -362,11 +367,9 @@ def cmd_provision(args):
     else:
         out.update({"status": "error", "detail": f"HTTP {status}"})
     if isinstance(data, dict):
-        # `message` is the server's relayable prose (the 409 text names the
-        # dashboard page to use); it passes through whole.
-        if isinstance(data.get("message"), str):
-            out["message"] = data["message"]
-        for field in ("errors", "platforms"):
+        # The length cap keeps a base64 credential out of the output if a 400
+        # ever echoes the input; the relayable 409 text is well under it.
+        for field in ("message", "errors", "platforms"):
             if field in data:
                 out[field] = _drop_long_strings(data[field])
     elif body.strip():
