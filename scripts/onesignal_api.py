@@ -11,6 +11,9 @@ This encodes the fiddly, verified details that models keep getting wrong:
   - the view-app read decides credential presence from the non-secret fields
     (apns_env, apns_key_id, apns_team_id, fcm_sender_id, chrome_web_origin),
     never from the plaintext credential fields the server plans to remove
+  - the write-once credential upload echoes the stored credential fields back
+    in its 2xx body; `provision` drops that body and prints a verdict, so the
+    secret never reaches the agent transcript
 
 Prefer the OneSignal MCP server's tools when connected (better auth story);
 this script is the generic curl-equivalent fallback that needs no MCP.
@@ -25,11 +28,15 @@ Usage:
     onesignal_api.py notification-stats <notif_id> <app_id> --key KEY
     onesignal_api.py app <app_id> --key KEY
     onesignal_api.py subscribers <app_id> --key KEY
+    onesignal_api.py provision <app_id> --fcm-json <path> --key KEY
+    onesignal_api.py provision <app_id> --apns-p8 <path> --apns-key-id ID --apns-team-id ID --apns-bundle-id ID --key KEY
+    onesignal_api.py provision <app_id> --web-origin https://example.com [--web-icon URL] --key KEY
 
 Key sources (in order): --key, $ONESIGNAL_REST_API_KEY, $ONESIGNAL_SETUP_TOKEN
 Exit: 0 ok (see JSON `status`), 2 usage error, 3 network error, 4 auth missing
 """
 import argparse
+import base64
 import json
 import os
 import sys
@@ -49,6 +56,22 @@ def _get(url, key=None, timeout=20, scheme="Key"):
         with urllib.request.urlopen(req, timeout=timeout) as r:
             body = r.read().decode("utf-8", "replace")
             return r.status, body
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode("utf-8", "replace")
+    except Exception as e:  # noqa: BLE001
+        sys.stderr.write(f"ERROR: network failure: {e}\n")
+        sys.exit(3)
+
+
+def _post_json(url, payload, key, timeout=60):
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=data, method="POST")
+    req.add_header("Authorization", f"Key {key}")
+    req.add_header("Content-Type", "application/json")
+    req.add_header("Accept", "application/json")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, r.read().decode("utf-8", "replace")
     except urllib.error.HTTPError as e:
         return e.code, e.read().decode("utf-8", "replace")
     except Exception as e:  # noqa: BLE001
@@ -192,6 +215,17 @@ def cmd_app(args):
                           "detail": "Response body is not a JSON object — presence unknown, not zero. "
                                     "Re-run, or fall back to the dashboard (Settings > Push Platforms)."},
                          indent=2)); return
+    platforms, cross_check = _presence(data)
+    out = {"probe": "app", "app_id": args.app_id, "http": status, "status": "ok",
+           "platforms": platforms,
+           "cross_check": cross_check,
+           "note": "Presence only, from non-secret fields (apns_env, apns_key_id, apns_team_id, "
+                   "fcm_sender_id, chrome_web_origin). Not a validity check: the test send in "
+                   "the verify skill proves the credential works."}
+    print(json.dumps(out, indent=2))
+
+
+def _presence(data):
     # Never read the plaintext credential fields: the server plans to remove them.
     apns_configured = _present(data.get("apns_env"))
     key_id_set = _present(data.get("apns_key_id"))
@@ -219,16 +253,127 @@ def cmd_app(args):
                        "apns_listed": apns_listed, "fcm_listed": gcm_listed,
                        "mismatch": (apns_listed != apns_configured) or (gcm_listed != fcm_configured)}
 
-    out = {"probe": "app", "app_id": args.app_id, "http": status, "status": "ok",
-           "platforms": {
-               "apns": {"configured": apns_configured, "auth_type": apns_auth},
-               "fcm": {"configured": fcm_configured},
-               "web": {"configured": web_configured},
-           },
-           "cross_check": cross_check,
-           "note": "Presence only, from non-secret fields (apns_env, apns_key_id, apns_team_id, "
-                   "fcm_sender_id, chrome_web_origin). Not a validity check: the test send in "
-                   "the verify skill proves the credential works."}
+    platforms = {
+        "apns": {"configured": apns_configured, "auth_type": apns_auth},
+        "fcm": {"configured": fcm_configured},
+        "web": {"configured": web_configured},
+    }
+    return platforms, cross_check
+
+
+def _read_base64(path, label):
+    try:
+        with open(path, "rb") as f:
+            raw = f.read()
+    except OSError as e:
+        sys.stderr.write(f"ERROR: cannot read the {label} file at the given path: {e.strerror}\n")
+        sys.exit(2)
+    if not raw.strip():
+        sys.stderr.write(f"ERROR: the {label} file is empty\n")
+        sys.exit(2)
+    return base64.b64encode(raw).decode("ascii")
+
+
+def _drop_long_strings(value, limit=256):
+    # An error body can echo a request param. A base64 credential is longer
+    # than this limit (a .p8 is about 320 chars); an error string is shorter.
+    if isinstance(value, dict):
+        return {k: _drop_long_strings(v, limit) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_drop_long_strings(v, limit) for v in value]
+    if isinstance(value, str) and len(value) > limit:
+        return f"<dropped {len(value)}-char value>"
+    return value
+
+
+def cmd_provision(args):
+    key = _require_key(args)
+    apns_values = (args.apns_p8, args.apns_key_id, args.apns_team_id, args.apns_bundle_id)
+    apns = any(apns_values)
+    fcm = bool(args.fcm_json)
+    web = bool(args.web_origin or args.web_icon)
+    if sum((apns, fcm, web)) != 1:
+        sys.stderr.write("ERROR: pass exactly one platform set per call: APNs (--apns-p8 with "
+                         "--apns-key-id, --apns-team-id, --apns-bundle-id), FCM (--fcm-json), "
+                         "or web (--web-origin [--web-icon]).\n")
+        sys.exit(2)
+
+    payload = {}
+    if apns:
+        if not all(apns_values):
+            sys.stderr.write("ERROR: APNs needs all four: --apns-p8, --apns-key-id, --apns-team-id, "
+                             "--apns-bundle-id.\n")
+            sys.exit(2)
+        payload["apns_p8"] = _read_base64(args.apns_p8, ".p8")
+        payload["apns_key_id"] = args.apns_key_id
+        payload["apns_team_id"] = args.apns_team_id
+        payload["apns_bundle_id"] = args.apns_bundle_id
+        platform = "apns"
+    elif fcm:
+        payload["fcm_v1_service_account_json"] = _read_base64(args.fcm_json, "service-account JSON")
+        platform = "fcm"
+    else:
+        if not args.web_origin:
+            sys.stderr.write("ERROR: --web-icon needs --web-origin.\n")
+            sys.exit(2)
+        if not args.web_origin.startswith("https://"):
+            sys.stderr.write("ERROR: --web-origin must be an https:// origin.\n")
+            sys.exit(2)
+        payload["chrome_web_origin"] = args.web_origin
+        if args.web_icon:
+            payload["chrome_web_default_notification_icon"] = args.web_icon
+        platform = "web"
+
+    status, body = _post_json(f"{API}/api/v1/apps/{args.app_id}/credentials", payload, key)
+    data = _json(body)
+    out = {"probe": "provision", "app_id": args.app_id, "platform": platform, "http": status}
+
+    if 200 <= status < 300:
+        # The 2xx body is the app object and still echoes the plaintext
+        # credential fields. Print the presence verdict from the non-secret
+        # fields and nothing else from the body.
+        out["status"] = "provisioned"
+        # Only an app object for this app can give a presence verdict; any
+        # other 2xx body would print `configured: false` next to `provisioned`.
+        if isinstance(data, dict) and data.get("id") == args.app_id:
+            platforms, _ = _presence(data)
+            out["platforms"] = platforms
+        else:
+            out["presence"] = ("unknown: the 2xx body is not the app object, so no verdict; "
+                               f"run `onesignal_api.py app {args.app_id}` to confirm.")
+        out["note"] = ("Stored and validated server-side. The response body echoed the stored "
+                       "credential fields; this script dropped them. That echo is the server's reply "
+                       "to the caller and adds nothing the request did not already send — no rotation "
+                       "is needed because of it. A 2xx is configuration success, not proof of "
+                       "delivery: the test send in the verify skill proves that.")
+        print(json.dumps(out, indent=2))
+        return
+
+    if status in (401, 403):
+        out.update({"status": "auth_error",
+                    "detail": "Key does not belong to this app (or lacks access)."})
+    elif status == 404:
+        out.update({"status": "not_found",
+                    "detail": "The provisioning route is off for this app (feature flag), or the App ID "
+                              "is wrong. Fall back to the dashboard upload (Settings > Push Platforms); "
+                              "do not retry."})
+    elif status == 409:
+        out.update({"status": "already_configured",
+                    "detail": "Write-once: this platform already has credentials. Nothing was written "
+                              "by this request. Relay the message verbatim; do not retry."})
+    elif status == 400:
+        out.update({"status": "validation_error",
+                    "detail": "The server rejected the credential. Relay the message verbatim."})
+    else:
+        out.update({"status": "error", "detail": f"HTTP {status}"})
+    if isinstance(data, dict):
+        # The length cap keeps a base64 credential out of the output if a 400
+        # ever echoes the input; the relayable 409 text is well under it.
+        for field in ("message", "errors", "platforms"):
+            if field in data:
+                out[field] = _drop_long_strings(data[field])
+    elif body.strip():
+        out["raw"] = _drop_long_strings(body.strip())
     print(json.dumps(out, indent=2))
 
 
@@ -280,6 +425,12 @@ def main():
     p = sub.add_parser("notification-stats"); p.add_argument("notif_id"); p.add_argument("app_id"); p.add_argument("--key"); p.set_defaults(fn=cmd_notification_stats)
     p = sub.add_parser("app"); p.add_argument("app_id"); p.add_argument("--key"); p.set_defaults(fn=cmd_app)
     p = sub.add_parser("subscribers"); p.add_argument("app_id"); p.add_argument("--key"); p.set_defaults(fn=cmd_subscribers)
+    p = sub.add_parser("provision", help="write-once credential upload; one platform set per call")
+    p.add_argument("app_id"); p.add_argument("--key")
+    p.add_argument("--apns-p8", metavar="PATH"); p.add_argument("--apns-key-id"); p.add_argument("--apns-team-id"); p.add_argument("--apns-bundle-id")
+    p.add_argument("--fcm-json", metavar="PATH")
+    p.add_argument("--web-origin"); p.add_argument("--web-icon")
+    p.set_defaults(fn=cmd_provision)
 
     args = ap.parse_args()
     args.fn(args)
