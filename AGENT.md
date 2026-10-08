@@ -68,8 +68,8 @@ Do not break these without a decision from the team:
   (`python3`, or the `python` / `py -3` fallback), never by its path alone, so a call does
   not depend on the file's executable permission after an install.
   `scripts/package_directory_bundle.py --check` rejects a `.py` call site without the
-  prefix, and `--self-test` strips the exec bit from the bundled helpers and runs each one
-  through the interpreter. The rule holds in this repository tree, where
+  prefix in `skills/` and in `references/`, and `--self-test` runs each bundled helper
+  through the interpreter to prove it starts (`--help` exits 0). The rule holds in this repository tree, where
   it resolves to the repository root, and in the self-contained bundle for the OpenAI
   directory, where each skill folder carries its own `scripts/`. Never build a path from a
   host environment variable such as `${CLAUDE_PLUGIN_ROOT}`: Claude Code substitutes it in

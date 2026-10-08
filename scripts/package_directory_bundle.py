@@ -32,9 +32,10 @@ Path convention that the gate enforces in the source tree:
   * every `SKILL.md` carries the walk-up definition of `<plugin>`.
 Any other spelling fails `--check`.
 
-`--self-test` also strips the exec bit from every Python helper in a built
-bundle and runs each one through the interpreter, so an install that drops
-file modes cannot break the helper calls.
+`--self-test` also runs every Python helper in a built bundle through the
+interpreter (`--help` must exit 0), so each helper starts from the bundle
+layout. The interpreter-prefix rule above is what keeps a call independent
+of the file's exec bit; the self-test does not exercise that bit.
 
 Python 3.7+, standard library only.
 """
@@ -299,6 +300,20 @@ def check_source(source):
             if marker not in skill_text:
                 findings.append("skills/%s/SKILL.md: the <plugin> walk-up paragraph is missing (%r not found)" % (skill, marker))
 
+    # References are shared by the 3 skills, so the per-skill script table does
+    # not apply; the interpreter rule and the file-exists rule do.
+    if os.path.isdir(references_dir):
+        for path in markdown_files(references_dir):
+            rel = relpath(path, source)
+            for lineno, line in enumerate(read_text(path).splitlines(), 1):
+                for match in PLUGIN_SCRIPT_RE.finditer(line):
+                    name = match.group(1)
+                    if not os.path.isfile(os.path.join(scripts_dir, name)):
+                        findings.append("%s:%d: scripts/%s does not exist" % (rel, lineno, name))
+                    before_path = line[:match.start()].rstrip("\"'")
+                    if name.endswith(".py") and not before_path.endswith(INTERPRETER_PREFIXES):
+                        findings.append("%s:%d: %s runs without an interpreter prefix (write `python3 <plugin>/scripts/%s`)" % (rel, lineno, name, name))
+
     for name in SHARED_ROOT_FILES:
         if not os.path.isfile(os.path.join(source, name)):
             findings.append("%s is missing at the plugin root" % name)
@@ -452,14 +467,15 @@ def run_gate(source, workdir):
     return bundle_dir
 
 
-def helpers_run_without_exec_bit(bundle_dir, workdir):
-    """Copy the bundle, strip the exec bit from its Python helpers, and run each one through the interpreter.
+def bundled_helpers_start(bundle_dir, workdir):
+    """Run each bundled Python helper through the interpreter and return the ones that fail.
 
-    Returns the list of helpers that failed. An install path that drops file
-    modes must not break the skills, because every call site names the
-    interpreter; this check is what proves that in CI.
+    This proves that every helper starts from the bundle layout (its
+    ``--help`` exits 0). It does not test the exec bit: ``[sys.executable,
+    path]`` never reads the file mode. The guard against a call that depends
+    on the exec bit is the interpreter-prefix rule in ``check_source``.
     """
-    copy = os.path.join(workdir, "bundle-no-exec-bit")
+    copy = os.path.join(workdir, "bundle-helpers-start")
     shutil.copytree(bundle_dir, copy)
     failures = []
     with tempfile.TemporaryDirectory() as empty_project:
@@ -469,7 +485,6 @@ def helpers_run_without_exec_bit(bundle_dir, workdir):
                 if not name.endswith(".py"):
                     continue
                 path = os.path.join(scripts_dir, name)
-                os.chmod(path, 0o644)
                 args = [empty_project] if name == "detect_platform.py" else ["--help"]
                 proc = subprocess.run([sys.executable, path] + args, capture_output=True)
                 if proc.returncode != 0:
@@ -503,12 +518,12 @@ def self_test(source):
             ok = False
 
         if good_bundle is not None:
-            failures = helpers_run_without_exec_bit(good_bundle, os.path.join(tmp, "good"))
+            failures = bundled_helpers_start(good_bundle, os.path.join(tmp, "good"))
             if failures:
-                print("self-test: Python helpers without the exec bit -> FAIL:\n  %s" % "\n  ".join(failures))
+                print("self-test: bundled Python helpers start under the interpreter -> FAIL:\n  %s" % "\n  ".join(failures))
                 ok = False
             else:
-                print("self-test: Python helpers without the exec bit -> run through the interpreter")
+                print("self-test: bundled Python helpers start under the interpreter -> each --help exits 0")
 
         bad = os.path.join(tmp, "bad-bare-python-call")
         copy_source_subset(source, bad)
@@ -516,6 +531,17 @@ def self_test(source):
             handle.write("\nRun `<plugin>/scripts/detect_platform.py` first.\n")
         ok = expect_failure("Python helper called without an interpreter", bad, os.path.join(tmp, "bad-bare-python-call-work"),
                             "runs without an interpreter prefix") and ok
+
+        bad = os.path.join(tmp, "bad-bare-python-call-in-reference")
+        copy_source_subset(source, bad)
+        reference = os.path.join(bad, "references", "api-reference.md")
+        reference_text = read_text(reference)
+        bad_line = len(reference_text.splitlines()) + (2 if reference_text.endswith("\n") else 1)
+        with open(reference, "a", encoding="utf-8") as handle:
+            handle.write("\nRun `<plugin>/scripts/onesignal_api.py app <app_id>` first.\n")
+        ok = expect_failure("Python helper called without an interpreter in references/", bad,
+                            os.path.join(tmp, "bad-bare-python-call-in-reference-work"),
+                            "references/api-reference.md:%d: onesignal_api.py runs without an interpreter prefix" % bad_line) and ok
 
         bad = os.path.join(tmp, "bad-script-path")
         copy_source_subset(source, bad)
