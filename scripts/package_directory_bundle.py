@@ -24,9 +24,18 @@ Exit: 0 when the gate passes, 1 when it fails, 2 on a usage error.
 
 Path convention that the gate enforces in the source tree:
   * a skill refers to a shared script only as `<plugin>/scripts/<name>`;
+  * a skill runs a Python helper through an interpreter, as
+    `python3 <plugin>/scripts/<name>.py` (`python` and `py -3` are the
+    preflight fallbacks), never by the path alone; the path may be quoted,
+    as in `python3 "<plugin>/scripts/<name>.py"`;
   * a skill refers to a reference only as `[...](../../references/<name>.md)`;
   * every `SKILL.md` carries the walk-up definition of `<plugin>`.
 Any other spelling fails `--check`.
+
+`--self-test` also runs every Python helper in a built bundle through the
+interpreter (`--help` must exit 0), so each helper starts from the bundle
+layout. The interpreter-prefix rule above is what keeps a call independent
+of the file's exec bit; the self-test does not exercise that bit.
 
 Python 3.7+, standard library only.
 """
@@ -83,6 +92,9 @@ VERSION_FILES = {
 WALK_UP_MARKERS = ("walk up", "contains a `scripts/` folder")
 
 PLUGIN_SCRIPT_RE = re.compile(r"<plugin>/scripts/([A-Za-z0-9_]+\.(?:py|sh))")
+# The interpreters the setup preflight can select, each followed by the space
+# that separates it from the script path.
+INTERPRETER_PREFIXES = ("python3 ", "python ", "py -3 ")
 BARE_SCRIPT_RE = re.compile(r"(?<!<plugin>/)\bscripts/[A-Za-z0-9_]")
 SOURCE_REFERENCE_RE = re.compile(r"\.\./\.\./references/([A-Za-z0-9_\-]+\.md)")
 BARE_REFERENCE_RE = re.compile(r"(?<!\.\./\.\./)\breferences/[A-Za-z0-9_]")
@@ -270,11 +282,15 @@ def check_source(source):
                     findings.append("%s:%d: relative path leaves the skill folder (only ../../references/ is allowed)" % (rel, lineno))
                 if HOST_PATH_RE.search(line):
                     findings.append("%s:%d: host-specific path or environment variable" % (rel, lineno))
-                for name in PLUGIN_SCRIPT_RE.findall(line):
+                for match in PLUGIN_SCRIPT_RE.finditer(line):
+                    name = match.group(1)
                     if name not in allowed_scripts:
                         findings.append("%s:%d: %s is not in the script table for the %s skill" % (rel, lineno, name, skill))
                     elif not os.path.isfile(os.path.join(scripts_dir, name)):
                         findings.append("%s:%d: scripts/%s does not exist" % (rel, lineno, name))
+                    before_path = line[:match.start()].rstrip("\"'")
+                    if name.endswith(".py") and not before_path.endswith(INTERPRETER_PREFIXES):
+                        findings.append("%s:%d: %s runs without an interpreter prefix (write `python3 <plugin>/scripts/%s`)" % (rel, lineno, name, name))
                 for name in SOURCE_REFERENCE_RE.findall(line):
                     if not os.path.isfile(os.path.join(references_dir, name)):
                         findings.append("%s:%d: references/%s does not exist" % (rel, lineno, name))
@@ -283,6 +299,20 @@ def check_source(source):
         for marker in WALK_UP_MARKERS:
             if marker not in skill_text:
                 findings.append("skills/%s/SKILL.md: the <plugin> walk-up paragraph is missing (%r not found)" % (skill, marker))
+
+    # References are shared by the 3 skills, so the per-skill script table does
+    # not apply; the interpreter rule and the file-exists rule do.
+    if os.path.isdir(references_dir):
+        for path in markdown_files(references_dir):
+            rel = relpath(path, source)
+            for lineno, line in enumerate(read_text(path).splitlines(), 1):
+                for match in PLUGIN_SCRIPT_RE.finditer(line):
+                    name = match.group(1)
+                    if not os.path.isfile(os.path.join(scripts_dir, name)):
+                        findings.append("%s:%d: scripts/%s does not exist" % (rel, lineno, name))
+                    before_path = line[:match.start()].rstrip("\"'")
+                    if name.endswith(".py") and not before_path.endswith(INTERPRETER_PREFIXES):
+                        findings.append("%s:%d: %s runs without an interpreter prefix (write `python3 <plugin>/scripts/%s`)" % (rel, lineno, name, name))
 
     for name in SHARED_ROOT_FILES:
         if not os.path.isfile(os.path.join(source, name)):
@@ -437,6 +467,32 @@ def run_gate(source, workdir):
     return bundle_dir
 
 
+def bundled_helpers_start(bundle_dir, workdir):
+    """Run each bundled Python helper through the interpreter and return the ones that fail.
+
+    This proves that every helper starts from the bundle layout (its
+    ``--help`` exits 0). It does not test the exec bit: ``[sys.executable,
+    path]`` never reads the file mode. The guard against a call that depends
+    on the exec bit is the interpreter-prefix rule in ``check_source``.
+    """
+    copy = os.path.join(workdir, "bundle-helpers-start")
+    shutil.copytree(bundle_dir, copy)
+    failures = []
+    with tempfile.TemporaryDirectory() as empty_project:
+        for skill in SKILLS:
+            scripts_dir = os.path.join(copy, "skills", skill, "scripts")
+            for name in sorted(os.listdir(scripts_dir)):
+                if not name.endswith(".py"):
+                    continue
+                path = os.path.join(scripts_dir, name)
+                args = [empty_project] if name == "detect_platform.py" else ["--help"]
+                proc = subprocess.run([sys.executable, path] + args, capture_output=True)
+                if proc.returncode != 0:
+                    failures.append("skills/%s/scripts/%s exited %d: %s" % (
+                        skill, name, proc.returncode, proc.stderr.decode(errors="replace").strip()))
+    return failures
+
+
 def expect_failure(label, source, workdir, needle):
     try:
         run_gate(source, workdir)
@@ -454,11 +510,38 @@ def self_test(source):
     ok = True
     with tempfile.TemporaryDirectory() as tmp:
         try:
-            run_gate(source, os.path.join(tmp, "good"))
+            good_bundle = run_gate(source, os.path.join(tmp, "good"))
             print("self-test: current tree -> passes")
         except GateError as error:
             print("self-test: current tree -> FAILS:\n  %s" % "\n  ".join(error.findings))
+            good_bundle = None
             ok = False
+
+        if good_bundle is not None:
+            failures = bundled_helpers_start(good_bundle, os.path.join(tmp, "good"))
+            if failures:
+                print("self-test: bundled Python helpers start under the interpreter -> FAIL:\n  %s" % "\n  ".join(failures))
+                ok = False
+            else:
+                print("self-test: bundled Python helpers start under the interpreter -> each --help exits 0")
+
+        bad = os.path.join(tmp, "bad-bare-python-call")
+        copy_source_subset(source, bad)
+        with open(os.path.join(bad, "skills", "setup", "SKILL.md"), "a", encoding="utf-8") as handle:
+            handle.write("\nRun `<plugin>/scripts/detect_platform.py` first.\n")
+        ok = expect_failure("Python helper called without an interpreter", bad, os.path.join(tmp, "bad-bare-python-call-work"),
+                            "runs without an interpreter prefix") and ok
+
+        bad = os.path.join(tmp, "bad-bare-python-call-in-reference")
+        copy_source_subset(source, bad)
+        reference = os.path.join(bad, "references", "api-reference.md")
+        reference_text = read_text(reference)
+        bad_line = len(reference_text.splitlines()) + (2 if reference_text.endswith("\n") else 1)
+        with open(reference, "a", encoding="utf-8") as handle:
+            handle.write("\nRun `<plugin>/scripts/onesignal_api.py app <app_id>` first.\n")
+        ok = expect_failure("Python helper called without an interpreter in references/", bad,
+                            os.path.join(tmp, "bad-bare-python-call-in-reference-work"),
+                            "references/api-reference.md:%d: onesignal_api.py runs without an interpreter prefix" % bad_line) and ok
 
         bad = os.path.join(tmp, "bad-script-path")
         copy_source_subset(source, bad)

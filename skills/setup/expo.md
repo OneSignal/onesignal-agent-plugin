@@ -28,7 +28,7 @@ npx expo install react-native-onesignal onesignal-expo-plugin
 ```
 Use `npx expo install` (it aligns versions to the Expo SDK). If pinning explicitly, do **not** read versions by hand and do **not** guess the plugin version — run the resolver (SKILL.md Step 2) and paste both exact pins verbatim:
 ```
-<plugin>/scripts/resolve_sdk_version.py expo --format json
+python3 <plugin>/scripts/resolve_sdk_version.py expo --format json
 ```
 It emits `dependency_line` for `react-native-onesignal` **and** `companion.line` for `onesignal-expo-plugin` (resolved from the `Expo` entry in releases.json; the plugin has no `stable` channel, so the resolver falls back to `current`). Copy both lines as-is into `package.json`. Never invent a companion version — a nonexistent exact pin (e.g. `onesignal-expo-plugin@3.0.0`) passes the range check but fails `expo prebuild` with npm `ETARGET`. No ranges/carets.
 

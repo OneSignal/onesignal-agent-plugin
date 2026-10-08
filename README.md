@@ -42,7 +42,9 @@ before writes.
   detection, structural self-check, secret scan) — no pip installs, but the
   interpreter must be present. Check with `python3 --version`; most macOS/Linux
   dev machines already have it. If it is missing, the setup skill stops at its
-  preflight and offers to continue with by-hand checks instead.
+  preflight and offers to continue with by-hand checks instead. The skills run
+  every helper through the interpreter (`python3 <plugin>/scripts/<name>.py`), so
+  the scripts do not need their executable permission after an install.
 - **A OneSignal account** — free at [onesignal.com](https://onesignal.com).
 - **An App ID.** Your app's public identifier. Find it in the dashboard under **Settings → Keys & IDs**
   (or in the dashboard URL). The App ID is public and safe to commit in client code.
