@@ -80,6 +80,10 @@ BUNDLE_SKILLS_PATH = "./skills/"
 # single hyphens are what the submission rules accept.
 PLUGIN_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 BRAND_ASSET_FIELDS = ("logo", "composerIcon")
+# Dark-theme variants. The directory falls back to the light file when one is absent.
+OPTIONAL_BRAND_ASSET_FIELDS = ("logoDark", "composerIconDark")
+# A Skills-only upload rejects this field (`screenshot_configuration_excluded`).
+EXCLUDED_INTERFACE_FIELDS = ("screenshots",)
 
 VERSION_FILES = {
     "claude": ".claude-plugin/plugin.json",
@@ -218,6 +222,11 @@ def bundle_manifest(manifest):
     return bundled
 
 
+def brand_asset_fields(interface):
+    """The required asset fields, plus every optional one the manifest sets."""
+    return BRAND_ASSET_FIELDS + tuple(f for f in OPTIONAL_BRAND_ASSET_FIELDS if f in interface)
+
+
 def check_manifest(source, findings):
     """Check the fields the directory reads from the manifest and the files they point to."""
     manifest = read_manifest(source)
@@ -237,12 +246,15 @@ def check_manifest(source, findings):
     if not isinstance(interface, dict):
         findings.append("%s: interface is missing" % CODEX_MANIFEST)
         return
-    for field in BRAND_ASSET_FIELDS:
+    for field in brand_asset_fields(interface):
         path = interface.get(field)
         if not isinstance(path, str) or not path.startswith("./%s/" % ASSETS_DIR):
             findings.append("%s: interface.%s must point into ./%s/ (got %r)" % (CODEX_MANIFEST, field, ASSETS_DIR, path))
         elif not os.path.isfile(os.path.join(source, path[2:])):
             findings.append("%s: interface.%s points to %s, which does not exist" % (CODEX_MANIFEST, field, path))
+    for field in EXCLUDED_INTERFACE_FIELDS:
+        if field in interface:
+            findings.append("%s: interface.%s is rejected by a Skills-only upload; remove it" % (CODEX_MANIFEST, field))
 
 
 # ---------------------------------------------------------------------------
@@ -377,10 +389,13 @@ def check_bundle_manifest(bundle_dir, findings):
     if os.path.exists(os.path.join(bundle_dir, ".mcp.json")):
         findings.append(".mcp.json must not ship in a Skills-only bundle")
     interface = manifest.get("interface") or {}
-    for field in BRAND_ASSET_FIELDS:
+    for field in brand_asset_fields(interface):
         path = interface.get(field)
         if not isinstance(path, str) or not os.path.isfile(os.path.join(bundle_dir, path)):
             findings.append("%s: interface.%s (%r) does not resolve inside the bundle" % (CODEX_MANIFEST, field, path))
+    for field in EXCLUDED_INTERFACE_FIELDS:
+        if field in interface:
+            findings.append("%s: interface.%s must not ship in a Skills-only bundle" % (CODEX_MANIFEST, field))
 
 
 def check_bundle(bundle_dir):
@@ -613,6 +628,24 @@ def self_test(source):
         os.remove(os.path.join(bad, ASSETS_DIR, "logomark.png"))
         ok = expect_failure("manifest logo that points to a missing file", bad, os.path.join(tmp, "bad-brand-asset-work"),
                             "interface.logo points to ./assets/logomark.png, which does not exist") and ok
+
+        bad = os.path.join(tmp, "bad-dark-brand-asset")
+        copy_source_subset(source, bad)
+        path = os.path.join(bad, CODEX_MANIFEST)
+        manifest = json.loads(read_text(path))
+        manifest["interface"]["logoDark"] = "./assets/does-not-exist.svg"
+        write_text(path, json.dumps(manifest, indent=2) + "\n")
+        ok = expect_failure("manifest logoDark that points to a missing file", bad, os.path.join(tmp, "bad-dark-brand-asset-work"),
+                            "interface.logoDark points to ./assets/does-not-exist.svg, which does not exist") and ok
+
+        bad = os.path.join(tmp, "bad-screenshots")
+        copy_source_subset(source, bad)
+        path = os.path.join(bad, CODEX_MANIFEST)
+        manifest = json.loads(read_text(path))
+        manifest["interface"]["screenshots"] = ["./assets/logomark.png"]
+        write_text(path, json.dumps(manifest, indent=2) + "\n")
+        ok = expect_failure("interface.screenshots in the manifest", bad, os.path.join(tmp, "bad-screenshots-work"),
+                            "interface.screenshots is rejected by a Skills-only upload") and ok
     return ok
 
 

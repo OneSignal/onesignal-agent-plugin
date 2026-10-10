@@ -1,6 +1,6 @@
 ---
 name: setup
-description: Entry-point OneSignal onboarding skill. Use when a developer wants to add, install, integrate, initialize, or "set up" the OneSignal SDK in their own codebase (web, iOS, Android, React Native, Expo, Flutter, Cordova/Ionic/Capacitor, Unity) — triggers on "set up OneSignal", "add push notifications", "install the OneSignal SDK", "integrate OneSignal", "onboard onto OneSignal", or a fresh project with no OneSignal present. Supports one-command invocation with arguments, e.g. "/onesignal:setup app=<APP_ID>". Detects the platform/framework from project manifests, gates on push credentials FIRST (uploading them via the provisioning endpoint before any SDK code is written), installs and initializes the SDK, adds a debug-only verification helper, and hands off to the verify skill.
+description: Set up OneSignal in your codebase by asking "set up OneSignal". Detects the platform/framework from your project, guides you through uploading push credentials, installs and sets up the SDK, then hands off to the verify skill. Use when a developer wants to add, install, integrate, or initialize the OneSignal SDK in a web, iOS, Android, React Native, Expo, Flutter, Cordova/Ionic/Capacitor, or Unity project, says "add push notifications", "install the OneSignal SDK", "integrate OneSignal", or "onboard onto OneSignal", or opens a fresh project with no OneSignal present. Supports one-command invocation, for example "/onesignal:setup app=<APP_ID>".
 argument-hint: app=<APP_ID>
 ---
 
