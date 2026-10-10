@@ -11,6 +11,10 @@
   "homepage": "https://documentation.onesignal.com",
   "repository": "https://github.com/OneSignal/onesignal-agent-plugin",
   "license": "MIT",
+  "documentationUrl": "https://documentation.onesignal.com",
+  "supportUrl": "https://github.com/OneSignal/onesignal-agent-plugin/issues",
+  "privacyPolicyUrl": "https://onesignal.com/privacy_policy",
+  "termsOfServiceUrl": "https://onesignal.com/tos",
   "keywords": [
     "onesignal",
     "push-notifications",
