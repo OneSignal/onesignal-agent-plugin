@@ -256,9 +256,16 @@ codex plugin add onesignal@onesignal
 - Describe what you want ("set up OneSignal in this app"); Codex picks the matching skill. The
   skills are listed under the `onesignal` namespace: `onesignal:setup`, `onesignal:credentials`,
   and `onesignal:verify`.
-- The plugin registers the OneSignal MCP server from `.mcp.json`. Sign in once with
-  `codex mcp login onesignal`. The browser opens OneSignal's sign-in page; there is no App ID or key to
-  paste. `codex mcp list` shows the server's login state.
+- Connect the OneSignal tools once. The 2 install paths differ here:
+  - Option A attaches the **OneSignal** connector, the same app as OneSignal's MCP listing in the
+    directory. The OneSignal tools arrive through that connector; sign in where Codex asks you to
+    connect it. `codex mcp list` does not show `onesignal` on this path.
+  - Option B registers the server from the plugin's `.mcp.json`, and `codex mcp list` shows it as
+    `Not logged in`. Do not run `codex mcp login onesignal` or `codex mcp add`: Codex's own MCP
+    sign-in does not work against this server yet, and the command stops with an OAuth origin
+    error. Use Option A for the tools, or give the skills an app API key through
+    `ONESIGNAL_REST_API_KEY` (the skills ask for this path when no tools are present; never paste
+    the key into the chat).
 - The Python 3 prerequisite above applies in Codex too.
 
 ---
