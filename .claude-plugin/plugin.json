@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "onesignal",
   "displayName": "OneSignal",
-  "description": "OneSignal onboarding & activation skills: install and initialize the SDK, provision your app and push credentials, and verify real delivery.",
+  "description": "OneSignal onboarding for coding agents: install the OneSignal SDK, set up your push credentials, and verify that a real notification reaches your device.",
   "version": "1.1.1",
   "author": {
     "name": "OneSignal",
