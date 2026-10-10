@@ -204,7 +204,7 @@ State the activation ladder result explicitly — how far it climbed and where i
 - Identity: verified / skipped (no `login()` call) / late-login flag.
 - Test send: sent (notification id) / not sent (why).
 - **Server-side: `successful=N` (ACTIVATED ✅) / failed / errored** — the headline result. `converted` and `received` reported only if observed, with the paid/SDK-only caveat on `received`.
-- **Dashboard link** (only when step 4 returned a notification `id`): the message link from step 4, `https://dashboard.onesignal.com/apps/<APP_ID>/push/<NOTIFICATION_ID>`, as a clickable URL. Tell the user the page shows the delivery stats, the message content, and the clicks for this test push, and that the dashboard asks them to sign in first. Give the link on a win and on an `errored` result — the report page is where they see the failure detail too.
+- **Dashboard link** (only when step 4 returned a notification `id`): the message link from step 4, `https://dashboard.onesignal.com/apps/<APP_ID>/push/<NOTIFICATION_ID>`, as a clickable URL. After a step 7 §6 resend, link the latest message. Tell the user the page shows the delivery stats, the message content, and the clicks for this test push, and that the dashboard asks them to sign in first. Give the link on a win and on an `errored` result — the report page is where they see the failure detail too.
 - Custom events: dashboard path given (not API-verified).
 - If anything failed: the ranked cause, the skill to route to, and exact next step. Never claim success you did not observe server-side.
 
