@@ -4,7 +4,7 @@ Any skill that reads or writes the user's repository MUST follow all of this. It
 
 ## Before writing anything
 
-1. `git status --porcelain` — if the tree is dirty, STOP and ask (stash / proceed / abort). No `.git`? Fall back to `.onesignal.bak` sibling backups and say there's no VCS net.
+1. `git status --porcelain -- ":(exclude,top).onesignal"` — if the tree is dirty, STOP and ask (stash / proceed / abort). `.onesignal/` is run state (§20), never project content, so it never makes the tree dirty: the `top` pathspec excludes it at the repo root from any working directory, whether it is untracked or modified. No `.git`? Fall back to `.onesignal.bak` sibling backups and say there's no VCS net.
 2. Detect prior installation FIRST: existing OneSignal dependency line, existing init call, or our marker comment. Found → propose update/repair, never a duplicate. Different App ID already present → ask which is correct; never silently overwrite.
 3. Default to a new `onesignal-integration` branch (user may opt into current branch).
 4. Declare the complete file allow-list up front (dependency manifest, init/lifecycle file, one wrapper module, platform config files, one debug-only verification helper, `.gitignore`, web service-worker, `.onesignal/` checkpoint run state). Touching anything else requires re-confirmation.
