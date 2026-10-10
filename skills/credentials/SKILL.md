@@ -1,6 +1,6 @@
 ---
 name: credentials
-description: Upload your APNs .p8 key, Firebase FCM service-account JSON, or web Site URL to OneSignal, and get guided setup for Safari certs, email SPF/DKIM/DMARC DNS records, and SMS sender registration.
+description: Upload your APNs .p8 key, Firebase FCM service-account JSON, or web Site URL to OneSignal, and get guided setup for Safari certs, email SPF/DKIM/DMARC DNS records, and SMS sender registration. Use when the user asks to "set up APNs", "add my .p8", "connect Firebase / FCM", "upload push credentials", "configure email domain / DNS", or "set up SMS", asks why Android or iOS push is failing, says push is not delivering after the SDK install, or when another OneSignal skill reports that a platform is missing credentials.
 argument-hint: "[platform=ios|android|web|email|sms] [app=<APP_ID>]"
 ---
 

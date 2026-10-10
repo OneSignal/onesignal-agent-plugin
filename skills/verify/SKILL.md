@@ -1,6 +1,6 @@
 ---
 name: verify
-description: Verify that your OneSignal integration works end to end: builds/runs your app, waits for the first real device subscription to register, sends a real test push, and confirms server-side delivery.
+description: Verify that your OneSignal integration works end to end — builds/runs your app, waits for the first real device subscription to register, sends a real test push, and confirms server-side delivery. Use after the setup or credentials skills have run, or when the user asks to "verify OneSignal works", "test push delivery", "prove the integration works", "confirm the device registered", or "send myself a test notification", asks why a notification is not arriving, or is debugging an install that looks complete but delivers nothing. Does not install the SDK or upload credentials; routes to those skills when they are missing.
 argument-hint: "[app=<APP_ID>]"
 ---
 
