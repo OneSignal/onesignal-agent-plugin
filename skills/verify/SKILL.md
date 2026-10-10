@@ -1,6 +1,6 @@
 ---
 name: verify
-description: Closed-loop verification that a OneSignal integration actually works end to end — builds/runs the app, waits for the first real device subscription to register, checks identity, sends a real test push, and confirms server-side delivery. Use after the SDK-install or credentials skills have run, or whenever the user asks to "verify OneSignal works", "test push delivery", "prove the integration works", "why isn't my notification arriving", "confirm the device registered", "send myself a test notification", or is debugging an install that appears complete but delivers nothing. This is the "prove it works" step — it does NOT install the SDK or upload credentials; if those are missing it routes to the appropriate skill.
+description: Verify that your OneSignal integration works end to end: builds/runs your app, waits for the first real device subscription to register, sends a real test push, and confirms server-side delivery.
 argument-hint: "[app=<APP_ID>]"
 ---
 
