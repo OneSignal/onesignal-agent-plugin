@@ -266,6 +266,11 @@ codex plugin add onesignal@onesignal
     error. Use Option A for the tools, or give the skills an app API key through
     `ONESIGNAL_REST_API_KEY` (the skills ask for this path when no tools are present; never paste
     the key into the chat).
+- The skills stop at a few decisions (checkpoint consent, a dirty tree, the test send) and ask you
+  to choose. The Codex app shows each one as a question card with numbered options. The Codex CLI
+  shows the same question as text; reply with the word the message names, for example `send` or
+  `keep local`. Plan mode in the CLI shows a selectable prompt, but Plan mode does not edit files,
+  so run the skills in the default mode.
 - The Python 3 prerequisite above applies in Codex too.
 
 ---

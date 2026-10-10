@@ -36,7 +36,7 @@ Skip the question when one of these is already true:
 - the first non-comment line of `.onesignal/telemetry` at the repo root is `0` or `1`
 - you already asked in this session and the file write failed — reuse that answer through the `ONESIGNAL_SKILL_TELEMETRY` prefix below
 
-Otherwise ask via the harness's native structured-question tool (safety contract §14) and end the turn — the gate blocks. Do not run `checkpoint.sh` until the user answers. Per safety contract §15 the ask is its own question and names the host — never fold it into a network-access request.
+Otherwise ask via the harness's native structured-question tool — `AskUserQuestion` in Claude Code, `request_user_input` in Codex; safety contract §14 has the call rules and the plain-text fallback for a host that does not list the tool — and end the turn — the gate blocks. Every later ask in this skill that says "structured question" means that same tool, including the test-send consent in step 4. Do not run `checkpoint.sh` until the user answers. Per safety contract §15 the ask is its own question and names the host — never fold it into a network-access request.
 
 Question: "OneSignal can record onboarding checkpoints (step name, success or fail, failure class, run ID, platform, OS, App ID) and send them to `api.onesignal.com`. No source code, paths, or credentials. Send these checkpoints?"
 
@@ -139,7 +139,7 @@ If the app wires `OneSignal.login(externalId)` (grep the wrapper for the call):
 
 ### Step 4 — Test send (real notification to the fresh subscription)
 
-Send to ONLY the subscription from step 2 — never a broadcast — and only after it shows `notification_types >= 1` (the step 2 gate). **Ask before sending:** this is a real, visible push to a real device and an action on the user's live OneSignal app — state the target subscription id and the App ID, and get an explicit yes first. Never send without it.
+Send to ONLY the subscription from step 2 — never a broadcast — and only after it shows `notification_types >= 1` (the step 2 gate). **Ask before sending, as a structured question (safety contract §14):** this is a real, visible push to a real device and an action on the user's live OneSignal app — state the target subscription id and the App ID, and get an explicit yes first. Never send without it.
 
 **Pre-send heads-up (say it with the ask):** if the device is in **Focus/Do Not Disturb** — or browser/OS notifications are muted for the app/site — a successfully delivered push won't visibly appear. Have the user check now so a delivered send isn't misread as a failure.
 
