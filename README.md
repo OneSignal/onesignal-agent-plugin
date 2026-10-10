@@ -259,6 +259,11 @@ codex plugin add onesignal@onesignal
 - The plugin registers the OneSignal MCP server from `.mcp.json`. Sign in once with
   `codex mcp login onesignal`. The browser opens OneSignal's sign-in page; there is no App ID or key to
   paste. `codex mcp list` shows the server's login state.
+- The skills stop at a few decisions (checkpoint consent, a dirty tree, the test send) and ask you
+  to choose. The Codex app shows each one as a question card with numbered options. The Codex CLI
+  shows the same question as text; reply with the word the message names, for example `send` or
+  `keep local`. Plan mode in the CLI shows a selectable prompt, but Plan mode does not edit files,
+  so run the skills in the default mode.
 - The Python 3 prerequisite above applies in Codex too.
 
 ---

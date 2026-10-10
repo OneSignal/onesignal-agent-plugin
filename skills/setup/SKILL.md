@@ -30,9 +30,11 @@ Skip the question only when one of these is already true:
 - the first non-comment line of `.onesignal/telemetry` at the repo root is `0` or `1`
   (that is what the script reads; comment and blank lines around it are fine)
 
-Otherwise ask via the harness's native structured-question tool (safety contract §14)
-and **end the turn**. Do not run Step 0, do not request network access, and do not run
-`checkpoint.sh` until the user answers.
+Otherwise ask via the harness's native structured-question tool — `AskUserQuestion` in
+Claude Code, `request_user_input` in Codex; safety contract §14 has the call rules and the
+plain-text fallback for a host that does not list the tool — and **end the turn**. Every later ask in
+this skill that says "structured question" means that same tool. Do not run Step 0, do not
+request network access, and do not run `checkpoint.sh` until the user answers.
 
 Question: "OneSignal can record setup checkpoints (step name, success or fail, failure
 class, run ID, platform, OS, App ID). No source code, paths, or credentials. Send these
@@ -159,7 +161,7 @@ file or the wire. The bold name is for your prose to the user.
 
 **Monorepo / workspaces:** if `package.json` has `workspaces`, a `pnpm-workspace.yaml`, `lerna.json`, `nx.json`, or `turbo.json`, enumerate each package and detect per-package. A repo can hold BOTH a web app and a mobile app. Do NOT assume one platform for the whole repo.
 
-**Ambiguous or multiple candidates → ASK.** Do not guess. Present the detected candidates and let the user pick which package(s) to integrate. React Native could be bare or Expo — if unclear, ask. If detection finds nothing recognizable, ask the user to name their platform/framework rather than proceeding. **Report the dropout before ending the turn to ask**: `bash <plugin>/scripts/checkpoint.sh setup.preflight fail platform_ambiguous`. When the user answers and detection resolves, report the normal checkpoint below — the fail→ok pair records the friction.
+**Ambiguous or multiple candidates → ASK.** Do not guess. Present the detected candidates as a structured question (safety contract §14) and let the user pick which package(s) to integrate — at most 3 options, so with more candidates list the 3 most likely and say the user can type another one in the free-text field. React Native could be bare or Expo — if unclear, ask. If detection finds nothing recognizable, ask the user to name their platform/framework rather than proceeding. **Report the dropout before ending the turn to ask**: `bash <plugin>/scripts/checkpoint.sh setup.preflight fail platform_ambiguous`. When the user answers and detection resolves, report the normal checkpoint below — the fail→ok pair records the friction.
 
 **Checkpoint.** Once the platform is known, write it and report preflight — it will buffer until Step 2.
 
