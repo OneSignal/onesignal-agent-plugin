@@ -1,6 +1,6 @@
 ---
 name: credentials
-description: Guides a OneSignal customer through procuring and configuring the platform push/messaging credentials that only a human can start in an external console — Apple APNs .p8 keys, Firebase FCM v1 service-account JSON, web Site URL / Safari certs, email SPF/DKIM/DMARC DNS records, and SMS sender registration. Use when the user says push isn't delivering after SDK install, asks to "set up APNs", "add my .p8", "connect Firebase / FCM", "upload push credentials", "why is Android/iOS push failing", "configure email domain / DNS", "set up SMS/texting", or when another OneSignal skill reports a platform is missing credentials. The agent walks the human through the portal steps, then finishes the API-uploadable ones (Apple .p8, Firebase JSON) itself via the OneSignal apps API, validating the response and keeping every secret file out of the repo.
+description: Upload your APNs .p8 key, Firebase FCM service-account JSON, or web Site URL to OneSignal, and get guided setup for Safari certs, email SPF/DKIM/DMARC DNS records, and SMS sender registration.
 argument-hint: "[platform=ios|android|web|email|sms] [app=<APP_ID>]"
 ---
 
