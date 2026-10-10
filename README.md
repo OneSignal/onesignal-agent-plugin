@@ -113,7 +113,7 @@ plugin, then add + install it.
        {
          "name": "onesignal",
          "source": "./onesignal-agent-plugin",
-         "description": "OneSignal onboarding & activation skills"
+         "description": "OneSignal onboarding for coding agents: install the OneSignal SDK, set up your push credentials, and verify that a real notification reaches your device."
        }
      ]
    }
