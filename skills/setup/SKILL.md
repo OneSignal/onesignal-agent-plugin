@@ -49,7 +49,7 @@ Choices:
 repo root (`git rev-parse --show-toplevel`) — `1` for "send", `0` for "keep local":
 
 ```bash
-mkdir -p .onesignal && printf '1\n' > .onesignal/telemetry   # or 0
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && mkdir -p "$ROOT/.onesignal" && printf '1\n' > "$ROOT/.onesignal/telemetry"   # or 0
 ```
 
 The script never writes this file, and it does not send until it reads a `1`, so a
