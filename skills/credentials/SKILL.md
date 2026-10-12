@@ -2,6 +2,10 @@
 name: credentials
 description: Upload your APNs .p8 key, Firebase FCM service-account JSON, or web Site URL to OneSignal, and get guided setup for Safari certs, email SPF/DKIM/DMARC DNS records, and SMS sender registration. Use when the user asks to "set up APNs", "add my .p8", "connect Firebase / FCM", "upload push credentials", "configure email domain / DNS", or "set up SMS", asks why Android or iOS push is failing, says push is not delivering after the SDK install, or when another OneSignal skill reports that a platform is missing credentials.
 argument-hint: "[platform=ios|android|web|email|sms] [app=<APP_ID>]"
+allowed-tools:
+  - Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh *)
+  - Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/onesignal_api.py *)
+  - Bash(git check-ignore *)
 ---
 
 # OneSignal credentials walkthrough
@@ -57,17 +61,17 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && mkdir -p "$ROOT/.o
 
 `.onesignal/` is run state, never project content (safety contract §20): make sure `.gitignore` covers it, and never commit it. If the write fails, prefix every `checkpoint.sh` call in this run (including `flush`) with `ONESIGNAL_SKILL_TELEMETRY=<answer>`, and write the file again before the session ends — an env-only answer does not reach the next session.
 
-A second file gates the sends on a direct run: setup writes the App ID to `.onesignal/app_id`, and no skill wrote it here. Until that file holds the UUID, every checkpoint buffers, and `flush` stops with "cannot flush — still no App ID". Write it as soon as you know the App ID:
+A second file gates the sends on a direct run: setup writes the App ID to `.onesignal/app_id`, and no skill wrote it here. Until that file holds the UUID, every checkpoint buffers, and `flush` stops with "cannot flush — still no App ID". Pass the App ID on the first checkpoint you report in this run, which is normally `credentials.detected` in Step 1:
 
 ```bash
-ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && mkdir -p "$ROOT/.onesignal" && printf '%s\n' '<APP_ID>' > "$ROOT/.onesignal/app_id"
+bash <plugin>/scripts/checkpoint.sh credentials.detected <status> [class] --app-id <APP_ID>
 ```
 
-After a "send" answer, once `.onesignal/app_id` is written, run `bash <plugin>/scripts/checkpoint.sh flush` once: this funnel run may hold events that buffered before the answer existed, and the script keeps them for exactly this recovery (telemetry contract, "Refusal and failure behaviour").
+The script writes the UUID to `.onesignal/app_id` at the repo root, sends that event, and then flushes the events held from before the answer existed — the script keeps them for exactly this recovery (telemetry contract, "Refusal and failure behaviour"). Every milestone call accepts `--app-id`, so pass it on whichever checkpoint comes first. Do not write the file by hand, and do not run a separate `flush` for it: one command keeps the host's approval prompts to one.
 
 Do not ask twice. A refusal is a valid answer: checkpoints stay local, and you never reach the network by another route.
 
-**Network access in a sandboxed runtime** (Codex in its default mode is one): the sandbox blocks the network and approves one command at a time, and each approval is a prompt the user must answer. Never escalate a `checkpoint.sh` milestone call or the mid-run `flush` above — run them inside the sandbox; when the network is blocked the script prints `not sent`, holds the event in `.onesignal/pending.jsonl`, and exits 0, which is the expected result there. Escalate the closing `flush` once (the final checkpoint block below), and only when the recorded answer is `1`. Escalate an `onesignal_api.py` command only after the sandbox blocked it: exit code 3 on the first try is the sandbox, so re-run that one command with escalation and a one-sentence reason. The write-once `provision` call is safe to re-run after a sandbox block — no request left the machine. If the user declines an escalation, take the dashboard path for that step. A declined escalation is not a checkpoint opt-out: never write `0` over a recorded `1`.
+**Network access in a sandboxed runtime** (Codex in its default mode is one): the sandbox blocks the network and approves one command at a time, and each approval is a prompt the user must answer. Never escalate a `checkpoint.sh` milestone call, with or without `--app-id` — run it inside the sandbox; when the network is blocked the script prints `not sent`, holds the event in `.onesignal/pending.jsonl`, and exits 0, which is the expected result there. Escalate the closing `flush` once (the final checkpoint block below), and only when the recorded answer is `1`. Escalate an `onesignal_api.py` command only after the sandbox blocked it: exit code 3 on the first try is the sandbox, so re-run that one command with escalation and a one-sentence reason. The write-once `provision` call is safe to re-run after a sandbox block — no request left the machine. If the user declines an escalation, take the dashboard path for that step. A declined escalation is not a checkpoint opt-out: never write `0` over a recorded `1`.
 
 ## Step 0 — Which credential, and who has access?
 
@@ -110,6 +114,8 @@ bash <plugin>/scripts/checkpoint.sh credentials.detected fail credentials_missin
 bash <plugin>/scripts/checkpoint.sh credentials.detected fail invalid_app_id         # wrong or unknown App ID — stop and re-ask
 bash <plugin>/scripts/checkpoint.sh credentials.detected fail unknown probe_unavailable  # the check cannot run (item 7)
 ```
+
+On a direct run, append `--app-id <APP_ID>` to the line you pick ("Checkpoint consent" above): the script records the App ID and flushes the events held before it.
 
 ## The API-upload mechanism (shared by Apple .p8 and Firebase)
 

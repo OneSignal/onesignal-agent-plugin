@@ -74,6 +74,17 @@ Do not break these without a decision from the team:
   directory, where each skill folder carries its own `scripts/`. Never build a path from a
   host environment variable such as `${CLAUDE_PLUGIN_ROOT}`: Claude Code substitutes it in
   skill text, but Codex and other agents read the skill text verbatim and the path breaks.
+  The one exception is the `allowed-tools` field in the `SKILL.md` frontmatter. Claude Code
+  substitutes `${CLAUDE_PLUGIN_ROOT}` in those Bash rules, so each rule matches the
+  `<plugin>/scripts/<name>` command the skill body runs and Claude Code does not prompt for
+  it; Codex ignores the field. The rules list the scripts in the packager's
+  `SCRIPTS_FOR_SKILL` table for that skill and the read-only `git` commands the skill runs,
+  and nothing else. Never pre-approve `Write`, `Edit`, or a broad `Bash(*)`.
+- **Each checkpoint is one command.** A skill reports a step as a single `checkpoint.sh`
+  call, with no variable assignment and no `&&` chain in front of it. Run state the skill
+  learns mid-run goes through the script's options (`--platform`, `--app-id`), not through
+  a shell write next to the call. A host that pre-approves commands by prefix matches the
+  single call; a compound command prompts.
 - **Shared files have one spelling in skill text.** A skill refers to a shared script only as
   `<plugin>/scripts/<name>`, and to a reference only as `[…](../../references/<name>.md)`.
   No other path in a skill may contain `../`. `scripts/package_directory_bundle.py --check`
@@ -105,8 +116,10 @@ script changes, and adds `claude plugin validate` and a Python 3.7 pass. Branch 
    in step 4 fails on a mismatch.
 3. Skill links: confirm every relative link in a changed `SKILL.md` resolves to a file. The
    bundle gate in step 4 checks every link in `skills/` for you. Then run the portability
-   check; it must print nothing:
-   `grep -rn 'CLAUDE_PLUGIN_ROOT\|PLUGIN_ROOT}\|/Users/\|/home/' skills/ references/ --include='*.md'`
+   check; it must print nothing (the second `grep` drops the `allowed-tools` frontmatter
+   rules, the one place a host variable belongs; the bundle gate confirms they sit in the
+   frontmatter and nowhere else):
+   `grep -rn 'CLAUDE_PLUGIN_ROOT\|PLUGIN_ROOT}\|/Users/\|/home/' skills/ references/ --include='*.md' | grep -v ':  - Bash(.*\${CLAUDE_PLUGIN_ROOT}/scripts/'`
 4. Bundle gate: `python3 scripts/package_directory_bundle.py --check`. The check builds the
    directory bundle in a temporary directory and fails on any path that does not resolve
    inside its skill folder. Run it after any change under `skills/`, `references/`, or
