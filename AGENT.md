@@ -136,7 +136,9 @@ builds that artifact from this tree at release time:
 
 - It writes `.codex-plugin/plugin.json` from the repository manifest without `mcpServers`,
   because a Skills-only upload rejects MCP configuration (the listing's MCP server is attached
-  in the portal). It copies `assets/` so `interface.logo` and `interface.composerIcon` resolve.
+  in the portal). It copies `assets/` so `interface.logo`, `interface.composerIcon`, and
+  their `Dark` variants resolve. The gate rejects `interface.screenshots`, which a
+  Skills-only upload refuses.
 - It copies each skill folder under `skills/` (`skills/setup/`, `skills/credentials/`,
   `skills/verify/`), and gives each one its own `references/`, `endpoint.conf`, and the
   runtime scripts that skill calls (a table in the script names them).

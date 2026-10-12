@@ -1,7 +1,7 @@
 {
   "name": "onesignal",
   "version": "1.1.1",
-  "description": "OneSignal onboarding & activation skills: install and initialize the SDK, provision your app and push credentials, and verify real delivery.",
+  "description": "OneSignal onboarding for coding agents: install the OneSignal SDK, set up your push credentials, and verify that a real notification reaches your device.",
   "author": {
     "name": "OneSignal",
     "url": "https://onesignal.com"
@@ -20,8 +20,8 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "OneSignal",
-    "shortDescription": "Set up and verify OneSignal",
-    "longDescription": "Install and initialize the OneSignal SDK, configure push credentials, and verify delivery. The bundled helper scripts need Python 3.7 or newer on PATH; the setup skill checks for it first and offers by-hand fallbacks when it is missing.",
+    "shortDescription": "Set up and send push notifications",
+    "longDescription": "OneSignal is the market leading customer engagement solution for push notifications, email, SMS, in-app messaging, and Live Activities. This plugin brings OneSignal onboarding into Codex: point it at your codebase and it installs the SDK, sets up your push credentials, and verifies that a real notification reaches your device.\n\nOnce installed, describe what you want in plain language or invoke the plugin directly with @OneSignal.\n\nTry prompts like:\n@OneSignal set up push notifications in this app.\n@OneSignal upload my APNs .p8 key and Firebase service account to OneSignal.\n@OneSignal why isn't my push notification arriving on Android?\n@OneSignal send a test push to my device and confirm delivery.\n\nRequirements: A free OneSignal account. A device, simulator, or browser that can receive push notifications.",
     "developerName": "OneSignal",
     "category": "Developer Tools",
     "capabilities": [
@@ -33,10 +33,14 @@
     "termsOfServiceURL": "https://onesignal.com/tos",
     "defaultPrompt": [
       "Set up OneSignal in this app.",
-      "Verify that OneSignal push delivery works."
+      "Upload my APNs and FCM credentials to OneSignal.",
+      "Send a test push to my device and confirm delivery."
     ],
     "brandColor": "#051B2C",
+    "brandColorDark": "#4E50D1",
     "composerIcon": "./assets/logomark.png",
-    "logo": "./assets/logomark.png"
+    "composerIconDark": "./assets/logomark-white.svg",
+    "logo": "./assets/logomark.png",
+    "logoDark": "./assets/logomark-white.svg"
   }
 }
