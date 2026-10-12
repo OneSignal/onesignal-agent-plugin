@@ -28,7 +28,7 @@ repository.
 | `.claude-plugin/plugin.json` | Plugin manifest. The `version` field controls when Claude Code pulls updates. |
 | `.claude-plugin/marketplace.json` | Marketplace catalog. This repository is its own marketplace, named `onesignal`. |
 | `.codex-plugin/plugin.json` | Codex manifest. The `name` is the skill namespace in Codex (`onesignal:setup`). The `interface` block holds the listing copy, legal URLs, and brand assets. The directory bundle ships a copy without `mcpServers`. |
-| `assets/` | Brand assets for the listings. The files come from the official OneSignal media kit. |
+| `assets/` | Brand assets for the listings. The files come from the official OneSignal media kit. `logomark-mono.svg` is the media-kit logomark with `fill="currentColor"`, so the composer icon follows the text color of the theme. The Codex manifest has no dark variant of `composerIcon`. |
 | `.mcp.json` | Declares the hosted OneSignal MCP endpoint. |
 | `endpoint.conf` | The checkpoint ingestion endpoint. The comment block in the file explains the path. |
 
@@ -136,8 +136,8 @@ builds that artifact from this tree at release time:
 
 - It writes `.codex-plugin/plugin.json` from the repository manifest without `mcpServers`,
   because a Skills-only upload rejects MCP configuration (the listing's MCP server is attached
-  in the portal). It copies `assets/` so `interface.logo`, `interface.composerIcon`, and
-  their `Dark` variants resolve. The gate rejects `interface.screenshots`, which a
+  in the portal). It copies `assets/` so `interface.logo`, `interface.logoDark`, and
+  `interface.composerIcon` resolve. The gate rejects `interface.screenshots`, which a
   Skills-only upload refuses.
 - It copies each skill folder under `skills/` (`skills/setup/`, `skills/credentials/`,
   `skills/verify/`), and gives each one its own `references/`, `endpoint.conf`, and the
