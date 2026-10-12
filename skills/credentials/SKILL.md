@@ -115,6 +115,8 @@ bash <plugin>/scripts/checkpoint.sh credentials.detected fail invalid_app_id    
 bash <plugin>/scripts/checkpoint.sh credentials.detected fail unknown probe_unavailable  # the check cannot run (item 7)
 ```
 
+On a direct run, append `--app-id <APP_ID>` to the line you pick ("Checkpoint consent" above): the script records the App ID and flushes the events held before it.
+
 ## The API-upload mechanism (shared by Apple .p8 and Firebase)
 
 Both agent-uploadable credentials go to the **write-once provisioning endpoint**, via one of two transports for the same payload:

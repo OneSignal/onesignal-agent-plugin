@@ -12,6 +12,7 @@
 #   --app-id <uuid>      write the UUID to .onesignal/app_id before this event, send
 #                        the event, then flush the events buffered before the App ID
 #                        existed. A value that is not a UUID refuses the whole call.
+#   Any other --option refuses the call, and `flush` takes no options.
 #
 # The options exist so a skill step is one command: a `ROOT="$(git ...)"; echo ... >`
 # prefix in front of this script is a compound command that an agent host cannot
@@ -104,6 +105,13 @@ while [ $# -gt 0 ]; do
       ;;
     --platform=*) OPT_PLATFORM="${1#--platform=}"; OPT_PLATFORM_SET=1 ;;
     --app-id=*)   OPT_APP_ID="${1#--app-id=}";     OPT_APP_ID_SET=1 ;;
+    --*)
+      # A mistyped option must not fall through to the positionals: it would
+      # become a failure class, be rewritten to `unknown`, and send a wrong row
+      # while the value it carried is lost.
+      echo "checkpoint: INVALID OPTION '$1' — nothing recorded, nothing sent."
+      echo "  Options: --platform <token> | --app-id <uuid>. Re-run with the corrected option."
+      exit 0 ;;
     *)
       case "$POSITIONAL_COUNT" in
         0) P0="$1" ;;
@@ -224,6 +232,14 @@ fi
 # and appended it to the buffer it was meant to drain.
 # ---------------------------------------------------------------------------
 if [ "$RAW_MILESTONE" = "flush" ]; then
+  # flush re-sends recorded events and takes no options. Accepting --app-id
+  # here and dropping it would leave the caller with "still no App ID".
+  if [ "$OPT_PLATFORM_SET" -eq 1 ] || [ "$OPT_APP_ID_SET" -eq 1 ]; then
+    echo "checkpoint: flush takes no options — nothing sent."
+    echo "  Pass --platform or --app-id on a milestone call; the --app-id call flushes by itself:"
+    echo "    bash scripts/checkpoint.sh <skill.milestone> <status> --app-id <uuid>"
+    exit 0
+  fi
   if telemetry_disabled; then
     # An unanswered question and a recorded opt-out are different states, and
     # only one of them is settled. Say which, or the caller reads fail-closed
@@ -1202,13 +1218,10 @@ esac
 # go now, through the same flush path a caller would run by hand. Only after
 # this event was accepted: when this send failed, the buffered ones would fail
 # the same way, and a sandboxed runtime would see a burst of attempts for
-# nothing. They wait for the closing flush instead.
-if [ "$OPT_APP_ID_SET" -eq 1 ] && [ -s "$STATE_DIR/pending.jsonl" ]; then
-  if [ "$LAST_NOTE" = "sent" ]; then
-    bash "$0" flush
-  else
-    echo "  Events buffered before the App ID wait for a later flush."
-  fi
+# nothing. The case arm above already said what happened to this event and
+# where the buffer stands, so a refused send adds no second message here.
+if [ "$OPT_APP_ID_SET" -eq 1 ] && [ "$LAST_NOTE" = "sent" ] && [ -s "$STATE_DIR/pending.jsonl" ]; then
+  bash "$0" flush
 fi
 
 exit 0

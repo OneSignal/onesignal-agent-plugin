@@ -56,7 +56,7 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && mkdir -p "$ROOT/.o
 
 `.onesignal/` is run state, never project content (safety contract §20): make sure `.gitignore` covers it, and never commit it. If the write fails, prefix every `checkpoint.sh` call in this run (including `flush`) with `ONESIGNAL_SKILL_TELEMETRY=<answer>`, and write the file again before the session ends — an env-only answer does not reach the next session.
 
-A second file gates the sends on a direct run: setup writes the App ID to `.onesignal/app_id`, and no skill wrote it here. Until that file holds the UUID, every checkpoint buffers, and `flush` stops with "cannot flush — still no App ID". Pass the App ID on the first checkpoint you report in this run, which is normally `verify.auth_resolved` in step 0:
+A second file gates the sends on a direct run: setup writes the App ID to `.onesignal/app_id`, and no skill wrote it here. Until that file holds the UUID, every checkpoint buffers, and `flush` stops with "cannot flush — still no App ID". Pass the App ID on the first checkpoint you report in this run, which is normally `verify.auth_resolved` under "Inputs you need":
 
 ```bash
 bash <plugin>/scripts/checkpoint.sh verify.auth_resolved <status> [class] --app-id <APP_ID>
@@ -95,6 +95,8 @@ bash <plugin>/scripts/checkpoint.sh verify.auth_resolved ok_after_fix api_key_li
 bash <plugin>/scripts/checkpoint.sh verify.auth_resolved ok dashboard_manual
 bash <plugin>/scripts/checkpoint.sh verify.auth_resolved fail auth_declined
 ```
+
+On a direct run, append `--app-id <APP_ID>` to the line you pick ("Checkpoint consent" above): the script records the App ID and flushes the events held before it.
 
 **Caveat that applies to every path:** the subscription poll in step 2 has no suitable MCP tool (see step 2), so it needs a key even when the MCP is connected — except on web, where a browser tool in the session reads the subscription from the page instead (step 2, "Web — read the page"). Until a key arrives you can still do step 1 only (build gate); tell the user which rungs you can and cannot verify with what they gave you.
 
