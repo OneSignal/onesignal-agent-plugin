@@ -255,7 +255,9 @@ if [ "$RAW_MILESTONE" = "flush" ]; then
     fi
     exit 0
   fi
-  if [ "$CONSENT_ENV_ONLY" -eq 1 ]; then
+  # The --app-id auto-flush sets ONESIGNAL_SKILL_CONSENT_WARNED: its parent
+  # already printed this warning for the same run, so the child stays quiet.
+  if [ "$CONSENT_ENV_ONLY" -eq 1 ] && [ "${ONESIGNAL_SKILL_CONSENT_WARNED:-0}" != "1" ]; then
     warn_consent_env_only
   fi
   PENDING="$STATE_DIR/pending.jsonl"
@@ -1221,7 +1223,7 @@ esac
 # nothing. The case arm above already said what happened to this event and
 # where the buffer stands, so a refused send adds no second message here.
 if [ "$OPT_APP_ID_SET" -eq 1 ] && [ "$LAST_NOTE" = "sent" ] && [ -s "$STATE_DIR/pending.jsonl" ]; then
-  bash "$0" flush
+  ONESIGNAL_SKILL_CONSENT_WARNED=1 bash "$0" flush
 fi
 
 exit 0
