@@ -28,7 +28,7 @@ repository.
 | `.claude-plugin/plugin.json` | Plugin manifest. The `version` field controls when Claude Code pulls updates. |
 | `.claude-plugin/marketplace.json` | Marketplace catalog. This repository is its own marketplace, named `onesignal`. |
 | `.codex-plugin/plugin.json` | Codex manifest. The `name` is the skill namespace in Codex (`onesignal:setup`). The `interface` block holds the listing copy, legal URLs, and brand assets. The directory bundle ships a copy without `mcpServers`. |
-| `assets/` | Brand assets for the listings. The files come from the official OneSignal media kit. `logomark-mono.svg` is the media-kit logomark with `fill="currentColor"`, so the composer icon follows the text color of the theme. The Codex manifest has no dark variant of `composerIcon`. |
+| `assets/` | Brand assets for the listings. The files come from the official OneSignal media kit. `composer-icon.svg` is the media-kit logomark on a white disc. The Codex manifest has no dark variant of `composerIcon`, and Codex shows that icon as an image with no container, so the icon needs its own background to read on a dark theme. |
 | `.mcp.json` | Declares the hosted OneSignal MCP endpoint. |
 | `endpoint.conf` | The checkpoint ingestion endpoint. The comment block in the file explains the path. |
 

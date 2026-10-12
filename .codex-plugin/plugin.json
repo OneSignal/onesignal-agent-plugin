@@ -38,7 +38,7 @@
     ],
     "brandColor": "#051B2C",
     "brandColorDark": "#4E50D1",
-    "composerIcon": "./assets/logomark-mono.svg",
+    "composerIcon": "./assets/composer-icon.svg",
     "logo": "./assets/logomark.png",
     "logoDark": "./assets/logomark-white.svg"
   }

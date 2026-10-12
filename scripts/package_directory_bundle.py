@@ -81,8 +81,8 @@ BUNDLE_SKILLS_PATH = "./skills/"
 PLUGIN_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 BRAND_ASSET_FIELDS = ("logo", "composerIcon")
 # Dark-theme variant of the logo. The directory falls back to the light file when it
-# is absent. The manifest has no dark variant of composerIcon; that icon uses
-# `currentColor` so it follows the text color of the theme.
+# is absent. The manifest has no dark variant of composerIcon; that icon ships its
+# own background so it reads on both themes.
 OPTIONAL_BRAND_ASSET_FIELDS = ("logoDark",)
 # A Skills-only upload rejects this field (`screenshot_configuration_excluded`).
 EXCLUDED_INTERFACE_FIELDS = ("screenshots",)
