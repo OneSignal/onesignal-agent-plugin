@@ -63,6 +63,8 @@ After a "send" answer, once `.onesignal/app_id` is written, run `bash <plugin>/s
 
 Do not ask twice. A refusal is a valid answer: checkpoints stay local, and you never reach the network by another route.
 
+**Network access in a sandboxed runtime** (Codex in its default mode is one): the sandbox blocks the network and approves one command at a time, and each approval is a prompt the user must answer. Never escalate a `checkpoint.sh` milestone call or the mid-run `flush` above — run them inside the sandbox; when the network is blocked the script prints `not sent`, holds the event in `.onesignal/pending.jsonl`, and exits 0, which is the expected result there. Escalate the closing `flush` once (the final report below), and only when the recorded answer is `1`. Escalate an `onesignal_api.py` command only after the sandbox blocked it: exit code 3 on the first try is the sandbox, so re-run that one command with escalation and a one-sentence reason. The test send in step 4 needs the network too; its consent question is the human gate, and the escalation prompt that follows it is the host's, not a second ask from you. If the user declines an escalation, report the step as blocked and stop; do not route around it. A declined escalation is not a checkpoint opt-out: never write `0` over a recorded `1`.
+
 ## Inputs you need (gather, don't over-ask)
 
 | Input | How to get it | Required for |
@@ -210,6 +212,6 @@ State the activation ladder result explicitly — how far it climbed and where i
 
 **ACTIVATED ✅ is the terminal success of the funnel (`setup → credentials → verify`) — stop there.** Report the win; do not continue into another skill. A failed rung → continue into the skill that fixes it (usually **credentials** or **setup**) — announce the transition in one line, don't ask "want me to continue?".
 
-Verify is the last skill in the funnel, so close the telemetry with the final report — on a win and on a failure: run `bash <plugin>/scripts/checkpoint.sh flush`. No skill runs after this one, so this flush is the last chance for buffered or re-buffered events to send before the session ends.
+Verify is the last skill in the funnel, so close the telemetry with the final report — on a win and on a failure: run `bash <plugin>/scripts/checkpoint.sh flush`. No skill runs after this one, so this flush is the last chance for buffered or re-buffered events to send before the session ends. In a sandboxed runtime this flush is the one `checkpoint.sh` command you run with escalation, and only when the recorded answer is `1`.
 
 This skill mutates nothing (except removal of the debug-only verification helper if the user asks for it), so there is no rollback beyond `git checkout -- <helper-file>` if it was removed.

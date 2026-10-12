@@ -67,6 +67,8 @@ After a "send" answer, once `.onesignal/app_id` is written, run `bash <plugin>/s
 
 Do not ask twice. A refusal is a valid answer: checkpoints stay local, and you never reach the network by another route.
 
+**Network access in a sandboxed runtime** (Codex in its default mode is one): the sandbox blocks the network and approves one command at a time, and each approval is a prompt the user must answer. Never escalate a `checkpoint.sh` milestone call or the mid-run `flush` above — run them inside the sandbox; when the network is blocked the script prints `not sent`, holds the event in `.onesignal/pending.jsonl`, and exits 0, which is the expected result there. Escalate the closing `flush` once (the final checkpoint block below), and only when the recorded answer is `1`. Escalate an `onesignal_api.py` command only after the sandbox blocked it: exit code 3 on the first try is the sandbox, so re-run that one command with escalation and a one-sentence reason. The write-once `provision` call is safe to re-run after a sandbox block — no request left the machine. If the user declines an escalation, take the dashboard path for that step. A declined escalation is not a checkpoint opt-out: never write `0` over a recorded `1`.
+
 ## Step 0 — Which credential, and who has access?
 
 Credentials fail for weeks when the person running this skill turns out not to have the required console role. Surface that blocker first. Ask which platform is in play and run the matching access pre-check **before** any portal walkthrough:
@@ -238,7 +240,7 @@ When a credential is uploaded and validated, tell the user, plainly:
 
 Do not auto-commit. Offer the commands; the user runs them.
 
-**Checkpoint — close the skill** (telemetry contract rules apply, consent included): at wrap-up, report completion and flush — a direct credentials run may be the session's last skill, and the flush gives re-buffered events their final attempt. The row fires for every wrap-up, after an upload and for guide-only channels that stop on a propagation wait. A run that stops at a terminal failure sends its `fail` row at the failing step and no `credentials.complete` row (safety contract §13).
+**Checkpoint — close the skill** (telemetry contract rules apply, consent included): at wrap-up, report completion and flush — a direct credentials run may be the session's last skill, and the flush gives re-buffered events their final attempt. The row fires for every wrap-up, after an upload and for guide-only channels that stop on a propagation wait. A run that stops at a terminal failure sends its `fail` row at the failing step and no `credentials.complete` row (safety contract §13). In a sandboxed runtime this `flush` is the one `checkpoint.sh` command you run with escalation, and only when the recorded answer is `1`.
 
 ```bash
 bash <plugin>/scripts/checkpoint.sh credentials.complete ok

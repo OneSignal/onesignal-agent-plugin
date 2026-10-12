@@ -61,22 +61,33 @@ script warns on every send. Either way setup continues normally.
 
 Do not ask again. Do not reach the network by another route.
 
-## Network access — declare it once, after checkpoint consent
+## Network access — few prompts, after checkpoint consent
 
-This skill needs the network for the SDK version endpoint (Step 4) and the app and
-credential API calls (Steps 2–3). If the user consented above, checkpoints also use the
-network. All of them are `api.onesignal.com` or `onesignal.github.io`.
+This skill needs the network for the SDK version endpoint (Step 4), the app and
+credential API calls (Steps 2–3), and — after a "send" answer above — the checkpoint
+sends. All of them reach `api.onesignal.com` or `onesignal.github.io`.
 
-**If your runtime sandboxes network access, request approval once, before Step 0**, and
-say what it covers. Do not use that request as the checkpoint-consent question; that
-question already happened. A request made in advance can be granted; a syscall denial
-part-way through a command cannot.
+A sandboxed runtime (Codex in its default mode is one) blocks the network inside the
+sandbox and approves one command at a time when you ask to run a command outside it.
+Each approval is a prompt the user must answer, so keep the count low:
 
-If the user declines network access, everything still runs: Step 4 falls back to asking
-them to confirm a version, and Step 3 falls back to a dashboard check. Checkpoints
-follow the recorded answer in `.onesignal/telemetry`, not this refusal: blocked sends
-stay local and wait for a later flush. Do not treat a network refusal as a checkpoint
-opt-out — never write `0` over a recorded `1`. Ask once. Never route around a refusal.
+- **Never escalate a `checkpoint.sh` milestone call.** Run it inside the sandbox. When
+  the network is blocked, the script prints `not sent` with a transport diagnosis, holds
+  the event in `.onesignal/pending.jsonl`, and exits 0. In a sandbox that output is the
+  expected result, not an error: do not re-run the call with escalation, and do not stop
+  to report it.
+- **Escalate the closing `flush` (Step 8) once.** One approval sends every held event.
+  When the recorded answer is `0` the flush sends nothing, so run it without escalation.
+- **Escalate a helper only after the sandbox blocked it.** `resolve_sdk_version.py`
+  (Step 4) and `onesignal_api.py` (Step 3) exit with code 3 when the network is blocked.
+  Re-run that one command with escalation and a one-sentence reason. If the user
+  declines, take the step's fallback: Step 4 asks them to confirm a version, and Step 3
+  falls back to a dashboard check.
+
+Do not use a network approval as the checkpoint-consent question; that question already
+happened. A declined escalation is not a checkpoint opt-out: checkpoints follow the
+recorded answer in `.onesignal/telemetry`, blocked sends stay local, and the next `flush`
+sends them. Never write `0` over a recorded `1`. Never route around a refusal.
 
 ## Reporting milestones (do this as you go, not at the end)
 
@@ -194,6 +205,10 @@ bash <plugin>/scripts/checkpoint.sh setup.app_id ok
 bash <plugin>/scripts/checkpoint.sh flush
 ```
 
+In a sandboxed runtime, run this `flush` inside the sandbox like a milestone call: the
+network block keeps the buffer, and the Step 8 flush sends it with the one escalation
+("Network access" above).
+
 Record a failure the moment you are blocked, not when the session ends — a session that
 never resumes otherwise leaves no trace of why:
 
@@ -212,9 +227,9 @@ run the `flush` from the checkpoint block above.
 
 The single worst onboarding failure is installing the SDK before push credentials exist: the app builds, the device registers, and it shows up **unsubscribed** because OneSignal has nothing to hand APNs/FCM. Close credentials FIRST. Never skip this step silently.
 
-1. **Check what's configured.** With an app-scoped key available (`$ONESIGNAL_SETUP_TOKEN` / `$ONESIGNAL_REST_API_KEY`), run `python3 <plugin>/scripts/onesignal_api.py app <APP_ID>` — the view-app read, `GET /api/v1/apps/{APP_ID}` (app auth works) — and read the verdict for the platform you're about to install: Android → `platforms.fcm.configured`, iOS → `platforms.apns.configured`, Web → `platforms.web.configured` (or the free `web-probe` below). The script decides from the **non-secret presence fields** only (`apns_env`, `fcm_sender_id`, `chrome_web_origin`; api-reference "View an app"), and treats `null`, `""`, and an absent key the same. Without Python (Step 0.2), `curl` the same `GET` with whichever key env var is set, and keep only the HTTP status, the app `id`, and the presence fields — the raw body still carries the plaintext credentials until the server removes them, so never print or paste the whole body: `curl -sS -w '\nHTTP %{http_code}\n' -H "Authorization: Key ${ONESIGNAL_REST_API_KEY:-$ONESIGNAL_SETUP_TOKEN}" "https://api.onesignal.com/api/v1/apps/<APP_ID>" | grep -oE '"(id|apns_env|apns_key_id|apns_team_id|fcm_sender_id|chrome_web_origin)":[^,}]*|^HTTP [0-9]+'`. A verdict exists **only** when the `HTTP` line is 2xx **and** the `"id"` line shows this App ID — that pair is your proof the body is the app object. Then read the presence fields and nothing else — never the plaintext credential fields (`apns_p8`, `fcm_v1_service_account_json`, `gcm_key`). Any other output (no `HTTP` line, a non-2xx status, no `"id"` line, a curl error) is **presence unknown, not "missing"**: do not start the credentials skill on it — take the no-key path below instead. No key available, or presence unknown → ask the user to check the dashboard (Settings > Push Platforms) and tell you.
+1. **Check what's configured.** With an app-scoped key available (`$ONESIGNAL_SETUP_TOKEN` / `$ONESIGNAL_REST_API_KEY`), run `python3 <plugin>/scripts/onesignal_api.py app <APP_ID>` — the view-app read, `GET /api/v1/apps/{APP_ID}` (app auth works) — and read the verdict for the platform you're about to install: Android → `platforms.fcm.configured`, iOS → `platforms.apns.configured`, Web → `platforms.web.configured` (or the free `web-probe` below). The script decides from the **non-secret presence fields** only (`apns_env`, `fcm_sender_id`, `chrome_web_origin`; api-reference "View an app"), and treats `null`, `""`, and an absent key the same. Without Python (Step 0.2), `curl` the same `GET` with whichever key env var is set, and keep only the HTTP status, the app `id`, and the presence fields — the raw body still carries the plaintext credentials until the server removes them, so never print or paste the whole body: `curl -sS -w '\nHTTP %{http_code}\n' -H "Authorization: Key ${ONESIGNAL_REST_API_KEY:-$ONESIGNAL_SETUP_TOKEN}" "https://api.onesignal.com/api/v1/apps/<APP_ID>" | grep -oE '"(id|apns_env|apns_key_id|apns_team_id|fcm_sender_id|chrome_web_origin)":[^,}]*|^HTTP [0-9]+'`. A verdict exists **only** when the `HTTP` line is 2xx **and** the `"id"` line shows this App ID — that pair is your proof the body is the app object. Then read the presence fields and nothing else — never the plaintext credential fields (`apns_p8`, `fcm_v1_service_account_json`, `gcm_key`). Any other output (no `HTTP` line, a non-2xx status, no `"id"` line, a curl error) is **presence unknown, not "missing"**: do not start the credentials skill on it — take the no-key path below instead. In a sandboxed runtime, a script exit code of 3 or a curl error on the first try means the sandbox blocked the request: re-run that one command with escalation first ("Network access" above), and read presence unknown only if the re-run also fails or the user declines. No key available, or presence unknown → ask the user to check the dashboard (Settings > Push Platforms) and tell you.
 2. **Missing → run the credentials skill NOW**, before writing any code. It walks the human through the Apple/Firebase console steps and uploads the file itself via the write-once endpoint (`POST /api/v1/apps/{APP_ID}/credentials`). Do not proceed until it reports success or the user explicitly defers.
-3. **Confirm the config is LIVE before any device ever runs** — use the API script, which encodes the cache-bust and poll-ordering quirks (no MCP tool covers these config reads — see api-reference "OneSignal MCP server"):
+3. **Confirm the config is LIVE before any device ever runs** — use the API script, which encodes the cache-bust and poll-ordering quirks (no MCP tool covers these config reads — see api-reference "OneSignal MCP server"). In a sandboxed runtime the probe needs escalation; the sandbox block shows as exit code 3 on the first try, so re-run that one command with escalation ("Network access" above):
    - **Android:** `python3 <plugin>/scripts/onesignal_api.py android-params <APP_ID>` — polls until `android_sender_id` appears (`status: fcm_live`). ⚠️ Run only AFTER the credential upload; fetching before credentials exist primes a CDN cache with the empty response on a fresh app.
    - **iOS:** the upload's success response is the config confirmation. (New APNs keys can take ~10–15 min to propagate on Apple's side — that affects delivery, not this gate.)
    - **Web:** `python3 <plugin>/scripts/onesignal_api.py web-probe <APP_ID>` — free, unauthenticated. `status: provisioned` = live; `status: not_configured` (feed `code: 2`) = the dashboard web step never happened (the signup flow does not do it automatically). The script always appends the `?fresh=<ts>` cache-bust for you — responses are CDN-cached ~1 h, so probing by hand without it can read a stale error (api-reference "Web platform config probe"). ⚠️ Probe only AFTER the config/upload.
@@ -248,9 +263,9 @@ python3 <plugin>/scripts/resolve_sdk_version.py <platform> --format json
 # add --track current only if the user explicitly asked for the Current track
 ```
 
-The script fetches the official feed, resolves the exact `channels.stable.version`, and emits a ready-to-paste `dependency_line` that is **always an exact pin — it cannot emit a range**. Use that line as-is; do not rewrite the version. If the script exits non-zero (feed unreachable), tell the user and ask them to confirm the version — do NOT guess a number, and do NOT fall back to a range. If the script cannot run because Python is missing (Step 0.2), read the feed yourself: `curl -fsS https://onesignal.github.io/sdk-releases/releases.json`, take `channels.stable.version` from the feed entry that the script would use, and write the dependency line from the platform reference with that exact value — still an exact pin, never a range. The feed names are not the platform tokens; use the script's own map: `android` → `Android`, `ios` → `iOS`, `react-native` → `ReactNative`, `flutter` → `Flutter`, `cordova` → `Cordova`, `capacitor` → `Capacitor`, `unity` → `Unity`. Two platforms differ: `expo` takes `react-native-onesignal` from the `ReactNative` entry **and** `onesignal-expo-plugin` from the separate `Expo` entry — never pin the plugin to the React Native version; `web` reads no version at all — it ships from the fixed CDN `v16` script that [web.md](web.md) gives, and the feed's web build number is metadata. If the read fails in any way — `curl` errors, a non-200 status, a body that is not JSON, or no entry for the platform — treat it exactly like the resolver's non-zero exit: tell the user and ask them to confirm the version. Do NOT guess a number, and do NOT fall back to a range.
+The script fetches the official feed, resolves the exact `channels.stable.version`, and emits a ready-to-paste `dependency_line` that is **always an exact pin — it cannot emit a range**. Use that line as-is; do not rewrite the version. If the script exits with code 3 (feed unreachable) in a sandboxed runtime, the sandbox blocked the fetch: re-run that one command with escalation first ("Network access" above). If the script still exits non-zero, or the user declines the escalation, tell the user and ask them to confirm the version — do NOT guess a number, and do NOT fall back to a range. If the script cannot run because Python is missing (Step 0.2), read the feed yourself: `curl -fsS https://onesignal.github.io/sdk-releases/releases.json`, take `channels.stable.version` from the feed entry that the script would use, and write the dependency line from the platform reference with that exact value — still an exact pin, never a range. The feed names are not the platform tokens; use the script's own map: `android` → `Android`, `ios` → `iOS`, `react-native` → `ReactNative`, `flutter` → `Flutter`, `cordova` → `Cordova`, `capacitor` → `Capacitor`, `unity` → `Unity`. Two platforms differ: `expo` takes `react-native-onesignal` from the `ReactNative` entry **and** `onesignal-expo-plugin` from the separate `Expo` entry — never pin the plugin to the React Native version; `web` reads no version at all — it ships from the fixed CDN `v16` script that [web.md](web.md) gives, and the feed's web build number is metadata. If the read fails in any way — `curl` errors, a non-200 status, a body that is not JSON, or no entry for the platform — treat it exactly like the resolver's non-zero exit: tell the user and ask them to confirm the version. Do NOT guess a number, and do NOT fall back to a range.
 
-**Checkpoint:** `setup.sdk_pinned ok` once you have an exact version. If the endpoint was unreachable and you had to ask the user, that is `ok_after_fix releases_unreachable` — it is a real onboarding obstacle and worth counting, especially in sandboxed runtimes where egress is denied.
+**Checkpoint:** `setup.sdk_pinned ok` once you have an exact version. If the endpoint was unreachable and you had to ask the user, that is `ok_after_fix releases_unreachable` — it is a real onboarding obstacle and worth counting, especially in sandboxed runtimes where the user declined the escalation.
 
 Prefer the OneSignal MCP server's tools over raw curl for API reads if it is connected (api-reference "OneSignal MCP server"). **App-match precondition (standing — same as the verify and credentials skills):** before the first MCP call of a session, confirm with `list_apps` that the OAuth grant can access the target App ID (page until the items seen equal `total_count` before you conclude absence), then pass exactly that `app_id` on every call; on a mismatch, treat the MCP as unavailable for this app. (`onesignal_config` reports connection details, not app membership — it is not this check.) The MCP cannot edit files or resolve SDK versions — repo work and version resolution stay with you and the scripts. (It *can* provision APNs, FCM, and web credentials via the `provision_app_credentials` tool; the credentials skill owns that path and its App-ID precondition.)
 
@@ -312,8 +327,10 @@ Before finishing, **scan your own diff for secret-shaped strings** deterministic
 
 **Final checkpoint:** `setup.complete ok` before handing off — or `setup.complete ok_after_fix runtime_missing` when the run continued without Python (Step 0.2), so a completion whose self-check and secret scan did not run never counts as a verified one — then one final
 `bash <plugin>/scripts/checkpoint.sh flush`. A transport failure mid-run re-buffers the
-event, and this flush is its second chance to send before the session ends. This is
-setup's own completion rate — the denominator for everything downstream in the funnel.
+event, and this flush is its second chance to send before the session ends. In a
+sandboxed runtime this flush is the one `checkpoint.sh` command you run with escalation,
+and only when the recorded answer is `1` ("Network access" above). This is setup's own
+completion rate — the denominator for everything downstream in the funnel.
 
 ---
 
