@@ -151,6 +151,7 @@ Send to ONLY the subscription from step 2 — never a broadcast — and only aft
 - **Fallback — REST:** `POST https://api.onesignal.com/notifications` with `Authorization: Key <KEY>`, body `{ "app_id": "<APP_ID>", "include_subscription_ids": ["<SUB_ID>"], "headings": { "en": "Successful test via OneSignal plugin" }, "contents": { "en": "<BODY>" } }`.
 - **Unauthenticated create path:** an unauth path exists behind an app-level feature flag and is confirmed only for apps created via the AI integration flow — **UNVERIFIED for arbitrary apps.** Do NOT rely on it here. Default to the key-expression or MCP path. If the user has no key source and no MCP, follow the "No key → MCP first" order (see "Inputs you need") and wait for a working auth path rather than assert the unauth path will work.
 - Capture the returned notification `id`. If the POST returns `errored` / an empty-recipients error, that itself is a finding → step 7.
+- Build the dashboard link for this message from the App ID and that `id`: `https://dashboard.onesignal.com/apps/<APP_ID>/push/<NOTIFICATION_ID>`. Keep it for the final report. Both values are safe to show: the App ID is public, and the notification `id` is not a credential.
 
 **Checkpoint** (telemetry contract rules apply, consent included): report the send outcome the moment the consent-and-create step resolves. This milestone records the create request, not the delivery — step 5 owns the delivery verdict. Run exactly one of:
 
@@ -203,6 +204,7 @@ State the activation ladder result explicitly — how far it climbed and where i
 - Identity: verified / skipped (no `login()` call) / late-login flag.
 - Test send: sent (notification id) / not sent (why).
 - **Server-side: `successful=N` (ACTIVATED ✅) / failed / errored** — the headline result. `converted` and `received` reported only if observed, with the paid/SDK-only caveat on `received`.
+- **Dashboard link** (only when step 4 returned a notification `id`): the message link from step 4, `https://dashboard.onesignal.com/apps/<APP_ID>/push/<NOTIFICATION_ID>`, as a clickable URL. After a step 7 §6 resend, link the latest message. Tell the user the page shows the delivery stats, the message content, and the clicks for this test push, and that the dashboard asks them to sign in first. Give the link on a win and on an `errored` result — the report page is where they see the failure detail too.
 - Custom events: dashboard path given (not API-verified).
 - If anything failed: the ranked cause, the skill to route to, and exact next step. Never claim success you did not observe server-side.
 
