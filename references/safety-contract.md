@@ -67,9 +67,12 @@ The rules that make it safe:
 15. **Ask for checkpoint consent before the first send, as its own question.** Do not
     fold it into the network-access request. Name the host (`api.onesignal.com`) and say
     what the payload contains (milestone, status, failure class, run ID, platform, OS,
-    App ID — never source, paths, project names, or credentials). Then, if the runtime
-    sandboxes network access, request that approval separately and in advance — a
-    request made up front can be granted; a syscall denial mid-command cannot.
+    App ID — never source, paths, project names, or credentials). A network approval
+    from the host is never a substitute for this question. If the runtime sandboxes
+    network access, keep its approval prompts few: a sandboxed host approves one
+    command at a time, so never escalate a `checkpoint.sh` milestone call (the script
+    holds a blocked event and exits 0), escalate the one `flush` at the close of the
+    skill, and escalate another helper only after the sandbox blocked it.
 16. **Only these fields leave the machine:** milestone, status, failure class, run id, the
     position of the report inside the run, platform, skill name, plugin version, agent
     runtime, OS, timestamp, App ID — plus 2 fixed constants: the source tag
