@@ -21,7 +21,7 @@
   "interface": {
     "displayName": "OneSignal",
     "shortDescription": "Set up and send push notifications",
-    "longDescription": "OneSignal is the market leading customer engagement solution for push notifications, email, SMS, in-app messaging, and Live Activities. This plugin brings OneSignal onboarding into Codex: point it at your codebase and it installs the SDK, sets up your push credentials, and verifies that a real notification reaches your device.\n\nOnce installed, describe what you want in plain language or invoke the plugin directly with @OneSignal.\n\nTry prompts like:\n@OneSignal set up push notifications in this app.\n@OneSignal upload my APNs .p8 key and Firebase service account to OneSignal.\n@OneSignal why isn't my push notification arriving on Android?\n@OneSignal send a test push to my device and confirm delivery.\n\nRequirements: A free OneSignal account. A device, simulator, or browser that can receive push notifications.",
+    "longDescription": "OneSignal is the market leading customer engagement solution for email, push notifications, SMS, in-app messaging, and Live Activities. This plugin brings OneSignal onboarding into Codex: point it at your codebase and it installs the SDK, sets up your push credentials, and verifies that a real notification reaches your device.\n\nOnce installed, describe what you want in plain language or invoke the plugin directly with @OneSignal.\n\nTry prompts like:\n@OneSignal send an email to promote our new product announcement.\n@OneSignal create an email template for our weekly newsletter.\n@OneSignal send an SMS to remind customers about their abandoned cart.\n@OneSignal text a discount code to my subscribers for this weekend's sale.\n@OneSignal set up push notifications in this app.\n@OneSignal upload my APNs .p8 key and Firebase service account to OneSignal.\n@OneSignal why isn't my push notification arriving on Android?\n@OneSignal send a test push to my device and confirm delivery.\n\nRequirements: A free OneSignal account. A device, simulator, or browser that can receive push notifications.",
     "developerName": "OneSignal",
     "category": "Developer Tools",
     "capabilities": [
@@ -33,13 +33,12 @@
     "termsOfServiceURL": "https://onesignal.com/tos",
     "defaultPrompt": [
       "Set up OneSignal in this app.",
-      "Upload my APNs and FCM credentials to OneSignal.",
+      "Send an email to promote our new product.",
       "Send a test push to my device and confirm delivery."
     ],
     "brandColor": "#051B2C",
     "brandColorDark": "#4E50D1",
-    "composerIcon": "./assets/logomark.png",
-    "composerIconDark": "./assets/logomark-white.svg",
+    "composerIcon": "./assets/composer-icon.svg",
     "logo": "./assets/logomark.png",
     "logoDark": "./assets/logomark-white.svg"
   }
