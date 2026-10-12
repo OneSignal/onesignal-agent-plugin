@@ -652,10 +652,13 @@ def self_test(source):
         bad = os.path.join(tmp, "bad-host-path-in-frontmatter")
         copy_source_subset(source, bad)
         path = os.path.join(bad, "skills", "setup", "SKILL.md")
-        write_text(path, read_text(path).replace("\nargument-hint: ", "\nargument-hint: ${CLAUDE_PLUGIN_ROOT} ", 1))
+        skill_lines = read_text(path).splitlines()
+        hint_line = next(i for i, line in enumerate(skill_lines, 1) if line.startswith("argument-hint: "))
+        skill_lines[hint_line - 1] = skill_lines[hint_line - 1].replace("argument-hint: ", "argument-hint: ${CLAUDE_PLUGIN_ROOT} ", 1)
+        write_text(path, "\n".join(skill_lines) + "\n")
         ok = expect_failure("host environment variable in a frontmatter field other than allowed-tools", bad,
                             os.path.join(tmp, "bad-host-path-in-frontmatter-work"),
-                            "skills/setup/SKILL.md:4: host-specific path or environment variable") and ok
+                            "skills/setup/SKILL.md:%d: host-specific path or environment variable" % hint_line) and ok
 
         bad = os.path.join(tmp, "bad-plugin-name")
         copy_source_subset(source, bad)
