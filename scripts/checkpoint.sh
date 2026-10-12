@@ -2,8 +2,20 @@
 # checkpoint.sh — report one onboarding milestone for the OneSignal agent plugin.
 #
 # Usage:
-#   bash scripts/checkpoint.sh <skill.milestone> <ok|ok_after_fix|fail> [class] [detail]
+#   bash scripts/checkpoint.sh <skill.milestone> <ok|ok_after_fix|fail> [class] [detail] [options]
 #   bash scripts/checkpoint.sh flush        # send events buffered before the App ID existed
+#
+# Options, in any position after the milestone:
+#   --platform <token>   write the token to .onesignal/platform before this event.
+#                        The token must be one of the 9 values in the telemetry
+#                        contract; any other value refuses the whole call.
+#   --app-id <uuid>      write the UUID to .onesignal/app_id before this event, send
+#                        the event, then flush the events buffered before the App ID
+#                        existed. A value that is not a UUID refuses the whole call.
+#
+# The options exist so a skill step is one command: a `ROOT="$(git ...)"; echo ... >`
+# prefix in front of this script is a compound command that an agent host cannot
+# match against an allow rule, so it prompts the user on every step.
 #
 # Milestone vocabulary, failure classes and the funnel model:
 #   references/telemetry-contract.md
@@ -73,11 +85,43 @@ DEFAULT_ENDPOINT="https://example.invalid/skill-checkpoints"
 TIMEOUT="${ONESIGNAL_SKILL_TIMEOUT:-5}"
 UUID_RE='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
 
-RAW_MILESTONE="${1:-unknown}"
-STATUS="${2:-unknown}"
-FAILURE_CLASS="${3:-}"
+# Split the options from the positional arguments. The positional order stays
+# <milestone> <status> [class] [detail]; an option can sit anywhere after them.
+# Indexed access with a default keeps `set -u` quiet on bash 3.2 when fewer
+# than 4 positionals arrive.
+OPT_PLATFORM=""; OPT_PLATFORM_SET=0
+OPT_APP_ID="";   OPT_APP_ID_SET=0
+P0=""; P1=""; P2=""; P3=""; POSITIONAL_COUNT=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --platform)
+      OPT_PLATFORM="${2:-}"; OPT_PLATFORM_SET=1
+      [ $# -ge 2 ] && shift
+      ;;
+    --app-id)
+      OPT_APP_ID="${2:-}"; OPT_APP_ID_SET=1
+      [ $# -ge 2 ] && shift
+      ;;
+    --platform=*) OPT_PLATFORM="${1#--platform=}"; OPT_PLATFORM_SET=1 ;;
+    --app-id=*)   OPT_APP_ID="${1#--app-id=}";     OPT_APP_ID_SET=1 ;;
+    *)
+      case "$POSITIONAL_COUNT" in
+        0) P0="$1" ;;
+        1) P1="$1" ;;
+        2) P2="$1" ;;
+        3) P3="$1" ;;
+      esac
+      POSITIONAL_COUNT=$((POSITIONAL_COUNT + 1))
+      ;;
+  esac
+  shift
+done
+
+RAW_MILESTONE="${P0:-unknown}"
+STATUS="${P1:-unknown}"
+FAILURE_CLASS="$P2"
 RAW_FAILURE_CLASS="$FAILURE_CLASS"
-RAW_FAILURE_DETAIL="${4:-}"
+RAW_FAILURE_DETAIL="$P3"
 
 # Milestones are named "<skill>.<milestone>" so one funnel run can be followed across
 # every skill. Derive the skill rather than taking it as another argument the agent
@@ -412,6 +456,36 @@ if [ -n "$RAW_FAILURE_DETAIL" ] && [ "$RAW_FAILURE_CLASS" = "unknown" ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# --platform and --app-id: validate at the door. Both refuse the whole call on
+# a bad value, like an invalid status: nothing is recorded, so the corrected
+# re-run produces exactly one row. The values take effect in the resolution
+# blocks below, and the state files are written once note() exists, so a
+# failed write is audited like a failed run_id write.
+#
+# PLATFORM_TOKENS is the closed set from telemetry-contract.md ("The platform
+# vocabulary"). A spelling outside it would split one platform's funnel row.
+# ---------------------------------------------------------------------------
+PLATFORM_TOKENS=" android ios web react-native expo flutter capacitor cordova unity "
+
+if [ "$OPT_PLATFORM_SET" -eq 1 ]; then
+  # An empty value cannot match: the pattern then needs 2 spaces in a row, and
+  # the token list has none.
+  case "$PLATFORM_TOKENS" in
+    *" $OPT_PLATFORM "*) : ;;
+    *)
+      echo "checkpoint: INVALID PLATFORM '$OPT_PLATFORM' — nothing recorded, nothing sent."
+      echo "  --platform takes one of:$PLATFORM_TOKENS"
+      echo "  (the detect_platform.py token, lowercase). Re-run with the corrected value."
+      exit 0 ;;
+  esac
+fi
+if [ "$OPT_APP_ID_SET" -eq 1 ] && ! printf '%s' "$OPT_APP_ID" | grep -qE "$UUID_RE"; then
+  echo "checkpoint: INVALID APP ID '$OPT_APP_ID' — nothing recorded, nothing sent."
+  echo "  --app-id takes the OneSignal App ID, a UUID. Re-run with the corrected value."
+  exit 0
+fi
+
+# ---------------------------------------------------------------------------
 # Endpoint resolution, in priority order.
 #
 # An environment variable alone is not workable: agents run bash in a shell
@@ -459,8 +533,11 @@ fi
 #
 # Resolution mirrors the endpoint: env -> project file -> skill conf.
 # ---------------------------------------------------------------------------
+# --platform takes precedence over the file it is about to replace. The env
+# override stays first: a flush child re-sends a recorded event and never
+# carries the option.
 PLATFORM="$(first_line "$STATE_DIR/platform" 2>/dev/null || true)"
-PLATFORM="${ONESIGNAL_SKILL_PLATFORM:-${PLATFORM:-unknown}}"
+PLATFORM="${ONESIGNAL_SKILL_PLATFORM:-${OPT_PLATFORM:-${PLATFORM:-unknown}}}"
 
 APP_ID_PROJECT_CONF="$STATE_DIR/app_id"
 APP_ID_SKILL_CONF="$SCRIPT_DIR/../app_id.conf"
@@ -474,6 +551,9 @@ APP_ID_SKILL_CONF="$SCRIPT_DIR/../app_id.conf"
 if [ -n "${ONESIGNAL_SKILL_APP_ID:-}" ]; then
   APP_ID="$ONESIGNAL_SKILL_APP_ID"
   APP_ID_SRC="env ONESIGNAL_SKILL_APP_ID"
+elif [ "$OPT_APP_ID_SET" -eq 1 ]; then
+  APP_ID="$OPT_APP_ID"
+  APP_ID_SRC="--app-id"
 elif APP_ID="$(first_line "$APP_ID_PROJECT_CONF")" && [ -n "$APP_ID" ]; then
   APP_ID_SRC="$APP_ID_PROJECT_CONF"
 elif APP_ID="$(first_line "$APP_ID_SKILL_CONF")" && [ -n "$APP_ID" ]; then
@@ -506,12 +586,43 @@ TRANSPORT_LOG="$STATE_DIR/transport.log"
 # Every transport outcome also goes to $ONESIGNAL_SKILL_RESULT_FILE when set, because a
 # caller cannot learn it from the exit status — this script always exits 0. `flush` is
 # the caller that needs it, to tell an accepted send from a refused one.
+LAST_NOTE=""
 note() {
+  LAST_NOTE="$1"
   printf '%s\t%s\t%s\t%s\n' "$TS" "$MILESTONE" "$1" "$2" >> "$TRANSPORT_LOG" 2>/dev/null || true
   if [ -n "${ONESIGNAL_SKILL_RESULT_FILE:-}" ]; then
     printf '%s' "$1" > "$ONESIGNAL_SKILL_RESULT_FILE" 2>/dev/null || true
   fi
 }
+
+# ---------------------------------------------------------------------------
+# Persist --platform and --app-id. Validated at the door above; this event
+# already carries the values through PLATFORM and APP_ID, so a failed write
+# costs only the LATER checkpoints, and the message says so. A dry run shows
+# the write and skips it, like every other side effect of a dry run.
+# ---------------------------------------------------------------------------
+write_state_file() {
+  # $1 = file, $2 = value, $3 = label for the messages
+  if [ "${ONESIGNAL_SKILL_DRY_RUN:-0}" = "1" ]; then
+    echo "checkpoint: (dry run) would write $3 '$2' to $1"
+    return 0
+  fi
+  if printf '%s\n' "$2" > "$1" 2>/dev/null; then
+    return 0
+  fi
+  note "state_write_failed" "cannot write $1"
+  echo "checkpoint: WARNING — could not write $3 to $1."
+  echo "  This event still carries the value; later checkpoints will not until the file"
+  echo "  exists. Check permissions on $STATE_DIR."
+  return 1
+}
+
+if [ "$OPT_PLATFORM_SET" -eq 1 ]; then
+  write_state_file "$STATE_DIR/platform" "$OPT_PLATFORM" "platform" || true
+fi
+if [ "$OPT_APP_ID_SET" -eq 1 ]; then
+  write_state_file "$APP_ID_PROJECT_CONF" "$OPT_APP_ID" "App ID" || true
+fi
 
 # ---------------------------------------------------------------------------
 # run_id — stable across the checkpoints of one funnel run, random per run.
@@ -929,8 +1040,9 @@ if [ -z "$APP_ID" ]; then
   if printf '%s\n' "$PAYLOAD" >> "$STATE_DIR/pending.jsonl" 2>/dev/null; then
     note "buffered" "no app_id yet — held for flush"
     echo "checkpoint: $MILESTONE=$STATUS (buffered — no App ID yet)"
-    echo "  Held in $STATE_DIR/pending.jsonl. Once the App ID is known:"
-    echo "    echo '<uuid>' > $APP_ID_PROJECT_CONF && bash scripts/checkpoint.sh flush"
+    echo "  Held in $STATE_DIR/pending.jsonl. Once the App ID is known, pass it on the next"
+    echo "  checkpoint, which records it and flushes the buffer:"
+    echo "    bash scripts/checkpoint.sh <skill.milestone> <status> --app-id <uuid>"
   else
     note "buffer_write_failed" "cannot append to $STATE_DIR/pending.jsonl"
     echo "checkpoint: $MILESTONE=$STATUS (NOT buffered — cannot write $STATE_DIR/pending.jsonl)"
@@ -1085,5 +1197,18 @@ case "$HTTP_CODE" in
     note "http_other" "HTTP $HTTP_CODE"
     echo "checkpoint: $MILESTONE=$STATUS (endpoint returned HTTP $HTTP_CODE; logged locally)" ;;
 esac
+
+# --app-id: the App ID just became known, so the events buffered before it can
+# go now, through the same flush path a caller would run by hand. Only after
+# this event was accepted: when this send failed, the buffered ones would fail
+# the same way, and a sandboxed runtime would see a burst of attempts for
+# nothing. They wait for the closing flush instead.
+if [ "$OPT_APP_ID_SET" -eq 1 ] && [ -s "$STATE_DIR/pending.jsonl" ]; then
+  if [ "$LAST_NOTE" = "sent" ]; then
+    bash "$0" flush
+  else
+    echo "  Events buffered before the App ID wait for a later flush."
+  fi
+fi
 
 exit 0

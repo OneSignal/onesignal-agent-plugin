@@ -31,7 +31,10 @@ Path convention that the gate enforces in the source tree:
     preflight fallbacks), never by the path alone; the path may be quoted,
     as in `python3 "<plugin>/scripts/<name>.py"`;
   * a skill refers to a reference only as `[...](../../references/<name>.md)`;
-  * every `SKILL.md` carries the walk-up definition of `<plugin>`.
+  * every `SKILL.md` carries the walk-up definition of `<plugin>`;
+  * no skill text names a host path or a host variable such as
+    `${CLAUDE_PLUGIN_ROOT}`, except the `allowed-tools` frontmatter field,
+    where Claude Code substitutes that variable and Codex ignores the field.
 Any other spelling fails `--check`.
 
 `--self-test` also runs every Python helper in a built bundle through the
@@ -120,6 +123,10 @@ BUNDLE_REFERENCE_RE = re.compile(r"\breferences/([A-Za-z0-9_\-]+\.md)")
 # The target of an inline link, with or without a quoted title after it.
 MARKDOWN_LINK_RE = re.compile(r"\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 HOST_PATH_RE = re.compile(r"CLAUDE_PLUGIN_ROOT|PLUGIN_ROOT\}|/Users/|/home/")
+# The one frontmatter field in which a host variable belongs: Claude Code
+# substitutes ${CLAUDE_PLUGIN_ROOT} in its Bash rules, and Codex ignores the
+# field, so the literal never reaches a command there.
+ALLOWED_TOOLS_FIELD = "allowed-tools:"
 # A `../` path segment. An ellipsis such as `.../identity` is prose, not a path.
 PARENT_SEGMENT_RE = re.compile(r"(?<![.\w])\.\./")
 
@@ -177,6 +184,32 @@ def markdown_files(directory):
 
 def relpath(path, start):
     return os.path.relpath(path, start).replace(os.sep, "/")
+
+
+def allowed_tools_lines(text):
+    """Return the 1-based line numbers of the `allowed-tools` frontmatter field.
+
+    The set covers the key line and the indented continuation lines of a YAML
+    list under it. The host-path check and the bare `scripts/` check skip these
+    lines and no others: a Bash rule names the script as
+    `${CLAUDE_PLUGIN_ROOT}/scripts/<name>`, which is neither spelling the body
+    may use.
+    """
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return set()
+    numbers = set()
+    in_field = False
+    for lineno, line in enumerate(lines[1:], 2):
+        if line.strip() == "---":
+            break
+        if in_field and line[:1] in (" ", "\t"):
+            numbers.add(lineno)
+            continue
+        in_field = line.startswith(ALLOWED_TOOLS_FIELD)
+        if in_field:
+            numbers.add(lineno)
+    return numbers
 
 
 # ---------------------------------------------------------------------------
@@ -323,14 +356,15 @@ def check_source(source):
         for path in markdown_files(skill_dir):
             rel = relpath(path, source)
             text = read_text(path)
+            allowed_tools = allowed_tools_lines(text) if path == skill_md else set()
             for lineno, line in enumerate(text.splitlines(), 1):
-                if BARE_SCRIPT_RE.search(line):
+                if BARE_SCRIPT_RE.search(line) and lineno not in allowed_tools:
                     findings.append("%s:%d: script path without the <plugin>/ prefix" % (rel, lineno))
                 if BARE_REFERENCE_RE.search(line):
                     findings.append("%s:%d: reference path without the ../../ prefix" % (rel, lineno))
                 if PARENT_SEGMENT_RE.search(line.replace("../../references/", "")):
                     findings.append("%s:%d: relative path leaves the skill folder (only ../../references/ is allowed)" % (rel, lineno))
-                if HOST_PATH_RE.search(line):
+                if HOST_PATH_RE.search(line) and lineno not in allowed_tools:
                     findings.append("%s:%d: host-specific path or environment variable" % (rel, lineno))
                 for match in PLUGIN_SCRIPT_RE.finditer(line):
                     name = match.group(1)
@@ -463,10 +497,11 @@ def check_bundle(bundle_dir):
             rel = relpath(path, bundle_dir)
             in_references = relpath(path, skill_dir).startswith("references/")
             text = read_text(path)
+            allowed_tools = allowed_tools_lines(text) if path == skill_md else set()
             for lineno, line in enumerate(text.splitlines(), 1):
                 if PARENT_SEGMENT_RE.search(line):
                     findings.append("%s:%d: a relative path still leaves the skill folder" % (rel, lineno))
-                if HOST_PATH_RE.search(line):
+                if HOST_PATH_RE.search(line) and lineno not in allowed_tools:
                     findings.append("%s:%d: host-specific path or environment variable" % (rel, lineno))
                 for name in PLUGIN_SCRIPT_RE.findall(line):
                     if not os.path.isfile(os.path.join(skill_dir, "scripts", name)):
@@ -654,6 +689,14 @@ def self_test(source):
             handle.write("\nRun `bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh flush`.\n")
         ok = expect_failure("host environment variable in skill text", bad, os.path.join(tmp, "bad-host-path-work"),
                             "host-specific path or environment variable") and ok
+
+        bad = os.path.join(tmp, "bad-host-path-in-frontmatter")
+        copy_source_subset(source, bad)
+        path = os.path.join(bad, "skills", "setup", "SKILL.md")
+        write_text(path, read_text(path).replace("\nargument-hint: ", "\nargument-hint: ${CLAUDE_PLUGIN_ROOT} ", 1))
+        ok = expect_failure("host environment variable in a frontmatter field other than allowed-tools", bad,
+                            os.path.join(tmp, "bad-host-path-in-frontmatter-work"),
+                            "skills/setup/SKILL.md:4: host-specific path or environment variable") and ok
 
         bad = os.path.join(tmp, "bad-plugin-name")
         copy_source_subset(source, bad)

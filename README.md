@@ -155,6 +155,17 @@ Pick an install scope when prompted, then run `/reload-plugins`. To update later
 - Claude Code copies the plugin into a cache on install. All of this plugin's internal references
   (skills linking to `../../references/*.md`) live **inside** the plugin directory, so they resolve
   correctly after the copy.
+- Each skill pre-approves its own helper scripts (`scripts/checkpoint.sh` and the Python helpers
+  the skill runs) and the read-only `git` command it needs, through the `allowed-tools` field in
+  its `SKILL.md`. Claude Code applies that grant for the turn that invokes the skill and clears
+  it when you send your next message. The skills stop at a few decisions (checkpoint consent, a
+  dirty tree, the App ID, the diff approval), so a run spans several turns, and the turns after
+  your answers ask again for the helper calls. On such a prompt, pick "Yes, and don't ask again"
+  for the prefix Claude Code offers (for example `bash <plugin>/scripts/checkpoint.sh`), which
+  adds a session rule that covers the later turns. The skills never pre-approve file writes:
+  Claude Code asks before each `Write` or `Edit` in the default permission mode. To approve
+  file edits in bulk instead, run the skill in `acceptEdits` mode (`Shift+Tab` to cycle modes);
+  the 3 consent questions still ask in every mode.
 
 ---
 
