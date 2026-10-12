@@ -321,6 +321,11 @@ OneSignal test app would corrupt the data it is meant to produce.
 If egress is blocked, events stay buffered and a run that later gains network access loses
 nothing. That holds both before the App ID exists and after it.
 
+In a sandboxed runtime, a milestone call runs inside the sandbox: the send fails, the
+script holds the event, and the skill moves on without a prompt. Only the closing `flush`
+runs with escalation, so one host approval sends every held event (safety contract §15).
+A skill never escalates a milestone call.
+
 ## Refusal and failure behaviour
 
 - `checkpoint.sh` always exits 0. Telemetry never fails a user's onboarding.

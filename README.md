@@ -271,6 +271,13 @@ codex plugin add onesignal@onesignal
   shows the same question as text; reply with the word the message names, for example `send` or
   `keep local`. Plan mode in the CLI shows a selectable prompt, but Plan mode does not edit files,
   so run the skills in the default mode.
+- Codex's default sandbox blocks the network, and Codex asks you before a command runs outside
+  the sandbox. The skills keep those approvals few: a `setup` run asks for the SDK version
+  fetch, for each OneSignal API read, and for one checkpoint `flush` at the end. The per-step
+  checkpoint calls run inside the sandbox and hold their events for that flush, so they never
+  prompt. Pick the "don't ask again for this command in this session" option on the `flush`
+  prompt and later skills in the same session do not ask again for it. To allow the network for every command instead, set
+  `[sandbox_workspace_write] network_access = true` in `~/.codex/config.toml`.
 - The Python 3 prerequisite above applies in Codex too.
 
 ---
