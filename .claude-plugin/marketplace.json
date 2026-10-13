@@ -1,12 +1,12 @@
 {
   "name": "onesignal",
-  "description": "OneSignal onboarding for coding agents: install the OneSignal SDK, set up your push credentials, and verify that a real notification reaches your device.",
+  "description": "OneSignal for coding agents: install the OneSignal SDK, set up your push credentials, verify that a real notification reaches your device, and send push, email, and SMS.",
   "owner": { "name": "OneSignal", "url": "https://onesignal.com" },
   "plugins": [
     {
       "name": "onesignal",
       "source": "./",
-      "description": "OneSignal onboarding for coding agents: install the OneSignal SDK, set up your push credentials, and verify that a real notification reaches your device."
+      "description": "OneSignal for coding agents: install the OneSignal SDK, set up your push credentials, verify that a real notification reaches your device, and send push, email, and SMS."
     }
   ]
 }
