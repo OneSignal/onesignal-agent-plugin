@@ -1,6 +1,6 @@
 {
   "name": "onesignal",
-  "version": "1.2.1",
+  "version": "1.2.0",
   "description": "OneSignal for coding agents: install the OneSignal SDK, set up your push credentials, verify that a real notification reaches your device, and send push, email, and SMS.",
   "author": {
     "name": "OneSignal",
