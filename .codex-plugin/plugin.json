@@ -1,7 +1,7 @@
 {
   "name": "onesignal",
   "version": "1.2.0",
-  "description": "OneSignal onboarding for coding agents: install the OneSignal SDK, set up your push credentials, and verify that a real notification reaches your device.",
+  "description": "OneSignal for coding agents: install the OneSignal SDK, set up your push credentials, verify that a real notification reaches your device, and send push, email, and SMS.",
   "author": {
     "name": "OneSignal",
     "url": "https://onesignal.com"
@@ -20,7 +20,7 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "OneSignal",
-    "shortDescription": "Set up and send push notifications",
+    "shortDescription": "Set up and send push, email, and SMS",
     "longDescription": "OneSignal is the market leading customer engagement solution for email, push notifications, SMS, in-app messaging, and Live Activities. This plugin brings OneSignal onboarding into Codex: point it at your codebase and it installs the SDK, sets up your push credentials, and verifies that a real notification reaches your device.\n\nOnce installed, describe what you want in plain language or invoke the plugin directly with @OneSignal.\n\nTry prompts like:\n@OneSignal send an email to promote our new product announcement.\n@OneSignal create an email template for our weekly newsletter.\n@OneSignal send an SMS to remind customers about their abandoned cart.\n@OneSignal text a discount code to my subscribers for this weekend's sale.\n@OneSignal set up push notifications in this app.\n@OneSignal upload my APNs .p8 key and Firebase service account to OneSignal.\n@OneSignal why isn't my push notification arriving on Android?\n@OneSignal send a test push to my device and confirm delivery.\n\nRequirements: A free OneSignal account. A device, simulator, or browser that can receive push notifications.",
     "developerName": "OneSignal",
     "category": "Developer Tools",
