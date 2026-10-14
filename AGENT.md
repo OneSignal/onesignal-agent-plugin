@@ -27,7 +27,7 @@ repository.
 | `scripts/` | Deterministic helpers: version resolution, platform detection, secret scan, structural verification, checkpoint transport. Two files are development tooling and never ship to customers: `compile_check_ios.sh` and `package_directory_bundle.py`. |
 | `.claude-plugin/plugin.json` | Plugin manifest. The `version` field controls when Claude Code pulls updates. |
 | `.claude-plugin/marketplace.json` | Marketplace catalog. This repository is its own marketplace, named `onesignal`. |
-| `.codex-plugin/plugin.json` | Codex manifest. The `name` is the skill namespace in Codex (`onesignal:setup`). The `interface` block holds the listing copy, legal URLs, and brand assets. The directory bundle ships a copy without `mcpServers`. |
+| `.codex-plugin/plugin.json` | Codex manifest. The `name` is the skill namespace in Codex (`onesignal:setup` on a marketplace install). The `interface` block holds the listing copy, legal URLs, and brand assets. The directory bundle ships a copy under the directory's own plugin name and without `mcpServers`. |
 | `assets/` | Brand assets for the listings. The files come from the official OneSignal media kit. `composer-icon.svg` is the media-kit logomark on a white disc. The Codex manifest has no dark variant of `composerIcon`, and Codex shows that icon as an image with no container, so the icon needs its own background to read on a dark theme. |
 | `.mcp.json` | Declares the hosted OneSignal MCP endpoint. |
 | `endpoint.conf` | The checkpoint ingestion endpoint. The comment block in the file explains the path. |
@@ -129,23 +129,29 @@ read-through alone.
 
 The OpenAI plugin directory does not accept the plugin tree. Its Skills tab accepts a zip with
 a plugin root at the top level: `.codex-plugin/plugin.json`, the skills under `skills/`, and
-the brand assets under `assets/`. The manifest `name` (`onesignal`) is the skill namespace that
-Codex shows (`onesignal:setup`). Earlier zips had no manifest, and the listing took its name
-from the app identifier (`app-6a3d…`). Each skill folder must be self-contained. `scripts/package_directory_bundle.py`
-builds that artifact from this tree at release time:
+the brand assets under `assets/`. The manifest `name` is the skill namespace that Codex shows.
+Each skill folder must be self-contained. `scripts/package_directory_bundle.py` builds that
+artifact from this tree at release time:
 
-- It writes `.codex-plugin/plugin.json` from the repository manifest without `mcpServers`,
-  because a Skills-only upload rejects MCP configuration (the listing's MCP server is attached
-  in the portal). It copies `assets/` so `interface.logo`, `interface.logoDark`, and
-  `interface.composerIcon` resolve. The gate rejects `interface.screenshots`, which a
-  Skills-only upload refuses.
+- It writes `.codex-plugin/plugin.json` from the repository manifest with 2 changes. The
+  `name` becomes `app-6a3d93b924488191bdb7eb40fc4219e6` (`DIRECTORY_PLUGIN_NAME` in the
+  script): the 1.0.0 and 1.1.0 zips had no manifest, the portal named the listing after its
+  app identifier, and the portal rejects an update whose `name` differs
+  (`plugin_name_mismatch`). OpenAI support confirmed (reference 17133460) that a published
+  plugin cannot be renamed; the alternative is a second listing. So a directory install
+  shows the skills as `app-6a3d93b924488191bdb7eb40fc4219e6:setup`, and a marketplace
+  install shows `onesignal:setup`. The bundle also drops `mcpServers`, because a Skills-only
+  upload rejects MCP configuration (the listing's MCP server is attached in the portal). It
+  copies `assets/` so `interface.logo`, `interface.logoDark`, and `interface.composerIcon`
+  resolve. The gate rejects `interface.screenshots`, which a Skills-only upload refuses.
 - It copies each skill folder under `skills/` (`skills/setup/`, `skills/credentials/`,
   `skills/verify/`), and gives each one its own `references/`, `endpoint.conf`, and the
   runtime scripts that skill calls (a table in the script names them).
 - It rewrites `../../references/` to `references/` in the skill Markdown. The `<plugin>`
   walk-up rule resolves to the skill folder without a rewrite.
-- It runs a structural gate on the result: the manifest has a kebab-case `name`, `skills`
-  is `./skills/`, no MCP configuration ships, the brand assets exist, every link and every
+- It runs a structural gate on the result: the repository manifest has a kebab-case `name`,
+  the bundle manifest has the directory's `name`, `skills` is `./skills/`, no MCP
+  configuration ships, the brand assets exist, every link and every
   `<plugin>/scripts/<name>` call resolves inside its skill folder, and the 3 version fields
   agree.
 
@@ -162,8 +168,8 @@ python3 scripts/package_directory_bundle.py --self-test             # gate again
 The build step is optional for local work. It touches only the directory artifact; the
 repository layout, the Claude Code install, and the Codex marketplace install do not use it.
 The `--out` result is a plugin directory. To load it in Codex, point a local marketplace
-entry at it and run `codex plugin add`; `codex debug prompt-input` then lists the skills as
-`onesignal:setup`, `onesignal:credentials`, and `onesignal:verify`. To load it in Claude
+entry at it and run `codex plugin add`; `codex debug prompt-input` then lists the skills
+under the directory's name, as `app-6a3d93b924488191bdb7eb40fc4219e6:setup`. To load it in Claude
 Code, copy `.claude-plugin/plugin.json` into the `--out` directory and run
 `claude --plugin-dir <that directory>`.
 

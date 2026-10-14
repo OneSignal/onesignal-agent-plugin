@@ -4,13 +4,15 @@
 The directory's Skills-only upload accepts a zip with a plugin root at the top
 level: `.codex-plugin/plugin.json`, the skills under `skills/`, and the brand
 assets under `assets/`. The manifest `name` becomes the skill namespace in
-Codex (`onesignal:setup`). Each skill folder must be self-contained. In this
-repository the 3 skills share `scripts/`, `references/`, and `endpoint.conf`
-at the plugin root, so this script builds a copy in which every skill folder
-carries its own copy of the shared files, then rewrites the reference links to
-point inside the skill folder. The bundled manifest is the repository manifest
-without `mcpServers`: a Skills-only upload rejects MCP configuration, and the
-listing's MCP server is attached in the portal.
+Codex. Each skill folder must be self-contained. In this repository the 3
+skills share `scripts/`, `references/`, and `endpoint.conf` at the plugin
+root, so this script builds a copy in which every skill folder carries its
+own copy of the shared files, then rewrites the reference links to point
+inside the skill folder. The bundled manifest is the repository manifest with
+2 changes: `name` is the identifier the directory assigned to the published
+listing (an update must match it), and `mcpServers` is removed because a
+Skills-only upload rejects MCP configuration (the listing's MCP server is
+attached in the portal).
 
 Usage:
     package_directory_bundle.py                 # write onesignal-skills-<version>.zip in the cwd
@@ -79,6 +81,12 @@ BUNDLE_SKILLS_PATH = "./skills/"
 # The directory keys the plugin on this field. Lowercase letters, digits, and
 # single hyphens are what the submission rules accept.
 PLUGIN_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+# The published listing was created from a zip with no manifest, so the portal
+# named it after its app identifier. The portal rejects an update whose `name`
+# differs (`plugin_name_mismatch`) and does not rename a published plugin, so
+# the bundle must keep this value. The repository manifest keeps `onesignal`
+# for the marketplace install.
+DIRECTORY_PLUGIN_NAME = "app-6a3d93b924488191bdb7eb40fc4219e6"
 BRAND_ASSET_FIELDS = ("logo", "composerIcon")
 # Dark-theme variant of the logo. The directory falls back to the light file when it
 # is absent. The manifest has no dark variant of composerIcon; that icon ships its
@@ -217,8 +225,9 @@ def read_manifest(source):
 
 
 def bundle_manifest(manifest):
-    """The manifest that ships in the bundle: the repository manifest without MCP configuration."""
+    """The manifest that ships in the bundle: the repository manifest under the directory's name, without MCP configuration."""
     bundled = dict(manifest)
+    bundled["name"] = DIRECTORY_PLUGIN_NAME
     bundled.pop("mcpServers", None)
     bundled["skills"] = BUNDLE_SKILLS_PATH
     return bundled
@@ -384,6 +393,8 @@ def check_bundle_manifest(bundle_dir, findings):
     if manifest is None:
         findings.append("%s is missing from the bundle" % CODEX_MANIFEST)
         return
+    if manifest.get("name") != DIRECTORY_PLUGIN_NAME:
+        findings.append("%s: name must be %r in the bundle (got %r)" % (CODEX_MANIFEST, DIRECTORY_PLUGIN_NAME, manifest.get("name")))
     if manifest.get("skills") != BUNDLE_SKILLS_PATH:
         findings.append("%s: skills must be %r in the bundle (got %r)" % (CODEX_MANIFEST, BUNDLE_SKILLS_PATH, manifest.get("skills")))
     if "mcpServers" in manifest:
