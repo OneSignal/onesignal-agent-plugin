@@ -213,9 +213,9 @@ The workflows in `.github/workflows/` reuse `OneSignal/sdk-shared`:
 3. Merge the release PR. `cd.yml` creates the GitHub Release and the tag from the PR body,
    builds `onesignal-skills-<version>.zip` from the tag, and attaches it to the Release.
 4. `linear-deployed.yml` moves every `SDK-####` in the release body to Deployed.
-5. Download the zip from the Release page and submit it on the Skills tab of the OneSignal
-   listing in the OpenAI directory. Directory installs pin to the reviewed snapshot, so
-   every release needs a new submission.
+5. Download the zip from the Release page, open the OneSignal listing in the OpenAI plugin
+   portal, and upload the zip as a new version. Directory installs pin to the reviewed
+   snapshot, so every release needs a new submission.
 
 The automation needs the org secret `GH_PUSH_TOKEN` granted to this repository. Without it
 the workflows fall back to `github.token`: `ci.yml` does not run on the release PR that

@@ -91,7 +91,8 @@ BRAND_ASSET_FIELDS = ("logo", "composerIcon")
 # is absent. The manifest has no dark variant of composerIcon; that icon ships its
 # own background so it reads on both themes.
 OPTIONAL_BRAND_ASSET_FIELDS = ("logoDark",)
-# A Skills-only upload rejects this field (`screenshot_configuration_excluded`).
+# The portal accepts this field only for a plugin with a custom UI
+# (`screenshot_configuration_excluded`); this plugin has none.
 EXCLUDED_INTERFACE_FIELDS = ("screenshots",)
 
 VERSION_FILES = {
@@ -264,7 +265,7 @@ def check_manifest(source, findings):
             findings.append("%s: interface.%s points to %s, which does not exist" % (CODEX_MANIFEST, field, path))
     for field in EXCLUDED_INTERFACE_FIELDS:
         if field in interface:
-            findings.append("%s: interface.%s is rejected by a Skills-only upload; remove it" % (CODEX_MANIFEST, field))
+            findings.append("%s: interface.%s is accepted only for a plugin with a custom UI; remove it" % (CODEX_MANIFEST, field))
 
 
 def check_mcp_config(source, findings):
@@ -421,7 +422,7 @@ def check_bundle_manifest(bundle_dir, findings):
             findings.append("%s: interface.%s (%r) does not resolve inside the bundle" % (CODEX_MANIFEST, field, path))
     for field in EXCLUDED_INTERFACE_FIELDS:
         if field in interface:
-            findings.append("%s: interface.%s must not ship in a Skills-only bundle" % (CODEX_MANIFEST, field))
+            findings.append("%s: interface.%s must not ship in the bundle" % (CODEX_MANIFEST, field))
 
 
 def check_bundle(bundle_dir):
@@ -677,7 +678,7 @@ def self_test(source):
         manifest["interface"]["screenshots"] = ["./assets/logomark.png"]
         write_text(path, json.dumps(manifest, indent=2) + "\n")
         ok = expect_failure("interface.screenshots in the manifest", bad, os.path.join(tmp, "bad-screenshots-work"),
-                            "interface.screenshots is rejected by a Skills-only upload") and ok
+                            "interface.screenshots is accepted only for a plugin with a custom UI") and ok
     return ok
 
 

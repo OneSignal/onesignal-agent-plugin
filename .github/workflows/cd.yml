@@ -1,7 +1,7 @@
 # Runs when a `chore: Release <version>` PR merges into main: creates the GitHub Release
 # and the bare-version tag from the PR body, then builds the OpenAI directory bundle
 # from that tag and attaches it to the Release. The submitter downloads the zip from
-# the Release page and uploads it on the Skills tab of the OneSignal listing.
+# the Release page and uploads it as a new version of the OneSignal listing.
 name: Release
 
 on:
