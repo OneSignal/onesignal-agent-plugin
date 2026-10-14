@@ -27,7 +27,7 @@ repository.
 | `scripts/` | Deterministic helpers: version resolution, platform detection, secret scan, structural verification, checkpoint transport. Two files are development tooling and never ship to customers: `compile_check_ios.sh` and `package_directory_bundle.py`. |
 | `.claude-plugin/plugin.json` | Plugin manifest. The `version` field controls when Claude Code pulls updates. |
 | `.claude-plugin/marketplace.json` | Marketplace catalog. This repository is its own marketplace, named `onesignal`. |
-| `.codex-plugin/plugin.json` | Codex manifest. The `name` is the skill namespace in Codex (`onesignal:setup` on a marketplace install). The `interface` block holds the listing copy, legal URLs, and brand assets. The directory bundle ships a copy under the directory's own plugin name and without `mcpServers`. |
+| `.codex-plugin/plugin.json` | Codex manifest. The `name` is the skill namespace in Codex (`onesignal:setup` on a marketplace install). The `interface` block holds the listing copy, legal URLs, and brand assets. The directory bundle ships a copy under the directory's own plugin name. |
 | `assets/` | Brand assets for the listings. The files come from the official OneSignal media kit. `composer-icon.svg` is the media-kit logomark on a white disc. The Codex manifest has no dark variant of `composerIcon`, and Codex shows that icon as an image with no container, so the icon needs its own background to read on a dark theme. |
 | `.mcp.json` | Declares the hosted OneSignal MCP endpoint. |
 | `endpoint.conf` | The checkpoint ingestion endpoint. The comment block in the file explains the path. |
@@ -127,27 +127,27 @@ read-through alone.
 
 ## The OpenAI directory bundle
 
-The OpenAI plugin directory does not accept the plugin tree. Its Skills tab accepts a zip with
-a plugin root at the top level: `.codex-plugin/plugin.json`, the skills under `skills/`, and
-the brand assets under `assets/`. The manifest `name` is the skill namespace that Codex shows.
-Each skill folder must be self-contained. `scripts/package_directory_bundle.py` builds that
-artifact from this tree at release time:
+The OpenAI plugin directory does not accept the plugin tree. It accepts a zip with a plugin
+root at the top level: `.codex-plugin/plugin.json`, `.mcp.json`, the skills under `skills/`,
+and the brand assets under `assets/`. The manifest `name` is the skill namespace that Codex
+shows. Each skill folder must be self-contained. `scripts/package_directory_bundle.py` builds
+that artifact from this tree at release time:
 
-- It writes `.codex-plugin/plugin.json` from the repository manifest with 2 changes. The
+- It writes `.codex-plugin/plugin.json` from the repository manifest with one change. The
   `name` becomes the identifier of the published listing (`DIRECTORY_PLUGIN_NAME` in the
   script), because the portal rejects an update whose `name` differs from the published
-  plugin (`plugin_name_mismatch`). The bundle also drops `mcpServers`, because a Skills-only
-  upload rejects MCP configuration (the listing's MCP server is attached in the portal). It
-  copies `assets/` so `interface.logo`, `interface.logoDark`, and `interface.composerIcon`
-  resolve. The gate rejects `interface.screenshots`, which a Skills-only upload refuses.
+  plugin (`plugin_name_mismatch`). It copies `.mcp.json`, because the published listing has
+  an MCP connection and the portal rejects an update that omits it. It copies `assets/` so
+  `interface.logo`, `interface.logoDark`, and `interface.composerIcon` resolve. The gate
+  rejects `interface.screenshots`, which the portal accepts only for a plugin with a custom UI.
 - It copies each skill folder under `skills/` (`skills/setup/`, `skills/credentials/`,
   `skills/verify/`), and gives each one its own `references/`, `endpoint.conf`, and the
   runtime scripts that skill calls (a table in the script names them).
 - It rewrites `../../references/` to `references/` in the skill Markdown. The `<plugin>`
   walk-up rule resolves to the skill folder without a rewrite.
 - It runs a structural gate on the result: the repository manifest has a kebab-case `name`,
-  the bundle manifest has the directory's `name`, `skills` is `./skills/`, no MCP
-  configuration ships, the brand assets exist, every link and every
+  the bundle manifest has the directory's `name`, `skills` is `./skills/`, `mcpServers` is
+  `./.mcp.json` and the file ships, the brand assets exist, every link and every
   `<plugin>/scripts/<name>` call resolves inside its skill folder, and the 3 version fields
   agree.
 
@@ -213,9 +213,9 @@ The workflows in `.github/workflows/` reuse `OneSignal/sdk-shared`:
 3. Merge the release PR. `cd.yml` creates the GitHub Release and the tag from the PR body,
    builds `onesignal-skills-<version>.zip` from the tag, and attaches it to the Release.
 4. `linear-deployed.yml` moves every `SDK-####` in the release body to Deployed.
-5. Download the zip from the Release page and submit it on the Skills tab of the OneSignal
-   listing in the OpenAI directory. Directory installs pin to the reviewed snapshot, so
-   every release needs a new submission.
+5. Download the zip from the Release page, open the OneSignal listing in the OpenAI plugin
+   portal, and upload the zip as a new version. Directory installs pin to the reviewed
+   snapshot, so every release needs a new submission.
 
 The automation needs the org secret `GH_PUSH_TOKEN` granted to this repository. Without it
 the workflows fall back to `github.token`: `ci.yml` does not run on the release PR that

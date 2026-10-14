@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """Build and check the self-contained skill bundle for the OpenAI plugin directory.
 
-The directory's Skills-only upload accepts a zip with a plugin root at the top
-level: `.codex-plugin/plugin.json`, the skills under `skills/`, and the brand
-assets under `assets/`. The manifest `name` becomes the skill namespace in
-Codex. Each skill folder must be self-contained. In this repository the 3
+The directory accepts a zip with a plugin root at the top level:
+`.codex-plugin/plugin.json`, `.mcp.json`, the skills under `skills/`, and the
+brand assets under `assets/`. The manifest `name` becomes the skill namespace
+in Codex. Each skill folder must be self-contained. In this repository the 3
 skills share `scripts/`, `references/`, and `endpoint.conf` at the plugin
 root, so this script builds a copy in which every skill folder carries its
 own copy of the shared files, then rewrites the reference links to point
 inside the skill folder. The bundled manifest is the repository manifest with
-2 changes: `name` is the identifier the directory assigned to the published
-listing (an update must match it), and `mcpServers` is removed because a
-Skills-only upload rejects MCP configuration (the listing's MCP server is
-attached in the portal).
+one change: `name` is the identifier the directory assigned to the published
+listing (an update must match it). The MCP declaration ships unchanged: the
+published listing has an MCP connection, and the portal rejects an update
+that omits it.
 
 Usage:
     package_directory_bundle.py                 # write onesignal-skills-<version>.zip in the cwd
@@ -76,8 +76,10 @@ SCRIPTS_FOR_SKILL = {
 SHARED_ROOT_FILES = ("endpoint.conf",)
 
 CODEX_MANIFEST = ".codex-plugin/plugin.json"
+MCP_CONFIG = ".mcp.json"
 ASSETS_DIR = "assets"
 BUNDLE_SKILLS_PATH = "./skills/"
+BUNDLE_MCP_PATH = "./.mcp.json"
 # The directory keys the plugin on this field. Lowercase letters, digits, and
 # single hyphens are what the submission rules accept.
 PLUGIN_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -89,7 +91,8 @@ BRAND_ASSET_FIELDS = ("logo", "composerIcon")
 # is absent. The manifest has no dark variant of composerIcon; that icon ships its
 # own background so it reads on both themes.
 OPTIONAL_BRAND_ASSET_FIELDS = ("logoDark",)
-# A Skills-only upload rejects this field (`screenshot_configuration_excluded`).
+# The portal accepts this field only for a plugin with a custom UI
+# (`screenshot_configuration_excluded`); this plugin has none.
 EXCLUDED_INTERFACE_FIELDS = ("screenshots",)
 
 VERSION_FILES = {
@@ -222,11 +225,11 @@ def read_manifest(source):
 
 
 def bundle_manifest(manifest):
-    """The manifest that ships in the bundle: the repository manifest under the directory's name, without MCP configuration."""
+    """The manifest that ships in the bundle: the repository manifest under the directory's name."""
     bundled = dict(manifest)
     bundled["name"] = DIRECTORY_PLUGIN_NAME
-    bundled.pop("mcpServers", None)
     bundled["skills"] = BUNDLE_SKILLS_PATH
+    bundled["mcpServers"] = BUNDLE_MCP_PATH
     return bundled
 
 
@@ -262,7 +265,19 @@ def check_manifest(source, findings):
             findings.append("%s: interface.%s points to %s, which does not exist" % (CODEX_MANIFEST, field, path))
     for field in EXCLUDED_INTERFACE_FIELDS:
         if field in interface:
-            findings.append("%s: interface.%s is rejected by a Skills-only upload; remove it" % (CODEX_MANIFEST, field))
+            findings.append("%s: interface.%s is accepted only for a plugin with a custom UI; remove it" % (CODEX_MANIFEST, field))
+
+
+def check_mcp_config(source, findings):
+    """Check that the MCP declaration the bundle ships is a JSON object with `mcpServers`."""
+    try:
+        with open(os.path.join(source, MCP_CONFIG), encoding="utf-8") as handle:
+            config = json.load(handle)
+    except (OSError, ValueError):
+        findings.append("%s is missing or is not valid JSON" % MCP_CONFIG)
+        return
+    if not isinstance(config, dict) or not isinstance(config.get("mcpServers"), dict) or not config["mcpServers"]:
+        findings.append("%s: mcpServers must be a non-empty object" % MCP_CONFIG)
 
 
 # ---------------------------------------------------------------------------
@@ -273,6 +288,7 @@ def check_source(source):
     findings = []
     version = check_versions(source, findings)
     check_manifest(source, findings)
+    check_mcp_config(source, findings)
     skills_dir = os.path.join(source, "skills")
     scripts_dir = os.path.join(source, "scripts")
     references_dir = os.path.join(source, "references")
@@ -355,6 +371,7 @@ def build_bundle(source, bundle_dir):
     os.makedirs(os.path.join(bundle_dir, os.path.dirname(CODEX_MANIFEST)), exist_ok=True)
     manifest = bundle_manifest(read_manifest(source))
     write_text(os.path.join(bundle_dir, CODEX_MANIFEST), json.dumps(manifest, indent=2) + "\n")
+    shutil.copy2(os.path.join(source, MCP_CONFIG), os.path.join(bundle_dir, MCP_CONFIG))
     shutil.copytree(os.path.join(source, ASSETS_DIR), os.path.join(bundle_dir, ASSETS_DIR), ignore=COPY_IGNORE)
     skills_dir = os.path.join(bundle_dir, "skills")
     os.makedirs(skills_dir)
@@ -394,10 +411,10 @@ def check_bundle_manifest(bundle_dir, findings):
         findings.append("%s: name must be %r in the bundle (got %r)" % (CODEX_MANIFEST, DIRECTORY_PLUGIN_NAME, manifest.get("name")))
     if manifest.get("skills") != BUNDLE_SKILLS_PATH:
         findings.append("%s: skills must be %r in the bundle (got %r)" % (CODEX_MANIFEST, BUNDLE_SKILLS_PATH, manifest.get("skills")))
-    if "mcpServers" in manifest:
-        findings.append("%s: mcpServers must not ship in a Skills-only bundle" % CODEX_MANIFEST)
-    if os.path.exists(os.path.join(bundle_dir, ".mcp.json")):
-        findings.append(".mcp.json must not ship in a Skills-only bundle")
+    if manifest.get("mcpServers") != BUNDLE_MCP_PATH:
+        findings.append("%s: mcpServers must be %r in the bundle (got %r)" % (CODEX_MANIFEST, BUNDLE_MCP_PATH, manifest.get("mcpServers")))
+    if not os.path.isfile(os.path.join(bundle_dir, MCP_CONFIG)):
+        findings.append("%s is missing from the bundle" % MCP_CONFIG)
     interface = manifest.get("interface") or {}
     for field in brand_asset_fields(interface):
         path = interface.get(field)
@@ -405,7 +422,7 @@ def check_bundle_manifest(bundle_dir, findings):
             findings.append("%s: interface.%s (%r) does not resolve inside the bundle" % (CODEX_MANIFEST, field, path))
     for field in EXCLUDED_INTERFACE_FIELDS:
         if field in interface:
-            findings.append("%s: interface.%s must not ship in a Skills-only bundle" % (CODEX_MANIFEST, field))
+            findings.append("%s: interface.%s must not ship in the bundle" % (CODEX_MANIFEST, field))
 
 
 def check_bundle(bundle_dir):
@@ -480,7 +497,7 @@ def copy_source_subset(source, dest):
     os.makedirs(dest)
     for name in ("skills", "references", "scripts", ASSETS_DIR, ".claude-plugin", ".codex-plugin"):
         shutil.copytree(os.path.join(source, name), os.path.join(dest, name), ignore=COPY_IGNORE)
-    for name in SHARED_ROOT_FILES:
+    for name in SHARED_ROOT_FILES + (MCP_CONFIG,):
         shutil.copy2(os.path.join(source, name), os.path.join(dest, name))
 
 
@@ -633,6 +650,12 @@ def self_test(source):
         ok = expect_failure("display name in the manifest name field", bad, os.path.join(tmp, "bad-plugin-name-work"),
                             "name must be lowercase letters, digits, and single hyphens") and ok
 
+        bad = os.path.join(tmp, "bad-missing-mcp-config")
+        copy_source_subset(source, bad)
+        os.remove(os.path.join(bad, MCP_CONFIG))
+        ok = expect_failure("tree without the MCP declaration", bad, os.path.join(tmp, "bad-missing-mcp-config-work"),
+                            "%s is missing or is not valid JSON" % MCP_CONFIG) and ok
+
         bad = os.path.join(tmp, "bad-brand-asset")
         copy_source_subset(source, bad)
         os.remove(os.path.join(bad, ASSETS_DIR, "logomark.png"))
@@ -655,7 +678,7 @@ def self_test(source):
         manifest["interface"]["screenshots"] = ["./assets/logomark.png"]
         write_text(path, json.dumps(manifest, indent=2) + "\n")
         ok = expect_failure("interface.screenshots in the manifest", bad, os.path.join(tmp, "bad-screenshots-work"),
-                            "interface.screenshots is rejected by a Skills-only upload") and ok
+                            "interface.screenshots is accepted only for a plugin with a custom UI") and ok
     return ok
 
 
