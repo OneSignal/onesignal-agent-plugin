@@ -253,11 +253,9 @@ codex plugin add onesignal@onesignal
 ### After install
 
 - Start a new `codex` session so the plugin's skills are available.
-- Describe what you want ("set up OneSignal in this app"); Codex picks the matching skill. On
-  Option B the skills are listed under the `onesignal` namespace: `onesignal:setup`,
-  `onesignal:credentials`, and `onesignal:verify`. On Option A the namespace is the identifier
-  the directory assigned to the listing, `app-6a3d93b924488191bdb7eb40fc4219e6`, so the same
-  skills appear as `app-6a3d93b924488191bdb7eb40fc4219e6:setup` and so on.
+- Describe what you want ("set up OneSignal in this app"); Codex picks the matching skill. The
+  skills are listed under the `onesignal` namespace: `onesignal:setup`, `onesignal:credentials`,
+  and `onesignal:verify`.
 - Connect the OneSignal tools once. The 2 install paths differ here:
   - Option A attaches the **OneSignal** connector, the same app as OneSignal's MCP listing in the
     directory. The OneSignal tools arrive through that connector; sign in where Codex asks you to
