@@ -134,13 +134,9 @@ Each skill folder must be self-contained. `scripts/package_directory_bundle.py` 
 artifact from this tree at release time:
 
 - It writes `.codex-plugin/plugin.json` from the repository manifest with 2 changes. The
-  `name` becomes `app-6a3d93b924488191bdb7eb40fc4219e6` (`DIRECTORY_PLUGIN_NAME` in the
-  script): the 1.0.0 and 1.1.0 zips had no manifest, the portal named the listing after its
-  app identifier, and the portal rejects an update whose `name` differs
-  (`plugin_name_mismatch`). OpenAI support confirmed (reference 17133460) that a published
-  plugin cannot be renamed; the alternative is a second listing. So a directory install
-  shows the skills as `app-6a3d93b924488191bdb7eb40fc4219e6:setup`, and a marketplace
-  install shows `onesignal:setup`. The bundle also drops `mcpServers`, because a Skills-only
+  `name` becomes the identifier of the published listing (`DIRECTORY_PLUGIN_NAME` in the
+  script), because the portal rejects an update whose `name` differs from the published
+  plugin (`plugin_name_mismatch`). The bundle also drops `mcpServers`, because a Skills-only
   upload rejects MCP configuration (the listing's MCP server is attached in the portal). It
   copies `assets/` so `interface.logo`, `interface.logoDark`, and `interface.composerIcon`
   resolve. The gate rejects `interface.screenshots`, which a Skills-only upload refuses.

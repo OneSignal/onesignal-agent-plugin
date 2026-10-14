@@ -81,11 +81,8 @@ BUNDLE_SKILLS_PATH = "./skills/"
 # The directory keys the plugin on this field. Lowercase letters, digits, and
 # single hyphens are what the submission rules accept.
 PLUGIN_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-# The published listing was created from a zip with no manifest, so the portal
-# named it after its app identifier. The portal rejects an update whose `name`
-# differs (`plugin_name_mismatch`) and does not rename a published plugin, so
-# the bundle must keep this value. The repository manifest keeps `onesignal`
-# for the marketplace install.
+# The identifier of the published listing. The portal rejects an update whose
+# `name` differs from it (`plugin_name_mismatch`).
 DIRECTORY_PLUGIN_NAME = "app-6a3d93b924488191bdb7eb40fc4219e6"
 BRAND_ASSET_FIELDS = ("logo", "composerIcon")
 # Dark-theme variant of the logo. The directory falls back to the light file when it
