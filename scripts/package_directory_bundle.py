@@ -94,6 +94,10 @@ OPTIONAL_BRAND_ASSET_FIELDS = ("logoDark",)
 # The portal accepts this field only for a plugin with a custom UI
 # (`screenshot_configuration_excluded`); this plugin has none.
 EXCLUDED_INTERFACE_FIELDS = ("screenshots",)
+# Limits the portal applies at submission, which are tighter than the ones at upload.
+SUBMISSION_TEXT_LIMITS = {"displayName": 30, "shortDescription": 30}
+# A plugin with an MCP connection must list all 4 URLs before submission.
+LISTING_URL_FIELDS = ("websiteURL", "supportURL", "privacyPolicyURL", "termsOfServiceURL")
 
 VERSION_FILES = {
     "claude": ".claude-plugin/plugin.json",
@@ -257,6 +261,16 @@ def check_manifest(source, findings):
     if not isinstance(interface, dict):
         findings.append("%s: interface is missing" % CODEX_MANIFEST)
         return
+    for field, limit in SUBMISSION_TEXT_LIMITS.items():
+        value = interface.get(field)
+        if not isinstance(value, str) or not value:
+            findings.append("%s: interface.%s is missing" % (CODEX_MANIFEST, field))
+        elif len(value) > limit:
+            findings.append("%s: interface.%s must be %d characters or fewer (got %d)" % (CODEX_MANIFEST, field, limit, len(value)))
+    for field in LISTING_URL_FIELDS:
+        value = interface.get(field)
+        if not isinstance(value, str) or not value.startswith("https://"):
+            findings.append("%s: interface.%s must be an HTTPS URL (got %r)" % (CODEX_MANIFEST, field, value))
     for field in brand_asset_fields(interface):
         path = interface.get(field)
         if not isinstance(path, str) or not path.startswith("./%s/" % ASSETS_DIR):
@@ -649,6 +663,24 @@ def self_test(source):
         write_text(path, json.dumps(manifest, indent=2) + "\n")
         ok = expect_failure("display name in the manifest name field", bad, os.path.join(tmp, "bad-plugin-name-work"),
                             "name must be lowercase letters, digits, and single hyphens") and ok
+
+        bad = os.path.join(tmp, "bad-long-subtitle")
+        copy_source_subset(source, bad)
+        path = os.path.join(bad, CODEX_MANIFEST)
+        manifest = json.loads(read_text(path))
+        manifest["interface"]["shortDescription"] = "Set up and send push, email, and SMS"
+        write_text(path, json.dumps(manifest, indent=2) + "\n")
+        ok = expect_failure("subtitle over the submission limit", bad, os.path.join(tmp, "bad-long-subtitle-work"),
+                            "interface.shortDescription must be 30 characters or fewer") and ok
+
+        bad = os.path.join(tmp, "bad-missing-support-url")
+        copy_source_subset(source, bad)
+        path = os.path.join(bad, CODEX_MANIFEST)
+        manifest = json.loads(read_text(path))
+        del manifest["interface"]["supportURL"]
+        write_text(path, json.dumps(manifest, indent=2) + "\n")
+        ok = expect_failure("manifest without a support URL", bad, os.path.join(tmp, "bad-missing-support-url-work"),
+                            "interface.supportURL must be an HTTPS URL") and ok
 
         bad = os.path.join(tmp, "bad-missing-mcp-config")
         copy_source_subset(source, bad)
