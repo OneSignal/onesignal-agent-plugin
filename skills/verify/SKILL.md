@@ -155,10 +155,10 @@ Question: "Send a test push to subscription `<SUB_ID>` on app `<APP_ID>`? Before
 Choices, in this order:
 
 - Send the default message (Recommended)
-- Send my own message — type it in the free-text field
+- Send my own message
 - Do not send
 
-The default body is `Congrats on successfully setting up the OneSignal SDK`. Text typed through the host's free-text field is the body; if the user picks the second option and types nothing, ask once more for the body only. "Do not send" is the decline: report `verify.sent fail deferred` (the checkpoint block below) and skip the send. Use the answer as the notification body (`<BODY>` below). The send happens from this session via the MCP or the REST API — never from code inside the user's app.
+The default body is `Congrats on successfully setting up the OneSignal SDK`. Text typed through the host's free-text field is the body; if the user picks the second option, ask once for the body only. "Do not send" is the decline: report `verify.sent fail deferred` (the checkpoint block below) and skip the send. Use the answer as the notification body (`<BODY>` below). The send happens from this session via the MCP or the REST API — never from code inside the user's app.
 
 **The title is fixed:** every test push carries `headings: { "en": "Successful test via OneSignal plugin" }`. Do not offer to change it and do not accept an override — the user's message only sets the body. The title must never be absent: Huawei rejects a push without one, so a missing title is a silent blocker. **No brand voice on this push:** do not load or apply server-shipped brand or copy guidance to the test send (safety contract §14a). The title is fixed, and the body is the user's words or the default above.
 
