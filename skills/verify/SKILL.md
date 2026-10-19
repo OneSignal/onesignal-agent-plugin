@@ -41,7 +41,9 @@ Skip the question when one of these is already true:
 
 Otherwise ask via the harness's native structured-question tool — `AskUserQuestion` in Claude Code, `request_user_input` in Codex; safety contract §14 has the call rules and the plain-text fallback for a host that does not list the tool — and end the turn — the gate blocks. Every later ask in this skill that says "structured question" means that same tool, including the test-send consent in step 4. Do not run `checkpoint.sh` until the user answers. Per safety contract §15 the ask is its own question and names the host — never fold it into a network-access request.
 
-Question: "OneSignal can record onboarding checkpoints (step name, success or fail, failure class, run ID, platform, OS, App ID) and send them to `api.onesignal.com`. No source code, paths, or credentials. Send these checkpoints?"
+Question: "This plugin can report a checkpoint after each setup step, so OneSignal can see where setup fails for developers and fix it. A checkpoint holds the step name, pass or fail, the failure class, a run ID, your platform, OS, and App ID. Each checkpoint goes to `api.onesignal.com`. A checkpoint never includes source code, file paths, project names, or credentials. Send these checkpoints to OneSignal?"
+
+Use this wording. The first sentence says what a checkpoint is for; a user who sees the word for the first time needs it before the field list. Do not shorten the question to the field list.
 
 Choices:
 

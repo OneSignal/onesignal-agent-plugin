@@ -47,9 +47,15 @@ plain-text fallback for a host that does not list the tool — and **end the tur
 this skill that says "structured question" means that same tool. Do not run Step 0, do not
 request network access, and do not run `checkpoint.sh` until the user answers.
 
-Question: "OneSignal can record setup checkpoints (step name, success or fail, failure
-class, run ID, platform, OS, App ID). No source code, paths, or credentials. Send these
-to OneSignal?"
+Question: "This plugin can report a checkpoint after each setup step, so OneSignal can
+see where setup fails for developers and fix it. A checkpoint holds the step name, pass
+or fail, the failure class, a run ID, your platform, OS, and App ID. Each checkpoint
+goes to `api.onesignal.com`. A checkpoint never includes source code, file paths, project
+names, or credentials. Send these checkpoints to OneSignal?"
+
+Use this wording. The first sentence says what a checkpoint is for; a user who sees
+the word for the first time needs it before the field list. Do not shorten the question
+to the field list.
 
 Choices:
 
