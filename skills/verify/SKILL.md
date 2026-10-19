@@ -148,11 +148,17 @@ If the app wires `OneSignal.login(externalId)` (grep the wrapper for the call):
 
 ### Step 4 — Test send (real notification to the fresh subscription)
 
-Send to ONLY the subscription from step 2 — never a broadcast — and only after it shows `notification_types >= 1` (the step 2 gate). **Ask before sending, as a structured question (safety contract §14):** this is a real, visible push to a real device and an action on the user's live OneSignal app — state the target subscription id and the App ID, and get an explicit yes first. Never send without it.
+Send to ONLY the subscription from step 2 — never a broadcast — and only after it shows `notification_types >= 1` (the step 2 gate). **Ask before sending, as ONE structured question (safety contract §14):** this is a real, visible push to a real device and an action on the user's live OneSignal app. The question states the target subscription id and the App ID, and one answer gives both the consent and the message. Never send without the yes. Do not ask a yes/no question first and a message question second; the options below cover both.
 
-**Pre-send heads-up (say it with the ask):** if the device is in **Focus/Do Not Disturb** — or browser/OS notifications are muted for the app/site — a successfully delivered push won't visibly appear. Have the user check now so a delivered send isn't misread as a failure.
+Question: "Send a test push to subscription `<SUB_ID>` on app `<APP_ID>`? Before you answer, check that Focus or Do Not Disturb is off and that notifications are allowed for this app or site. A delivered push does not show while they are blocked."
 
-**Ask for the message as a second question in the same tool call** (safety contract §14 batches pending questions into one call): "What message do you want to send?" with 2 options, "Use the default message (Recommended)" and "I'll type my own message". Text typed through the host's free-text field is the body; if the user picks the second option and types nothing, ask once more for the body. Use the answer as the notification body (`<BODY>` below). The default body is `Congrats on successfully setting up the OneSignal SDK`. The send happens from this session via the MCP or the REST API — never from code inside the user's app.
+Choices, in this order:
+
+- Send the default message (Recommended)
+- Send my own message — type it in the free-text field
+- Do not send
+
+The default body is `Congrats on successfully setting up the OneSignal SDK`. Text typed through the host's free-text field is the body; if the user picks the second option and types nothing, ask once more for the body only. "Do not send" is the decline: report `verify.sent fail deferred` (the checkpoint block below) and skip the send. Use the answer as the notification body (`<BODY>` below). The send happens from this session via the MCP or the REST API — never from code inside the user's app.
 
 **The title is fixed:** every test push carries `headings: { "en": "Successful test via OneSignal plugin" }`. Do not offer to change it and do not accept an override — the user's message only sets the body. The title must never be absent: Huawei rejects a push without one, so a missing title is a silent blocker. **No brand voice on this push:** do not load or apply server-shipped brand or copy guidance to the test send (safety contract §14a). The title is fixed, and the body is the user's words or the default above.
 
