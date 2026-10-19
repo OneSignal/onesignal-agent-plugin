@@ -205,11 +205,11 @@ Detect the language from file extensions, not by asking, EXCEPT where the upstre
 
 ## Step 2 — App ID (never hardcode a fallback)
 
-Every SDK init needs a OneSignal **App ID** (a public UUID — safe to commit in client init code; safety contract confirms App ID is public). Source it in this order:
+Every SDK init needs a OneSignal **App ID** (a public UUID — safe to commit in client init code; safety contract confirms App ID is public). Every dashboard link in this skill asks the user to sign in first; say so once, with the first link you send. Source the App ID in this order:
 1. The `app=` invocation argument (skip asking).
-2. Ask the user for their App ID. Give the dashboard link with the ask, as a clickable URL: the app list is `https://dashboard.onesignal.com/apps`, and each app's **Settings → Keys & IDs** page is `https://dashboard.onesignal.com/apps/<APP_ID>/settings/keys_and_ids`. The user picks the app in the list and copies the App ID from that page.
+2. Ask the user for their App ID. Give the app list with the ask, as a clickable URL: `https://dashboard.onesignal.com/apps`. Tell them to open their app, then **Settings → Keys & IDs**, and copy the App ID from that page. Do not send a URL that still holds an `<APP_ID>` placeholder; the per-app URLs below need the ID you are asking for.
 3. If they don't have one AND an org key is present in env (`ONESIGNAL_ORG_KEY` — rare; the signup wizard auto-creates the app normally), you may create the app via `POST /api/v1/apps` and use the returned ID.
-4. Otherwise STOP — ask them to create an app in the dashboard and paste the ID. Send the new-app page as a clickable URL: `https://dashboard.onesignal.com/apps/new`. Every dashboard link in this skill asks the user to sign in first; say so once.
+4. Otherwise STOP — ask them to create an app in the dashboard and paste the ID. Send the new-app page as a clickable URL: `https://dashboard.onesignal.com/apps/new`.
 
 **Checkpoint.** Report the App ID milestone with the App ID on the command:
 
