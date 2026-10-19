@@ -48,9 +48,9 @@ this skill that says "structured question" means that same tool. Do not run Step
 request network access, and do not run `checkpoint.sh` until the user answers.
 
 Question: "This plugin can report a checkpoint after each setup step, so OneSignal can
-see where setup fails for developers and fix it. A checkpoint holds the step name, pass
-or fail, the failure class, a run ID, your platform, OS, and App ID. Each checkpoint
-goes to `api.onesignal.com`. A checkpoint never includes source code, file paths, project
+see where setup fails for developers and fix it. A checkpoint holds the step name,
+success or fail, the failure class, a run ID, your platform, OS, and App ID. Each
+checkpoint goes to `api.onesignal.com`. A checkpoint never includes source code, file paths, project
 names, or credentials. Send these checkpoints to OneSignal?"
 
 Use this wording. The first sentence says what a checkpoint is for; a user who sees

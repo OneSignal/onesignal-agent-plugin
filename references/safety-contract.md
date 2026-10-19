@@ -65,7 +65,9 @@ funnel breaks. Full vocabulary and reporting rules: [telemetry-contract.md](tele
 The rules that make it safe:
 
 15. **Ask for checkpoint consent before the first send, as its own question.** Do not
-    fold it into the network-access request. Name the host (`api.onesignal.com`) and say
+    fold it into the network-access request. Open the question with what the data is
+    for, before the field list: a user who reads the word "checkpoint" for the first
+    time needs the purpose first. Name the host (`api.onesignal.com`) and say
     what the payload contains (milestone, status, failure class, run ID, platform, OS,
     App ID — never source, paths, project names, or credentials). A network approval
     from the host is never a substitute for this question. If the runtime sandboxes
