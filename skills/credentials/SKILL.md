@@ -48,7 +48,7 @@ Otherwise ask via the harness's native structured-question tool — `AskUserQues
 
 Question: "This plugin can send reports to OneSignal (via `api.onesignal.com`) to help our team understand where setup fails for developers and fix it. A report never contains source code, credentials, or other sensitive data. Share these reports with OneSignal?"
 
-Use this wording. Do not add the list of payload fields to the question (safety contract §15); the user calls these "reports", and the skill text calls them checkpoints.
+Use this wording. Do not add the list of payload fields to the question (safety contract §15); the user-facing word is "reports" (safety contract §15); skill text keeps "checkpoint".
 
 Choices:
 

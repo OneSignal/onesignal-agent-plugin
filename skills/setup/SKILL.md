@@ -53,8 +53,8 @@ contains source code, credentials, or other sensitive data. Share these reports 
 OneSignal?"
 
 Use this wording. Do not add the list of payload fields to the question (safety
-contract §15); the user calls these "reports", and the skill text calls them
-checkpoints.
+contract §15); the user-facing word is "reports" (safety contract §15); skill text
+keeps "checkpoint".
 
 Choices:
 
