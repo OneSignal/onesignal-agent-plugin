@@ -340,7 +340,7 @@ The essentials:
   it reports milestone outcomes (step name, success or fail, failure class, run ID,
   platform, OS, App ID) to OneSignal. Source code, paths, and credentials never
   leave the machine. Nothing is sent until you consent, or until
-  `ONESIGNAL_SKILL_TELEMETRY=1` is set. Choose "Keep checkpoints on this machine
+  `ONESIGNAL_SKILL_TELEMETRY=1` is set. Choose "Keep reports on this machine
   only", or set `ONESIGNAL_SKILL_TELEMETRY=0`. Later skills in the same run reuse
   the recorded answer and do not ask again.
 - **Secrets never touch your code or chat.** The REST API key and org key live in environment variables

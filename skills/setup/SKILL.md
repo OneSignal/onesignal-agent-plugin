@@ -47,30 +47,29 @@ plain-text fallback for a host that does not list the tool — and **end the tur
 this skill that says "structured question" means that same tool. Do not run Step 0, do not
 request network access, and do not run `checkpoint.sh` until the user answers.
 
-Question: "This plugin can report a checkpoint after each setup step, so OneSignal can
-see where setup fails for developers and fix it. A checkpoint holds the step name,
-success or fail, the failure class, a run ID, your platform, OS, and App ID. Each
-checkpoint goes to `api.onesignal.com`. A checkpoint never includes source code, file paths, project
-names, or credentials. Send these checkpoints to OneSignal?"
+Question: "This plugin can send reports to OneSignal (via `api.onesignal.com`) to help
+our team understand where setup fails for developers and fix it. A report never
+contains source code, credentials, or other sensitive data. Share these reports with
+OneSignal?"
 
-Use this wording. The first sentence says what a checkpoint is for; a user who sees
-the word for the first time needs it before the field list. Do not shorten the question
-to the field list.
+Use this wording. Do not add the list of payload fields to the question (safety
+contract §15); the user calls these "reports", and the skill text calls them
+checkpoints.
 
 Choices:
 
-- Send checkpoints to OneSignal
-- Keep checkpoints on this machine only
+- Share reports with OneSignal
+- Keep reports on this machine only
 
 **Record the answer before Step 0.** Write one line to `.onesignal/telemetry` at the
-repo root (`git rev-parse --show-toplevel`) — `1` for "send", `0` for "keep local":
+repo root (`git rev-parse --show-toplevel`) — `1` for "share", `0` for "keep local":
 
 ```bash
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && mkdir -p "$ROOT/.onesignal" && printf '1\n' > "$ROOT/.onesignal/telemetry"   # or 0
 ```
 
 The script never writes this file, and it does not send until it reads a `1`, so a
-skipped write turns a "send" answer into a silent opt-out. If the write fails, prefix
+skipped write turns a "share" answer into a silent opt-out. If the write fails, prefix
 every `checkpoint.sh` call in this run (including `flush`) with
 `ONESIGNAL_SKILL_TELEMETRY=<answer>` instead. The env value lasts only for this
 session and is not a substitute for the file: while the file has no answer, the
@@ -81,7 +80,7 @@ Do not ask again. Do not reach the network by another route.
 ## Network access — few prompts, after checkpoint consent
 
 This skill needs the network for the SDK version endpoint (Step 4), the app and
-credential API calls (Steps 2–3), and — after a "send" answer above — the checkpoint
+credential API calls (Steps 2–3), and — after a "share" answer above — the checkpoint
 sends. All of them reach `api.onesignal.com` or `onesignal.github.io`.
 
 A sandboxed runtime (Codex in its default mode is one) blocks the network inside the

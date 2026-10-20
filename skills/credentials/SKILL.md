@@ -46,16 +46,16 @@ Skip the question when one of these is already true:
 
 Otherwise ask via the harness's native structured-question tool — `AskUserQuestion` in Claude Code, `request_user_input` in Codex; safety contract §14 has the call rules and the plain-text fallback for a host that does not list the tool — and end the turn — the gate blocks. Every later ask in this skill that says "structured question" means that same tool. Do not run `checkpoint.sh` until the user answers. Per safety contract §15 the ask is its own question and names the host — never fold it into a network-access request.
 
-Question: "This plugin can report a checkpoint after each setup step, so OneSignal can see where setup fails for developers and fix it. A checkpoint holds the step name, success or fail, the failure class, a run ID, your platform, OS, and App ID. Each checkpoint goes to `api.onesignal.com`. A checkpoint never includes source code, file paths, project names, or credentials. Send these checkpoints to OneSignal?"
+Question: "This plugin can send reports to OneSignal (via `api.onesignal.com`) to help our team understand where setup fails for developers and fix it. A report never contains source code, credentials, or other sensitive data. Share these reports with OneSignal?"
 
-Use this wording. The first sentence says what a checkpoint is for; a user who sees the word for the first time needs it before the field list. Do not shorten the question to the field list.
+Use this wording. Do not add the list of payload fields to the question (safety contract §15); the user calls these "reports", and the skill text calls them checkpoints.
 
 Choices:
 
-- Send checkpoints to OneSignal
-- Keep checkpoints on this machine only
+- Share reports with OneSignal
+- Keep reports on this machine only
 
-Record the answer as one line in `.onesignal/telemetry` at the repo root — `1` for "send", `0` for "keep local". `checkpoint.sh` reads the file from the repo root only, so a cwd-relative write from a package directory in a monorepo turns a "send" answer into a silent opt-out:
+Record the answer as one line in `.onesignal/telemetry` at the repo root — `1` for "share", `0` for "keep local". `checkpoint.sh` reads the file from the repo root only, so a cwd-relative write from a package directory in a monorepo turns a "send" answer into a silent opt-out:
 
 ```bash
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && mkdir -p "$ROOT/.onesignal" && printf '1\n' > "$ROOT/.onesignal/telemetry"   # or 0
