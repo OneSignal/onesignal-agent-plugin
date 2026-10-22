@@ -43,7 +43,7 @@ All four are required for the p8 flow:
 
 All four verified against the merged endpoint; a missing field returns a 400 naming it.
 
-**.p12 certificates are NOT supported through the provisioning endpoint** — p8 only. If the user only has a .p12 (and cannot create a .p8), route them to the dashboard (Settings > Push Platforms) for the upload. .p8 is recommended anyway: no annual expiry, works across all apps under the account.
+**.p12 certificates are NOT supported through the provisioning endpoint** — p8 only. If the user only has a .p12 (and cannot create a .p8), route them to the dashboard (Settings > Push Platforms, `https://dashboard.onesignal.com/apps/<APP_ID>/settings/push/platforms`) for the upload. .p8 is recommended anyway: no annual expiry, works across all apps under the account.
 
 ### .p8 failure modes → what to tell the user (surface the raw error first)
 | Symptom | Likely cause | Fix |
@@ -102,7 +102,7 @@ The upstream OneSignal ai-install-prompt that asks for `google-services.json` is
 | FCM v1 API not enabled | Skipped the enable detour | Do step 3 (Open in Cloud Console → Enable), wait, retry |
 | 401 on upload | The key doesn't belong to this app | Confirm the env var holds this app's setup token or REST API key |
 | 409 on upload | Platform already has credentials (write-once) | Relay the response message verbatim; replacement happens in the dashboard (Settings > Push Platforms) or with an org key — never retry this endpoint |
-| 404 on upload | Feature flag off for this app | Fall back to the dashboard upload walkthrough |
+| 404 on upload | Feature flag off for this app | Fall back to the dashboard upload walkthrough and send `https://dashboard.onesignal.com/apps/<APP_ID>/settings/push/platforms` |
 
 Whether an app already has FCM credentials is a presence check, owned by [SKILL.md](SKILL.md) → "Step 1" through `onesignal_api.py app` and the `fcm_sender_id` field ([../../references/api-reference.md](../../references/api-reference.md) → "View an app"). No non-secret field separates FCM v1 from a legacy key, and the write-once endpoint accepts only v1, so do not try to tell them apart.
 
