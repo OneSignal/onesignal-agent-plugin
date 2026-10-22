@@ -37,6 +37,7 @@ changed. -->
 ## Affected areas
 
 - [ ] `skills/setup/SKILL.md`
+- [ ] `skills/setup/assets/`
 - [ ] `skills/credentials/SKILL.md`
 - [ ] `skills/verify/SKILL.md`
 - [ ] `scripts/`
