@@ -40,7 +40,9 @@ jobs:
 
       - name: Portability check on the skill text
         run: |
-          if grep -rn 'CLAUDE_PLUGIN_ROOT\|PLUGIN_ROOT}\|/Users/\|/home/' skills/ references/ --include='*.md'; then
+          # The allowed-tools frontmatter rules are the one place a host variable belongs;
+          # the bundle gate below checks that they sit in the frontmatter and nowhere else.
+          if grep -rn 'CLAUDE_PLUGIN_ROOT\|PLUGIN_ROOT}\|/Users/\|/home/' skills/ references/ --include='*.md' | grep -v ':  - Bash(.*\${CLAUDE_PLUGIN_ROOT}/scripts/'; then
             echo "::error::skill text contains a host-specific path or environment variable"
             exit 1
           fi

@@ -282,21 +282,31 @@ valid slug; agent rules still forbid project and package names. The App ID is pu
 
 `android`, `ios`, `web`, `react-native`, `expo`, `flutter`, `capacitor`, `cordova`, `unity`.
 
-`scripts/detect_platform.py` emits exactly these values, and `setup/SKILL.md` Step 1 writes
-the script's value into `.onesignal/platform`. A 10th value, `unknown`, reaches the wire
-only when `checkpoint.sh` finds no readable file. Never add a spelling outside this set: a
-second spelling of one platform splits that row of the funnel and every count built on it.
-`capacitor` covers Ionic, because an Ionic app is a Capacitor app or a Cordova app.
+`scripts/detect_platform.py` emits exactly these values, and `setup/SKILL.md` Step 1 passes
+the script's value as `--platform <token>`; `checkpoint.sh` writes it to
+`.onesignal/platform` and rejects any value outside the set without a record or a send. A
+10th value, `unknown`, reaches the wire only when `checkpoint.sh` finds no readable file.
+Never add a spelling outside this set: a second spelling of one platform splits that row of
+the funnel and every count built on it. `capacitor` covers Ionic, because an Ionic app is a
+Capacitor app or a Cordova app.
 
 ## Reporting a checkpoint
 
 ```bash
-bash scripts/checkpoint.sh <skill.milestone> <ok|ok_after_fix|fail> [class] [detail]
+bash scripts/checkpoint.sh <skill.milestone> <ok|ok_after_fix|fail> [class] [detail] [--platform <token>] [--app-id <uuid>]
 bash scripts/checkpoint.sh flush
 ```
 
 The script builds and sends the event. A skill never builds a request, and never needs to
 know the endpoint, the keys, or the encoding.
+
+The 2 options record run state that the skill learns mid-run, so that each step stays one
+command. `--platform` writes `.onesignal/platform`; `--app-id` writes `.onesignal/app_id`
+and, when this event sends, flushes the events held before it. Both write at the repo root,
+whatever the current directory. A skill passes each one once, on the checkpoint of the step
+that learned the value. One command per step matters to the host: a runtime that
+pre-approves commands by prefix matches a single `checkpoint.sh` call and asks nothing,
+while a variable assignment or an `&&` chain in front of it does not match and prompts.
 
 ### App ID ordering, and buffering
 
@@ -304,9 +314,14 @@ The ingestion endpoint requires the App ID, but `setup.preflight` fires before S
 one. So:
 
 - Milestones before the App ID is known are **written locally and held**.
-- Once Step 2 resolves it, run `bash scripts/checkpoint.sh flush` — each pending event is
-  sent carrying the now-known App ID and every field as recorded. Nothing is re-derived at
+- Once Step 2 resolves it, report that step with `--app-id <uuid>`. The script records the
+  App ID, sends the event, and then flushes the buffer — each pending event is sent
+  carrying the now-known App ID and every field as recorded. Nothing is re-derived at
   flush time, so a milestone that waited in the buffer still reports the moment it happened.
+  When that first send fails, the buffer waits for the closing `flush` instead: the held
+  events would fail the same way, and a sandboxed host would see one prompt per attempt.
+  Credentials and verify pass `--app-id` on the first checkpoint of a direct run, where
+  setup did not write the file.
 - Everything after that sends as it happens. A failed send is held for a later flush, unless
   the failure is one that an identical retry cannot fix.
 - Run `flush` one final time when a skill closes: setup at `setup.complete`, credentials
@@ -320,6 +335,11 @@ OneSignal test app would corrupt the data it is meant to produce.
 
 If egress is blocked, events stay buffered and a run that later gains network access loses
 nothing. That holds both before the App ID exists and after it.
+
+In a sandboxed runtime, a milestone call runs inside the sandbox: the send fails, the
+script holds the event, and the skill moves on without a prompt. Only the closing `flush`
+runs with escalation, so one host approval sends every held event (safety contract §15).
+A skill never escalates a milestone call.
 
 ## Refusal and failure behaviour
 
@@ -352,8 +372,10 @@ nothing. That holds both before the App ID exists and after it.
 ## Local state
 
 `checkpoint.sh` keeps its run state in `.onesignal/` at the repo root: the run id, the
-position counter, the saved consent answer (`telemetry`), the buffer of held events, and
-a record of every checkpoint and delivery attempt.
+position counter, the saved consent answer (`telemetry`), the platform and App ID it
+received through `--platform` and `--app-id`, the buffer of held events, and a record of
+every checkpoint and delivery attempt. The skill writes the consent answer itself; the
+script writes the rest.
 
 Because skills declare a file allow-list before writing (safety contract §4, §10),
 **`.onesignal/` must appear in that declared list and be added to `.gitignore`.** It is

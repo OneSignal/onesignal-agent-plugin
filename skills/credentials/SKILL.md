@@ -2,6 +2,10 @@
 name: credentials
 description: Upload your APNs .p8 key, Firebase FCM service-account JSON, or web Site URL to OneSignal, and get guided setup for Safari certs, email SPF/DKIM/DMARC DNS records, and SMS sender registration. Use when the user asks to "set up APNs", "add my .p8", "connect Firebase / FCM", "upload push credentials", "configure email domain / DNS", or "set up SMS", asks why Android or iOS push is failing, says push is not delivering after the SDK install, or when another OneSignal skill reports that a platform is missing credentials.
 argument-hint: "[platform=ios|android|web|email|sms] [app=<APP_ID>]"
+allowed-tools:
+  - Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh *)
+  - Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/onesignal_api.py *)
+  - Bash(git check-ignore *)
 ---
 
 # OneSignal credentials walkthrough
@@ -42,14 +46,16 @@ Skip the question when one of these is already true:
 
 Otherwise ask via the harness's native structured-question tool — `AskUserQuestion` in Claude Code, `request_user_input` in Codex; safety contract §14 has the call rules and the plain-text fallback for a host that does not list the tool — and end the turn — the gate blocks. Every later ask in this skill that says "structured question" means that same tool. Do not run `checkpoint.sh` until the user answers. Per safety contract §15 the ask is its own question and names the host — never fold it into a network-access request.
 
-Question: "OneSignal can record onboarding checkpoints (step name, success or fail, failure class, run ID, platform, OS, App ID) and send them to `api.onesignal.com`. No source code, paths, or credentials. Send these checkpoints?"
+Question: "This plugin can send reports to OneSignal (via `api.onesignal.com`) to help our team understand where setup fails for developers and fix it. A report never contains source code, credentials, or other sensitive data. Share these reports with OneSignal?"
+
+Use this wording. Do not add the list of payload fields to the question (safety contract §15); the user-facing word is "reports" (safety contract §15); skill text keeps "checkpoint".
 
 Choices:
 
-- Send checkpoints to OneSignal
-- Keep checkpoints on this machine only
+- Share reports with OneSignal
+- Keep reports on this machine only
 
-Record the answer as one line in `.onesignal/telemetry` at the repo root — `1` for "send", `0` for "keep local". `checkpoint.sh` reads the file from the repo root only, so a cwd-relative write from a package directory in a monorepo turns a "send" answer into a silent opt-out:
+Record the answer as one line in `.onesignal/telemetry` at the repo root — `1` for "share", `0` for "keep local". `checkpoint.sh` reads the file from the repo root only, so a cwd-relative write from a package directory in a monorepo turns a "share" answer into a silent opt-out:
 
 ```bash
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && mkdir -p "$ROOT/.onesignal" && printf '1\n' > "$ROOT/.onesignal/telemetry"   # or 0
@@ -57,15 +63,17 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && mkdir -p "$ROOT/.o
 
 `.onesignal/` is run state, never project content (safety contract §20): make sure `.gitignore` covers it, and never commit it. If the write fails, prefix every `checkpoint.sh` call in this run (including `flush`) with `ONESIGNAL_SKILL_TELEMETRY=<answer>`, and write the file again before the session ends — an env-only answer does not reach the next session.
 
-A second file gates the sends on a direct run: setup writes the App ID to `.onesignal/app_id`, and no skill wrote it here. Until that file holds the UUID, every checkpoint buffers, and `flush` stops with "cannot flush — still no App ID". Write it as soon as you know the App ID:
+A second file gates the sends on a direct run: setup writes the App ID to `.onesignal/app_id`, and no skill wrote it here. Until that file holds the UUID, every checkpoint buffers, and `flush` stops with "cannot flush — still no App ID". Pass the App ID on the first checkpoint you report in this run, which is normally `credentials.detected` in Step 1:
 
 ```bash
-ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && mkdir -p "$ROOT/.onesignal" && printf '%s\n' '<APP_ID>' > "$ROOT/.onesignal/app_id"
+bash <plugin>/scripts/checkpoint.sh credentials.detected <status> [class] --app-id <APP_ID>
 ```
 
-After a "send" answer, once `.onesignal/app_id` is written, run `bash <plugin>/scripts/checkpoint.sh flush` once: this funnel run may hold events that buffered before the answer existed, and the script keeps them for exactly this recovery (telemetry contract, "Refusal and failure behaviour").
+The script writes the UUID to `.onesignal/app_id` at the repo root, sends that event, and then flushes the events held from before the answer existed — the script keeps them for exactly this recovery (telemetry contract, "Refusal and failure behaviour"). Every milestone call accepts `--app-id`, so pass it on whichever checkpoint comes first. Do not write the file by hand, and do not run a separate `flush` for it: one command keeps the host's approval prompts to one.
 
 Do not ask twice. A refusal is a valid answer: checkpoints stay local, and you never reach the network by another route.
+
+**Network access in a sandboxed runtime** (Codex in its default mode is one): the sandbox blocks the network and approves one command at a time, and each approval is a prompt the user must answer. Never escalate a `checkpoint.sh` milestone call, with or without `--app-id` — run it inside the sandbox; when the network is blocked the script prints `not sent`, holds the event in `.onesignal/pending.jsonl`, and exits 0, which is the expected result there. Escalate the closing `flush` once (the final checkpoint block below), and only when the recorded answer is `1`. Escalate an `onesignal_api.py` command only after the sandbox blocked it: exit code 3 on the first try is the sandbox, so re-run that one command with escalation and a one-sentence reason. The write-once `provision` call is safe to re-run after a sandbox block — no request left the machine. If the user declines an escalation, take the dashboard path for that step. A declined escalation is not a checkpoint opt-out: never write `0` over a recorded `1`.
 
 ## Step 0 — Which credential, and who has access?
 
@@ -109,6 +117,8 @@ bash <plugin>/scripts/checkpoint.sh credentials.detected fail invalid_app_id    
 bash <plugin>/scripts/checkpoint.sh credentials.detected fail unknown probe_unavailable  # the check cannot run (item 7)
 ```
 
+On a direct run, append `--app-id <APP_ID>` to the line you pick ("Checkpoint consent" above): the script records the App ID and flushes the events held before it.
+
 ## The API-upload mechanism (shared by Apple .p8 and Firebase)
 
 Both agent-uploadable credentials go to the **write-once provisioning endpoint**, via one of two transports for the same payload:
@@ -125,7 +135,7 @@ Both agent-uploadable credentials go to the **write-once provisioning endpoint**
 
 1. **Recommended — authenticate the OneSignal MCP.** Tell the user what the flow does, with the step for their agent (in Claude Code: `/mcp` → **onesignal** → **Authenticate**): the browser opens OneSignal's first-party sign-in page, and the connection becomes an OAuth grant tied to their account — no App ID, no REST key, and no credential ever enters the chat or the repo. Then apply the App-ID precondition above before any write.
 2. **Fallback — an app API key.** Send the Keys & IDs link in chat, built from the App ID: `https://dashboard.onesignal.com/apps/<APP_ID>/settings/keys_and_ids`. Ask the user to open it, create or copy an app API key, export it in their shell as `ONESIGNAL_REST_API_KEY`, and say when that is done. Do not have them paste the key into chat. Tell them a new key (`os_v2_app_…`) is shown only once at creation, so they must store it immediately. The key feeds the direct `POST`.
-3. **Fallback — the manual dashboard upload** (Settings > Push Platforms). Say plainly that on this path you cannot upload or validate for them, then skip the API call and continue to the next step.
+3. **Fallback — the manual dashboard upload** (Settings > Push Platforms). Send the page as a clickable URL built from the App ID: `https://dashboard.onesignal.com/apps/<APP_ID>/settings/push/platforms`. Say plainly that on this path you cannot upload or validate for them, then skip the API call and continue to the next step.
 
 **Report which path resolved** — one checkpoint on **every** run of this skill, not only when the no-key ladder above ran (telemetry contract rules apply, consent included; meanings in [../../references/telemetry-contract.md](../../references/telemetry-contract.md) → "The auth choice"). Fire it when the path is **confirmed, not merely chosen**: `mcp_oauth` counts after the App-ID precondition passes; `api_key_env` and `api_key_link` count after the first read with that key succeeds; `dashboard_manual` counts when the user picks the walkthrough. Run exactly one of these literal lines:
 
@@ -154,7 +164,7 @@ Read the "Credential provisioning" section of [../../references/api-reference.md
   The script prints `http` and a `status` (`provisioned`, `already_configured`, `validation_error`, `not_found`, `auth_error`, or `error`), plus the server's relayable `message` and `errors` on a failure. On a 2xx it prints the per-platform presence verdict (the same `platforms` block as the `app` command) and drops the rest of the body, because the body echoes the stored credential fields. Without Python (the setup skill's preflight fallback), run the `POST` with `curl -sS -o "$TMP" -w '%{http_code}'`, print `$TMP` only when the status is not 2xx, then delete `$TMP`.
 - **The API validates on upload.** A malformed key, wrong Key/Team ID, or a JSON from the wrong Firebase project is rejected server-side. This is your validation loop: see [Credential validation loop](#credential-validation-loop).
 - **A successful provision emails the app owner.** Expected behavior — tell the user the notification is normal, not a security alarm.
-- **If the endpoint returns 404**, the feature flag for this app is off — the route doesn't exist for it. Fall back to guiding the user through the dashboard upload (Settings > Push Platforms) instead; don't retry the API.
+- **If the endpoint returns 404**, the feature flag for this app is off — the route doesn't exist for it. Fall back to guiding the user through the dashboard upload (Settings > Push Platforms, `https://dashboard.onesignal.com/apps/<APP_ID>/settings/push/platforms`) instead; don't retry the API.
 - **If the user has the OneSignal MCP connected**, prefer its `provision_app_credentials` tool over a raw call **for APNs, FCM, and web** — and **only after the App-ID precondition above** (confirm through `list_apps` that the grant can access the target App ID, else use the direct `POST`; the check is not optional because the write is one-shot). It carries the target `app_id` and the credential params — the MCP forwards the session auth, so you don't attach a key. If the connected MCP doesn't expose that tool yet, fall back to the direct `POST` or a dashboard step.
 
 ## Apple APNs .p8 flow
@@ -200,9 +210,9 @@ The apps API validates credentials at upload time, so the API response *is* the 
    - **APNs auth error right after key creation** → the 10–15 min propagation window; wait and retry the *same* upload.
    - **APNs invalid Key ID / Team ID** → likely the swapped-IDs mistake; ask the user to re-confirm each 10-char value against its portal location.
    - **APNs "wrong file"** → they may have downloaded a `.p12` from Certificates instead of a `.p8` from Keys.
-   - **Firebase "configuration is for a different Firebase Project" / Sender ID mismatch** → the JSON is from the wrong project; ask for the JSON from the project whose Sender ID matches the app. ⚠️ Write-once caveat: if a *wrong-but-valid* file was accepted, this endpoint cannot replace it — the fix moves to the dashboard (Settings > Push Platforms).
+   - **Firebase "configuration is for a different Firebase Project" / Sender ID mismatch** → the JSON is from the wrong project; ask for the JSON from the project whose Sender ID matches the app. ⚠️ Write-once caveat: if a *wrong-but-valid* file was accepted, this endpoint cannot replace it — the fix moves to the dashboard (Settings > Push Platforms, `https://dashboard.onesignal.com/apps/<APP_ID>/settings/push/platforms`).
    - **409 "already configured"** → relay the response message verbatim (it says exactly where to replace: dashboard Settings > Push Platforms, or an org key) and move on to the next step — this is not a dead end. **Nothing was written *by this request*** (multi-channel requests are all-or-nothing). A 409 has two causes the response body cannot separate, so disambiguate by the platform's state **before your first attempt** ([Step 1](#step-1--detect-existing-credentials) records exactly this): (a) if it was **unconfigured before you started** — the normal case, since you provision precisely because config is missing — then a 409 on a **recovery re-call after an ambiguous network failure** means *your earlier call landed*: success. (b) if it **may already have been configured**, or you don't know, a 409 is **indeterminate** — it does not prove your credential landed, so do NOT claim success: verify the platform config first — re-run `onesignal_api.py app <app_id>` and read the target platform's `configured` verdict (the presence fields from api-reference.md "View an app"), or check the dashboard. On a plain first attempt with no prior failure, a 409 simply means it was already configured before you started. Don't retry a call that already returned a definite 409.
-   - **404** → the write-once endpoint's feature flag is off for this app; fall back to the dashboard upload walkthrough.
+   - **404** → the write-once endpoint's feature flag is off for this app; fall back to the dashboard upload walkthrough and send `https://dashboard.onesignal.com/apps/<APP_ID>/settings/push/platforms`.
    - **401** → on the **direct `POST`**, the key doesn't belong to this app (or isn't a valid app key) — check which env var was used. On the **MCP tool** path no key or env var is involved (the session auth is forwarded), so a 401 has two likely causes: (a) the OAuth grant cannot access the target app — re-check with `list_apps` (the failure the App-ID precondition above is meant to catch before you write); or (b) the session uses **OAuth against an app where OAuth acceptance is not enabled** — OAuth acceptance is flag-gated per app (api-reference.md), so if the app match holds but the 401 persists, fall back to the direct `POST` with an app key.
 4. Never retry with a mutation more than the propagation-wait case warrants — **with one exception**: after an *ambiguous network failure* (you never saw a status code), re-call once. The endpoint is write-once, so the re-call is safe — it either lands (2xx: the first didn't) or returns a 409. Read that 409 as success **only if the platform was unconfigured before your first attempt**; if that is unknown, treat it as indeterminate and verify the platform config before any success claim (per the 409 mapping above). Do not re-call a request that already returned a definite status. If it keeps failing, stop and report the verbatim error plus the mapped hypothesis; point the user at `support@onesignal.com` with their App ID.
 
@@ -238,7 +248,7 @@ When a credential is uploaded and validated, tell the user, plainly:
 
 Do not auto-commit. Offer the commands; the user runs them.
 
-**Checkpoint — close the skill** (telemetry contract rules apply, consent included): at wrap-up, report completion and flush — a direct credentials run may be the session's last skill, and the flush gives re-buffered events their final attempt. The row fires for every wrap-up, after an upload and for guide-only channels that stop on a propagation wait. A run that stops at a terminal failure sends its `fail` row at the failing step and no `credentials.complete` row (safety contract §13).
+**Checkpoint — close the skill** (telemetry contract rules apply, consent included): at wrap-up, report completion and flush — a direct credentials run may be the session's last skill, and the flush gives re-buffered events their final attempt. The row fires for every wrap-up, after an upload and for guide-only channels that stop on a propagation wait. A run that stops at a terminal failure sends its `fail` row at the failing step and no `credentials.complete` row (safety contract §13). In a sandboxed runtime this `flush` is the one `checkpoint.sh` command you run with escalation, and only when the recorded answer is `1`.
 
 ```bash
 bash <plugin>/scripts/checkpoint.sh credentials.complete ok

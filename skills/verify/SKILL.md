@@ -2,6 +2,9 @@
 name: verify
 description: Verify that your OneSignal integration works end to end — builds/runs your app, waits for the first real device subscription to register, sends a real test push, and confirms server-side delivery. Use after the setup or credentials skills have run, or when the user asks to "verify OneSignal works", "test push delivery", "prove the integration works", "confirm the device registered", or "send myself a test notification", asks why a notification is not arriving, or is debugging an install that looks complete but delivers nothing. Does not install the SDK or upload credentials; routes to those skills when they are missing.
 argument-hint: "[app=<APP_ID>]"
+allowed-tools:
+  - Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint.sh *)
+  - Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/onesignal_api.py *)
 ---
 
 # OneSignal verification — prove it works end to end
@@ -38,14 +41,16 @@ Skip the question when one of these is already true:
 
 Otherwise ask via the harness's native structured-question tool — `AskUserQuestion` in Claude Code, `request_user_input` in Codex; safety contract §14 has the call rules and the plain-text fallback for a host that does not list the tool — and end the turn — the gate blocks. Every later ask in this skill that says "structured question" means that same tool, including the test-send consent in step 4. Do not run `checkpoint.sh` until the user answers. Per safety contract §15 the ask is its own question and names the host — never fold it into a network-access request.
 
-Question: "OneSignal can record onboarding checkpoints (step name, success or fail, failure class, run ID, platform, OS, App ID) and send them to `api.onesignal.com`. No source code, paths, or credentials. Send these checkpoints?"
+Question: "This plugin can send reports to OneSignal (via `api.onesignal.com`) to help our team understand where setup fails for developers and fix it. A report never contains source code, credentials, or other sensitive data. Share these reports with OneSignal?"
+
+Use this wording. Do not add the list of payload fields to the question (safety contract §15); the user-facing word is "reports" (safety contract §15); skill text keeps "checkpoint".
 
 Choices:
 
-- Send checkpoints to OneSignal
-- Keep checkpoints on this machine only
+- Share reports with OneSignal
+- Keep reports on this machine only
 
-Record the answer as one line in `.onesignal/telemetry` at the repo root — `1` for "send", `0` for "keep local". `checkpoint.sh` reads the file from the repo root only, so a cwd-relative write from a package directory in a monorepo turns a "send" answer into a silent opt-out:
+Record the answer as one line in `.onesignal/telemetry` at the repo root — `1` for "share", `0` for "keep local". `checkpoint.sh` reads the file from the repo root only, so a cwd-relative write from a package directory in a monorepo turns a "share" answer into a silent opt-out:
 
 ```bash
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && mkdir -p "$ROOT/.onesignal" && printf '1\n' > "$ROOT/.onesignal/telemetry"   # or 0
@@ -53,15 +58,17 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && mkdir -p "$ROOT/.o
 
 `.onesignal/` is run state, never project content (safety contract §20): make sure `.gitignore` covers it, and never commit it. If the write fails, prefix every `checkpoint.sh` call in this run (including `flush`) with `ONESIGNAL_SKILL_TELEMETRY=<answer>`, and write the file again before the session ends — an env-only answer does not reach the next session.
 
-A second file gates the sends on a direct run: setup writes the App ID to `.onesignal/app_id`, and no skill wrote it here. Until that file holds the UUID, every checkpoint buffers, and `flush` stops with "cannot flush — still no App ID". Write it as soon as you know the App ID:
+A second file gates the sends on a direct run: setup writes the App ID to `.onesignal/app_id`, and no skill wrote it here. Until that file holds the UUID, every checkpoint buffers, and `flush` stops with "cannot flush — still no App ID". Pass the App ID on the first checkpoint you report in this run, which is normally `verify.auth_resolved` under "Inputs you need":
 
 ```bash
-ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && mkdir -p "$ROOT/.onesignal" && printf '%s\n' '<APP_ID>' > "$ROOT/.onesignal/app_id"
+bash <plugin>/scripts/checkpoint.sh verify.auth_resolved <status> [class] --app-id <APP_ID>
 ```
 
-After a "send" answer, once `.onesignal/app_id` is written, run `bash <plugin>/scripts/checkpoint.sh flush` once: this funnel run may hold events that buffered before the answer existed, and the script keeps them for exactly this recovery (telemetry contract, "Refusal and failure behaviour").
+The script writes the UUID to `.onesignal/app_id` at the repo root, sends that event, and then flushes the events held from before the answer existed — the script keeps them for exactly this recovery (telemetry contract, "Refusal and failure behaviour"). Every milestone call accepts `--app-id`, so pass it on whichever checkpoint comes first. Do not write the file by hand, and do not run a separate `flush` for it: one command keeps the host's approval prompts to one.
 
 Do not ask twice. A refusal is a valid answer: checkpoints stay local, and you never reach the network by another route.
+
+**Network access in a sandboxed runtime** (Codex in its default mode is one): the sandbox blocks the network and approves one command at a time, and each approval is a prompt the user must answer. Never escalate a `checkpoint.sh` milestone call, with or without `--app-id` — run it inside the sandbox; when the network is blocked the script prints `not sent`, holds the event in `.onesignal/pending.jsonl`, and exits 0, which is the expected result there. Escalate the closing `flush` once (the final report below), and only when the recorded answer is `1`. Escalate an `onesignal_api.py` command only after the sandbox blocked it: exit code 3 on the first try is the sandbox, so re-run that one command with escalation and a one-sentence reason. The test send in step 4 needs the network too; its consent question is the human gate, and the escalation prompt that follows it is the host's, not a second ask from you. If the user declines an escalation, report the step as blocked and stop; do not route around it. A declined escalation is not a checkpoint opt-out: never write `0` over a recorded `1`.
 
 ## Inputs you need (gather, don't over-ask)
 
@@ -71,7 +78,7 @@ Do not ask twice. A refusal is a valid answer: checkpoints stay local, and you n
 | App ID | Public; from the init code you can grep, or the prior skill's summary | every API step |
 | App-scoped key | provided by the setup flow / invocation, or env `$ONESIGNAL_REST_API_KEY` / `$ONESIGNAL_SETUP_TOKEN`; if none of these, MCP or the Keys & IDs link below | steps 2, 4–5 (unless MCP) |
 | MCP connected? | Check for the OneSignal MCP tools (`onesignal_health`, `send_message`, `view_user`, `view_message`); if the tools are absent, check for a registered-but-unauthenticated server before you fall back (see "No key → MCP first" below) | preferred path for 4–5 |
-| Browser tool? (web only) | Check the session's tool list for a browser automation tool — for example the Claude in Chrome extension, a Playwright or Chrome DevTools MCP server, or the Cursor browser. Use only a tool the session exposes; never invent the call (safety contract §14a) | step 1 page load, step 2 page-side subscription read (no key needed) |
+| Browser tool? (web only) | Check the session's tool list for a browser automation tool — for example the Claude in Chrome extension, a Playwright or Chrome DevTools MCP server, or the Cursor browser. Use only a tool the session exposes; never invent the call (safety contract §14a). Without one, the OS opener (`open` / `xdg-open` / `cmd /c start ""`) still puts the page in front of the user; it cannot read the page | step 1 page load, step 2 page-side subscription read (no key needed) |
 | external_id (only if the app wires `login`) | Grep the wrapper for the `login(...)` call | step 3 identity check |
 
 **No key → MCP first, Keys & IDs link second.** Resolve in this order — never jump straight to the key ask:
@@ -91,6 +98,8 @@ bash <plugin>/scripts/checkpoint.sh verify.auth_resolved ok dashboard_manual
 bash <plugin>/scripts/checkpoint.sh verify.auth_resolved fail auth_declined
 ```
 
+On a direct run, append `--app-id <APP_ID>` to the line you pick ("Checkpoint consent" above): the script records the App ID and flushes the events held before it.
+
 **Caveat that applies to every path:** the subscription poll in step 2 has no suitable MCP tool (see step 2), so it needs a key even when the MCP is connected — except on web, where a browser tool in the session reads the subscription from the page instead (step 2, "Web — read the page"). Until a key arrives you can still do step 1 only (build gate); tell the user which rungs you can and cannot verify with what they gave you.
 
 ## The verification ladder — run in order, stop at first failure
@@ -109,7 +118,7 @@ The device cannot register until the app actually runs with the SDK linked. Pick
 
 - Run builds via the user's own package manager (detect via lockfile — safety contract §7). Do not add or bump dependencies.
 - If the build fails, report the compiler error verbatim and STOP. A build break is not a OneSignal problem yet; hand it back or route to the setup skill if the failure is in OneSignal wiring. Do not proceed to API steps against an app that never ran.
-- **Run the app yourself when a simulator or a local server can serve.** On an Apple-silicon Mac, boot, install, and launch the iOS simulator yourself — unattended, but not headless: keep the Simulator window open for the user's later permission tap (exact `simctl` sequence in platform-verification.md Part A). On web, when the session exposes a browser tool, open the served page in it yourself (platform-verification.md Part A → Web). Do not ask the user to do a run you can do. A physical phone is different: you cannot drive it, so hand that launch to the user and wait.
+- **Run the app yourself when a simulator or a local server can serve.** On an Apple-silicon Mac, boot, install, and launch the iOS simulator yourself — unattended, but not headless: keep the Simulator window open for the user's later permission tap (exact `simctl` sequence in platform-verification.md Part A). On web, when the session exposes a browser tool, open the served page in it yourself; without one, open the served URL in the user's default browser with the OS opener (`open` / `xdg-open` / `cmd /c start ""`) before you ask them to do anything — dev servers such as Vite do not open a tab on their own (platform-verification.md Part A → Web). Do not ask the user to do a run you can do. A physical phone is different: you cannot drive it, so hand that launch to the user and wait.
 - **You cannot press "Allow" anywhere — simulator included** (`xcrun simctl privacy` has no notifications service). On iOS the prompt does not gate step 2: with the setup skill's `UIBackgroundModes = remote-notification` edit, the SDK creates the server-side subscription before the prompt is answered (SDK-verified; detail in platform-verification.md Part A). The accepted prompt is needed from step 4 on — tell the user the single tap you need from them, and when. If the setup skill did not write this integration, confirm `remote-notification` is in `Info.plist` first: without that background mode, the prompt gates step 2 too, and a step-2 timeout means "tap not done", not "credentials missing".
 
 ### Step 2 — Subscription presence (poll until first device registers)
@@ -117,9 +126,9 @@ The device cannot register until the app actually runs with the SDK linked. Pick
 This is the dashboard signup wizard's own pattern: fetch subscriptions/players with `limit: 1` — a non-empty result means the first subscriber exists (see api-reference.md "Subscriber presence poll"). Deterministic equivalents for the REST probes in this skill: `python3 <plugin>/scripts/onesignal_api.py subscribers|notification-stats|web-probe` (prefer the MCP if connected). The `notification-stats` output labels `failed` as unsubscribed targets, not delivery errors.
 
 - **Web — read the page (no key needed; preferred on web):** when the session exposes a browser tool (see "Inputs you need"), open the served page in it and evaluate `OneSignal.User.PushSubscription.id` and `OneSignal.User.PushSubscription.optedIn` in the page. The debug helper also prints `[OneSignal] Push subscription registered: <id>` to the console. A non-empty `id` is server-assigned — the SDK returns `undefined` while the ID is still local, and on web the SDK creates the subscription only after the browser granted permission and registered (verified in SDK source: `PushSubscriptionNamespace.id`, `updatePushSubscriptionModelWithRawSubscription`). `optedIn === true` is the page-side equivalent of `notification_types >= 1`; read both. Poll on the same cadence as the REST loop below. The browser's native permission dialog is not part of the page: the user clicks Allow on the slidedown and then in the dialog — say that once, then read the values. **Read `Notification.permission` from the page with each poll — it separates "no click yet" from a real failure**, the same way `notification_types < 1` does on iOS: `"default"` with no `id` means the user did not click Allow yet — report "waiting on the Allow click", ask for the click, and keep polling past the timeout; `"denied"` means the user blocked the prompt → step 7 §5, never §1; `"granted"` with no `id` after the timeout is the real step-2 timeout → step 7 as written. Never send the user to the dashboard or the console to look up the subscription ID while a tool in the session can read it.
-- **MCP path:** there is no suitable MCP tool for a presence poll — `export_subscriptions_csv` is a whole-audience async export (capped at 1 concurrent run per account), and `estimate_recipient_count` is email-only and returns 0 for push. Use the page read above (web) or the REST poll below (a key is still required). If only the MCP is available, no key, and no browser tool: tell the user this rung needs a key, and offer one alternative through the structured-question tool — the ID from the debug helper's console line `[OneSignal] Push subscription registered: <id>`. Name that exact line and where the console is; do not send them to the dashboard for it.
+- **MCP path:** there is no suitable MCP tool for a presence poll — `export_subscriptions_csv` is a whole-audience async export (capped at 1 concurrent run per account), and `estimate_recipient_count` is email-only and returns 0 for push. Use the page read above (web) or the REST poll below (a key is still required). If only the MCP is available, no key, and no browser tool: tell the user this rung needs a key, and offer one alternative through the structured-question tool — the ID from the debug helper's console line `[OneSignal] Push subscription registered: <id>`. If the OS opener ran in step 1, the page is already in their browser, so the ask starts at the Allow click, not at "open this URL"; if the opener fell back, include the URL. Name that exact line and where the console is; do not send them to the dashboard for it.
 - **REST path:** `GET https://api.onesignal.com/players?app_id=<APP_ID>&limit=1` with `Authorization: Key <KEY>`. **Note: `/players` is the legacy Devices API — documented but marked deprecated** ("View players" reference page). Its documented auth form is `Authorization: Basic <legacy REST API key>`; try `Key` first with the current key and fall back to `Basic` if rejected. If the endpoint errors entirely, fall back to the dashboard (Audience → Subscriptions) and have the user confirm the row appeared. The only thing you assert from this call is *non-empty ⇒ a subscriber registered*.
-- **Poll loop:** every ~5s, up to a **2-minute timeout**. Between polls: if you launched the app yourself (iOS simulator), tail the launch's `console.log` (the run step prints its path — platform-verification.md Part A) for the debug helper's registration line instead of nagging; if you opened the web page yourself, re-read the page values; otherwise remind the user to launch the app on a real device/browser and accept the notification permission prompt.
+- **Poll loop:** every ~5s, up to a **2-minute timeout**. Between polls: if you launched the app yourself (iOS simulator), tail the launch's `console.log` (the run step prints its path — platform-verification.md Part A) for the debug helper's registration line instead of nagging; if you opened the web page in a browser tool, re-read the page values; if you opened it with the OS opener, the tab is already in front of the user, so remind them of the Allow click only, and do not reopen the page; otherwise remind the user to launch the app on a real device/browser and accept the notification permission prompt.
 - **Read `notification_types` on the returned player — presence alone is not opt-in.** `notification_types >= 1` means registered AND opted in — the activation ladder's bar (platform-matrix.md). A row with `notification_types < 1` on iOS is the normal pre-tap state (the device registers before the prompt is answered — see step 1): report "registered — waiting on the permission tap", ask the user for the tap, and keep polling until the value reaches `>= 1`. **Do not run step 4 against a target below 1** — that send errors as unsubscribed, and step 7 §1 would misread it as a credentials gap. The script reports this as `first_subscription_opted_in`.
 - **A real subscription ID is server-assigned and is NOT prefixed `local-`.** The SDK assigns a `local-` placeholder before the device registers; a `local-` id does not count as registered (verified against the SDK-ai-prompts verification-flow contract).
 - **On timeout (still empty):** STOP polling and go to the troubleshooting tree (step 7). On Android/web the overwhelmingly common cause is *missing platform credentials* → route to the credentials skill; on iOS a timeout more likely means the app never ran or init never fired (step 7 §1 pre-check). Do not fabricate a subscription.
@@ -139,11 +148,17 @@ If the app wires `OneSignal.login(externalId)` (grep the wrapper for the call):
 
 ### Step 4 — Test send (real notification to the fresh subscription)
 
-Send to ONLY the subscription from step 2 — never a broadcast — and only after it shows `notification_types >= 1` (the step 2 gate). **Ask before sending, as a structured question (safety contract §14):** this is a real, visible push to a real device and an action on the user's live OneSignal app — state the target subscription id and the App ID, and get an explicit yes first. Never send without it.
+Send to ONLY the subscription from step 2 — never a broadcast — and only after it shows `notification_types >= 1` (the step 2 gate). **Ask before sending, as ONE structured question (safety contract §14):** this is a real, visible push to a real device and an action on the user's live OneSignal app. The question states the target subscription id and the App ID, and one answer gives both the consent and the message. Never send without the yes. Do not ask a yes/no question first and a message question second; the options below cover both.
 
-**Pre-send heads-up (say it with the ask):** if the device is in **Focus/Do Not Disturb** — or browser/OS notifications are muted for the app/site — a successfully delivered push won't visibly appear. Have the user check now so a delivered send isn't misread as a failure.
+Question: "Send a test push to subscription `<SUB_ID>` on app `<APP_ID>`? Before you answer, check that Focus or Do Not Disturb is off and that notifications are allowed for this app or site. A delivered push does not show while they are blocked."
 
-**Ask for the message as a second question in the same tool call** (safety contract §14 batches pending questions into one call): "What message do you want to send?" with 2 options, "Use the default message (Recommended)" and "I'll type my own message". Text typed through the host's free-text field is the body; if the user picks the second option and types nothing, ask once more for the body. Use the answer as the notification body (`<BODY>` below). The default body is `Congrats on successfully setting up the OneSignal SDK`. The send happens from this session via the MCP or the REST API — never from code inside the user's app.
+Choices, in this order:
+
+- Send the default message (Recommended)
+- Send my own message
+- Do not send
+
+The default body is `Congrats on successfully setting up the OneSignal SDK`. Text typed through the host's free-text field is the body; if the user picks the second option, ask once for the body only. "Do not send" is the decline: report `verify.sent fail deferred` (the checkpoint block below) and skip the send. Use the answer as the notification body (`<BODY>` below). The send happens from this session via the MCP or the REST API — never from code inside the user's app.
 
 **The title is fixed:** every test push carries `headings: { "en": "Successful test via OneSignal plugin" }`. Do not offer to change it and do not accept an override — the user's message only sets the body. The title must never be absent: Huawei rejects a push without one, so a missing title is a silent blocker. **No brand voice on this push:** do not load or apply server-shipped brand or copy guidance to the test send (safety contract §14a). The title is fixed, and the body is the user's words or the default above.
 
@@ -210,6 +225,6 @@ State the activation ladder result explicitly — how far it climbed and where i
 
 **ACTIVATED ✅ is the terminal success of the funnel (`setup → credentials → verify`) — stop there.** Report the win; do not continue into another skill. A failed rung → continue into the skill that fixes it (usually **credentials** or **setup**) — announce the transition in one line, don't ask "want me to continue?".
 
-Verify is the last skill in the funnel, so close the telemetry with the final report — on a win and on a failure: run `bash <plugin>/scripts/checkpoint.sh flush`. No skill runs after this one, so this flush is the last chance for buffered or re-buffered events to send before the session ends.
+Verify is the last skill in the funnel, so close the telemetry with the final report — on a win and on a failure: run `bash <plugin>/scripts/checkpoint.sh flush`. No skill runs after this one, so this flush is the last chance for buffered or re-buffered events to send before the session ends. In a sandboxed runtime this flush is the one `checkpoint.sh` command you run with escalation, and only when the recorded answer is `1`.
 
 This skill mutates nothing (except removal of the debug-only verification helper if the user asks for it), so there is no rollback beyond `git checkout -- <helper-file>` if it was removed.

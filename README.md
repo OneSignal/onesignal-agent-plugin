@@ -155,6 +155,17 @@ Pick an install scope when prompted, then run `/reload-plugins`. To update later
 - Claude Code copies the plugin into a cache on install. All of this plugin's internal references
   (skills linking to `../../references/*.md`) live **inside** the plugin directory, so they resolve
   correctly after the copy.
+- Each skill pre-approves its own helper scripts (`scripts/checkpoint.sh` and the Python helpers
+  the skill runs) and the read-only `git` command it needs, through the `allowed-tools` field in
+  its `SKILL.md`. Claude Code applies that grant for the turn that invokes the skill and clears
+  it when you send your next message. The skills stop at a few decisions (checkpoint consent, a
+  dirty tree, the App ID, the diff approval), so a run spans several turns, and the turns after
+  your answers ask again for the helper calls. On such a prompt, pick "Yes, and don't ask again"
+  for the prefix Claude Code offers (for example `bash <plugin>/scripts/checkpoint.sh`), which
+  adds a session rule that covers the later turns. The skills never pre-approve file writes:
+  Claude Code asks before each `Write` or `Edit` in the default permission mode. To approve
+  file edits in bulk instead, run the skill in `acceptEdits` mode (`Shift+Tab` to cycle modes);
+  the 3 consent questions still ask in every mode.
 
 ---
 
@@ -271,6 +282,13 @@ codex plugin add onesignal@onesignal
   shows the same question as text; reply with the word the message names, for example `send` or
   `keep local`. Plan mode in the CLI shows a selectable prompt, but Plan mode does not edit files,
   so run the skills in the default mode.
+- Codex's default sandbox blocks the network, and Codex asks you before a command runs outside
+  the sandbox. The skills keep those approvals few: a `setup` run asks for the SDK version
+  fetch, for each OneSignal API read, and for one checkpoint `flush` at the end. The per-step
+  checkpoint calls run inside the sandbox and hold their events for that flush, so they never
+  prompt. Pick the "don't ask again for this command in this session" option on the `flush`
+  prompt and later skills in the same session do not ask again for it. To allow the network for every command instead, set
+  `[sandbox_workspace_write] network_access = true` in `~/.codex/config.toml`.
 - The Python 3 prerequisite above applies in Codex too.
 
 ---
@@ -322,7 +340,7 @@ The essentials:
   it reports milestone outcomes (step name, success or fail, failure class, run ID,
   platform, OS, App ID) to OneSignal. Source code, paths, and credentials never
   leave the machine. Nothing is sent until you consent, or until
-  `ONESIGNAL_SKILL_TELEMETRY=1` is set. Choose "Keep checkpoints on this machine
+  `ONESIGNAL_SKILL_TELEMETRY=1` is set. Choose "Keep reports on this machine
   only", or set `ONESIGNAL_SKILL_TELEMETRY=0`. Later skills in the same run reuse
   the recorded answer and do not ask again.
 - **Secrets never touch your code or chat.** The REST API key and org key live in environment variables
