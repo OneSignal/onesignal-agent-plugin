@@ -55,7 +55,7 @@ Choices:
 - Share reports with OneSignal
 - Keep reports on this machine only
 
-Record the answer as one line in `.onesignal/telemetry` at the repo root — `1` for "share", `0` for "keep local". `checkpoint.sh` reads the file from the repo root only, so a cwd-relative write from a package directory in a monorepo turns a "send" answer into a silent opt-out:
+Record the answer as one line in `.onesignal/telemetry` at the repo root — `1` for "share", `0` for "keep local". `checkpoint.sh` reads the file from the repo root only, so a cwd-relative write from a package directory in a monorepo turns a "share" answer into a silent opt-out:
 
 ```bash
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && mkdir -p "$ROOT/.onesignal" && printf '1\n' > "$ROOT/.onesignal/telemetry"   # or 0
