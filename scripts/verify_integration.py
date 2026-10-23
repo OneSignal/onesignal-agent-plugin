@@ -24,9 +24,11 @@ import sys
 EXCLUDE = {"node_modules", "build", ".gradle", "Pods", ".git", "dist", "DerivedData",
            "__pycache__", ".dart_tool", "out"}
 CODE_EXTS = {".kt", ".java", ".swift", ".m", ".ts", ".tsx", ".js", ".jsx", ".dart",
-             ".gradle", ".kts", ".html", ".xml", ".rb", ".ruby", ".plist", ".json", ".toml"}
+             ".gradle", ".kts", ".html", ".xml", ".rb", ".ruby", ".plist", ".json", ".toml",
+             ".entitlements"}
 # .toml is needed for gradle/libs.versions.toml (version-catalog dependency decls).
 # .json is needed for package.json / app.json (Expo/RN config, npm version ranges).
+# .entitlements is needed for the iOS App Group check (plist XML).
 
 # A OneSignal dependency line carrying a range/dynamic version instead of a pin.
 RANGE_PATTERNS = [
@@ -385,6 +387,55 @@ class Checks:
                       + (" and relies on NotificationCenter (a OneSignal registration event it never posts — dead)" if uses_notifcenter else ""))
         self.add("ios_verification_uses_push_observer", ok, "error", detail)
 
+    def ios_nse_present(self):
+        # The Notification Service Extension is part of the default native install
+        # (ios.md): without it, images, badges, and confirmed delivery fail silently
+        # while plain pushes still arrive, so nothing else in this check catches it.
+        manifests = [fp for fp in walk_files(self.root)
+                     if os.path.basename(fp) in ("project.pbxproj", "Podfile")]
+        blob = "\n".join(read(fp) for fp in manifests)
+        target = "OneSignalNotificationServiceExtension" in blob
+        linked = re.search(r"productName\s*=\s*OneSignalExtension|pod\s+['\"]OneSignal", blob) is not None
+        service = [fp for fp in walk_files(self.root)
+                   if os.path.basename(fp) in ("NotificationService.swift", "NotificationService.m")
+                   and "OneSignalExtension" in read(fp)]
+        missing = []
+        if not target:
+            missing.append("no OneSignalNotificationServiceExtension target in project.pbxproj or Podfile")
+        if not service:
+            missing.append("no NotificationService.swift/.m that forwards to OneSignalExtension")
+        if not linked:
+            missing.append("OneSignalExtension (SPM) or the OneSignal pod is not linked to the extension")
+        self.add("ios_nse_present", not missing, "warn",
+                 "" if not missing else "; ".join(missing) + " (ios-nse.md)")
+
+    def ios_app_group_matches(self):
+        # Both targets must name the same App Group, or the extension cannot read
+        # the SDK's state and confirmed delivery, badges, and images fail silently.
+        groups = {}
+        for fp in walk_files(self.root):
+            if not fp.endswith(".entitlements"):
+                continue
+            found = set(re.findall(r"<string>\s*(group\.[^<\s]+)\s*</string>", read(fp)))
+            if found:
+                groups[os.path.relpath(fp, self.root)] = found
+        nse = {k: v for k, v in groups.items() if "OneSignalNotificationServiceExtension" in k}
+        app = {k: v for k, v in groups.items() if k not in nse}
+        if not nse:
+            self.add("ios_app_group_matches", False, "warn",
+                     "no App Group in the OneSignalNotificationServiceExtension entitlements (ios-nse.md)")
+            return
+        if not app:
+            self.add("ios_app_group_matches", False, "warn",
+                     "no App Group in the main app target's entitlements (ios-nse.md)")
+            return
+        nse_groups = set().union(*nse.values())
+        app_groups = set().union(*app.values())
+        ok = bool(nse_groups & app_groups)
+        self.add("ios_app_group_matches", ok, "error",
+                 "" if ok else "the App Group differs between the app (%s) and the extension (%s); "
+                 "both must name the same group" % (", ".join(sorted(app_groups)), ", ".join(sorted(nse_groups))))
+
     # ---- expo / react-native (shared package: react-native-onesignal) ----
     def rn_package_present(self):
         pkgs = [fp for fp in walk_files(self.root) if os.path.basename(fp) == "package.json"]
@@ -596,7 +647,8 @@ class Checks:
             # structurally assert), so it runs the universal checks only.
             "unity": [],
             "ios": [self.ios_init_in_launch, self.ios_verification_debug_guarded,
-                    self.ios_verification_uses_push_observer],
+                    self.ios_verification_uses_push_observer, self.ios_nse_present,
+                    self.ios_app_group_matches],
             "expo": [self.expo_plugin_registered, self.expo_plugin_first,
                      self.rn_package_present, self.rn_init_present, self.rn_verification_dev_guarded],
             "react-native": [self.rn_package_present, self.rn_init_present, self.rn_verification_dev_guarded],

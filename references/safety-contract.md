@@ -7,14 +7,14 @@ Any skill that reads or writes the user's repository MUST follow all of this. It
 1. `git status --porcelain -- ":(exclude,top).onesignal"` — if the tree is dirty, STOP and ask (stash / proceed / abort). `.onesignal/` is run state (§20), never project content, so it never makes the tree dirty: the `top` pathspec excludes it at the repo root from any working directory, whether it is untracked or modified. No `.git`? Fall back to `.onesignal.bak` sibling backups and say there's no VCS net.
 2. Detect prior installation FIRST: existing OneSignal dependency line, existing init call, or our marker comment. Found → propose update/repair, never a duplicate. Different App ID already present → ask which is correct; never silently overwrite.
 3. Default to a new `onesignal-integration` branch (user may opt into current branch).
-4. Declare the complete file allow-list up front (dependency manifest, init/lifecycle file, one wrapper module, platform config files, one debug-only verification helper, `.gitignore`, web service-worker, `.onesignal/` checkpoint run state). Touching anything else requires re-confirmation.
+4. Declare the complete file allow-list up front (dependency manifest, init/lifecycle file, one wrapper module, platform config files, the iOS Notification Service Extension folder, one debug-only verification helper, `.gitignore`, web service-worker, `.onesignal/` checkpoint run state). Touching anything else requires re-confirmation.
 
 ## Writing
 
 5. Compute the FULL change set and show it as diffs BEFORE any write. One confirmation for the whole set. Apply exactly as previewed; if a file drifted, abort that file and re-preview.
 6. Mark generated blocks: `// onesignal:managed v1` — idempotency keys off this marker on re-runs.
 7. Match the repo's style, package manager (detect via lockfile), and architecture. No repo-wide reformatting, no unrelated dep bumps, no import reordering.
-8. Minimal integration only: init + permission in the right lifecycle spot. No extra OneSignal features unless asked.
+8. Minimal integration only: init + permission in the right lifecycle spot. No extra OneSignal features unless asked. On native iOS the minimal integration includes the Notification Service Extension, the App Group, and the `OneSignalInAppMessages` product: without the first two, images, badges, and confirmed delivery fail silently, and the third is the documented default with no code of its own. `OneSignalLocation` is an extra feature.
 
 ## Never
 
