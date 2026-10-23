@@ -295,7 +295,7 @@ Open the platform reference file for the detected platform and follow its instal
 - the dependency manifest (package.json / Podfile / build.gradle(.kts) / pubspec.yaml / app.json)
 - the SDK init / lifecycle file (AppDelegate, Application subclass, `App.tsx`/`_layout.tsx`, `main.dart`, `<head>`/root layout for web)
 - ONE centralized wrapper module (see below)
-- platform config files strictly required by the matrix (AndroidManifest, Info.plist + pbxproj, entitlements, web service worker in `public/`)
+- platform config files strictly required by the matrix (AndroidManifest, Info.plist + pbxproj, entitlements, the iOS `OneSignalNotificationServiceExtension/` folder, web service worker in `public/`)
 - ONE debug-only verification helper file
 - `.gitignore` and, if needed, `.env` + `.env.example`
 
