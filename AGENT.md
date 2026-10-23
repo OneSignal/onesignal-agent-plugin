@@ -87,7 +87,9 @@ Do not break these without a decision from the team:
   single call; a compound command prompts.
 - **Shared files have one spelling in skill text.** A skill refers to a shared script only as
   `<plugin>/scripts/<name>`, and to a reference only as `[…](../../references/<name>.md)`.
-  No other path in a skill may contain `../`. `scripts/package_directory_bundle.py --check`
+  No other path in a skill may contain `../`; a fenced code block is exempt, because its
+  content goes into the user's project (a pbxproj `rpath`, for example) and is not a link
+  the plugin resolves. `scripts/package_directory_bundle.py --check`
   enforces this convention, and any other spelling fails the check. The convention is what
   lets the packager build the self-contained bundle with one rewrite (see "The OpenAI
   directory bundle" below).
