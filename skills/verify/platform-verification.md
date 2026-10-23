@@ -92,7 +92,7 @@ Diagnose in this ranked order. For each: symptom → most-likely cause → fix /
 - **Simulator:** Intel-Mac simulators do not receive remote push — use a **physical device or a simulator on an Apple-silicon Mac** (Xcode 14+ simulators there receive real sandbox APNs pushes and register normally).
 - **APNs credentials (.p8) missing or not propagated block *delivery*, not registration** on the v5 SDK — the subscription row comes from the server-side user create, independent of platform credentials (verified in SDK source, not yet live-tested). Expect that gap as `errored` at step 5; a true step-2 timeout points at the app never running or init never firing, or at the other items here. New keys take 10–15 min to propagate (the credentials skill uploads the .p8 + Key ID + Team ID). The **Push capability** on the App ID / provisioning profile is a different failure: without it the token fetch itself fails (APNS 3000, next bullet).
 - **"APNS delegate never fired" / "APNS 3000":** usually a second push SDK or native push API alongside OneSignal, or transient connectivity that self-resolves after a new session (background 30s+, reopen). Remove other push dependencies; for **Capacitor** set `ios.handleApplicationNotifications: false`.
-- Confirmed receipt (`received`) additionally needs the **NSE + App Group** — but that is optional for a minimal install; do not treat its absence as a registration failure.
+- Confirmed receipt (`received`) additionally needs the **NSE + App Group** — part of the default native iOS install, optional on the wrapper frameworks; do not treat its absence as a registration failure.
 
 ### 4. Android — device never registers
 **Symptom:** step 2 times out on Android.

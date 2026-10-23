@@ -223,7 +223,7 @@ PRIOR_PATTERNS = [
     (r"onesignal_flutter", "flutter package"),
     (r"onesignal-cordova-plugin", "cordova plugin"),
     (r"@onesignal/capacitor-plugin", "capacitor plugin"),
-    (r"OneSignalXCFramework|OneSignal-iOS-SDK", "iOS SDK"),
+    (r"OneSignal-?XCFramework|OneSignal-iOS-SDK|pod\s+['\"]OneSignal", "iOS SDK"),
     (r"OneSignal\.(init|initialize|initWithContext)", "init call"),
     (r"onesignal:managed", "managed marker"),
     (r"OneSignalSDKWorker", "web service worker"),
