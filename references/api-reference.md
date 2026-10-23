@@ -39,7 +39,7 @@ The plugin needs one answer per platform: does the platform already have credent
 
 | Platform | Configured when | Notes |
 |---|---|---|
-| APNs | `apns_env` is non-empty (`production` or `sandbox`) | Auth type: `apns_key_id` and `apns_team_id` both set → p8 key; both empty with `apns_env` set → p12 certificate; exactly one set → unknown (report `null`). Both upload paths always set `apns_env`; only the p8 path sets the key and team IDs. |
+| APNs | `apns_env` is non-empty (`production` or `sandbox`) | Auth type: `apns_key_id` and `apns_team_id` both set → p8 key; both empty with `apns_env` set → p12 certificate; exactly one set → unknown (report `null`). Both upload paths always set `apns_env`; only the p8 path sets the key and team IDs. `apns_bundle_id` (non-secret; the script prints it as `platforms.apns.bundle_id`) is the Bundle ID the stored credential serves, and the server sends it to APNs as the topic of every push. APNs rejects a push whose topic differs from the app's Bundle ID, so a stored value that differs from the project's Bundle ID means no delivery to this app. Presence stays `true`; the fix is dashboard-only. |
 | FCM | `fcm_sender_id` is non-empty | Match the exact name `fcm_sender_id`. Do not match `gcm_sender_id` or `chrome_web_gcm_sender_id`: a web-only app has `chrome_web_gcm_sender_id` set while `fcm_sender_id` is `null`. No non-secret field separates FCM v1 from the legacy key; do not try to tell them apart. |
 | Web | `chrome_web_origin` is non-empty | The unauthenticated "Web platform config probe" below is the preferred web read; this field is the authenticated equivalent. |
 
