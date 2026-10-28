@@ -12,7 +12,7 @@ Reference for the `setup` skill. Follow [SKILL.md](SKILL.md) Steps 0–8; this f
 
 ## NSE and App Group are part of the default install
 
-Images, action buttons, badge counts, and confirmed delivery all run inside the **Notification Service Extension**, and the extension reads the SDK's state through an **App Group** shared with the main app. A plain push still arrives without them, so a missing extension fails silently. Create both on every native iOS install (safety contract §8 names them as part of the minimal integration); the recipe is [ios-nse.md](ios-nse.md). Add nothing else: no in-app message code, no location prompt, no notification-click handler.
+Images, action buttons, badge counts, and confirmed delivery all run inside the **Notification Service Extension**, and the extension reads the SDK's state through an **App Group** shared with the main app. A plain push still arrives without them, so a missing extension fails silently. Create both on every native iOS install (safety contract §8 names them as part of the minimal integration); the recipe is [ios-nse.md](ios-nse.md). Add nothing else by default: no in-app message code, no notification-click handler, and location only when the user opts in ("Ask about `OneSignalLocation`" below).
 
 ## Which SDK products
 
@@ -23,7 +23,29 @@ The documentation names 4 SPM products and the pod subspecs that match them. The
 | `OneSignalFramework` | app | yes — the SDK |
 | `OneSignalInAppMessages` | app | yes — the documentation recommends it; the module needs no code and no permission, and in-app messages sent from the dashboard render only when it is linked |
 | `OneSignalExtension` | `OneSignalNotificationServiceExtension` | yes — the NSE links it ([ios-nse.md](ios-nse.md)) |
-| `OneSignalLocation` | app | **no** — it adds location tracking and the location permission prompt. Add it only when the user's request names location; otherwise mention in the Step-8 summary, in one sentence, that it exists |
+| `OneSignalLocation` | app | **ask** — the documentation marks it optional. It shares the device's location with OneSignal and needs a location permission, so add it only when the user opts in (below) |
+
+### Ask about `OneSignalLocation` (once, before the Step-5 diff)
+
+Skip the question in 2 cases:
+
+- The user's request already says to add location (treat it as yes) or not to add it (treat it as no).
+- A prior install already links `OneSignalLocation`. Keep it and do not ask.
+
+Otherwise ask one structured question (safety contract §14) before you compute the Step-5 diff, so the one approval covers the final change set. If another question is open at that point, put both in the same tool call. Say in one sentence what the module does: OneSignal stores the device's latitude and longitude for location-based segments, after the user grants a location permission. Ask "Do you also want location tracking (the optional `OneSignalLocation` module)?" with these 2 options, in this order and with no "(Recommended)" label:
+
+1. "No, push only"
+2. "Yes, add location"
+
+**On yes**, add these 3 changes to the Step-5 change set:
+
+1. The module. SPM: the `OneSignalLocation` product on the app target, from the same package and exact version. CocoaPods: the resolver's `--line-format podfile-location` line in the app target.
+2. The usage description. Add `NSLocationWhenInUseUsageDescription` to the app's `Info.plist`; on a project that sets Info.plist keys as build settings, add `INFOPLIST_KEY_NSLocationWhenInUseUsageDescription` to Debug and Release instead. Without it, iOS never shows the location prompt and the SDK logs an error. Write one plain sentence about why the app uses location, and tell the user in Step 8 to replace it with their own words, because App Review reads it. Do not add the "Always" keys or the `location` background mode unless the user asks for background location.
+3. Location sharing. Right after `OneSignal.initialize(...)`, add `OneSignal.Location.isShared = true // onesignal:managed v1`. The SDK defaults sharing to off, so without this line the module collects nothing.
+
+Do not call `OneSignal.Location.requestPermission()` at launch: the push request in the verification helper stays the only prompt the setup adds. In the Step-8 summary, name the 2 documented ways to ask for the location permission: a location prompt in an in-app message (no code; `OneSignalInAppMessages` is already linked), or `OneSignal.Location.requestPermission()` at a moment the app chooses.
+
+**On no**, add one sentence to the Step-8 summary: location is an optional module, and a new setup run can add it.
 
 ## Dependency
 
@@ -33,15 +55,16 @@ Detect the existing manager: `Podfile`/`Podfile.lock` → CocoaPods; `Package.sw
 python3 <plugin>/scripts/resolve_sdk_version.py ios --format json   # for the version
 python3 <plugin>/scripts/resolve_sdk_version.py ios --format line --line-format podfile       # app target Podfile lines
 python3 <plugin>/scripts/resolve_sdk_version.py ios --format line --line-format podfile-nse   # NSE target Podfile line
+python3 <plugin>/scripts/resolve_sdk_version.py ios --format line --line-format podfile-location   # app target, only on a location opt-in
 ```
 
 The feed entry is the `OneSignal-iOS-SDK` repository; the SPM package is `OneSignal-XCFramework`, which publishes the same version tags, so the resolver's `version` is the pin for both (the script says so in its `note`).
 
-**Swift Package Manager:** add the package `https://github.com/OneSignal/OneSignal-XCFramework` — **not** `OneSignal-iOS-SDK`, which is the source repository and makes Xcode build the whole SDK — with an **Exact Version** rule set to the resolver's `version`. Map the products per "Which SDK products" above: `OneSignalFramework` and `OneSignalInAppMessages` on the app target, `OneSignalExtension` on the `OneSignalNotificationServiceExtension` target. The most common install mistake is a product on the wrong target: `No such module 'OneSignalFramework'` means the app target lacks it; `No such module 'OneSignalExtension'` means the NSE target lacks it. SPM add is a pbxproj edit (`XCRemoteSwiftPackageReference` + one `XCSwiftPackageProductDependency` per product) — if you cannot edit the package references safely, give the human the exact File ▸ Add Package Dependencies steps with the URL, the version, and the product-to-target table.
+**Swift Package Manager:** add the package `https://github.com/OneSignal/OneSignal-XCFramework` — **not** `OneSignal-iOS-SDK`, which is the source repository and makes Xcode build the whole SDK — with an **Exact Version** rule set to the resolver's `version`. Map the products per "Which SDK products" above: `OneSignalFramework` and `OneSignalInAppMessages` on the app target (plus `OneSignalLocation` on a location opt-in), `OneSignalExtension` on the `OneSignalNotificationServiceExtension` target. The most common install mistake is a product on the wrong target: `No such module 'OneSignalFramework'` means the app target lacks it; `No such module 'OneSignalExtension'` means the NSE target lacks it. SPM add is a pbxproj edit (`XCRemoteSwiftPackageReference` + one `XCSwiftPackageProductDependency` per product) — if you cannot edit the package references safely, give the human the exact File ▸ Add Package Dependencies steps with the URL, the version, and the product-to-target table.
 
 **CLI builds + SPM keychain wall:** `xcodebuild`-driven SPM resolution can pop a macOS **login-keychain password prompt** (and re-prompt on Deny), which stalls headless/agent runs. Pass `-scmProvider system` to `xcodebuild` so package fetching uses system git credentials instead of Xcode's keychain-backed SCM.
 
-**CocoaPods** (`Podfile`) — paste the resolver's `--line-format podfile` output verbatim into the app target and the `--line-format podfile-nse` output into the NSE target (both are exact pins), then `pod repo update && pod install`, and build the `.xcworkspace`. Shape:
+**CocoaPods** (`Podfile`) — paste the resolver's `--line-format podfile` output verbatim into the app target and the `--line-format podfile-nse` output into the NSE target (both are exact pins; on a location opt-in, also the `--line-format podfile-location` line into the app target), then `pod repo update && pod install`, and build the `.xcworkspace`. Shape:
 ```ruby
 target 'YourApp' do
   pod 'OneSignal/OneSignal', 'X.Y.Z' # onesignal:managed v1
@@ -96,7 +119,7 @@ Use the verified template [assets/ios/OneSignalSetupVerification.swift.tmpl](ass
 - register with `OneSignal.User.pushSubscription.addObserver(self)`; also read `OneSignal.User.pushSubscription.id` immediately (race guard).
 - `requestPermission` on iOS DOES take a completion block: `OneSignal.Notifications.requestPermission({ accepted in ... }, fallbackToSettings: false)` (unlike Android's suspend form).
 
-The Step-8 structural self-check (`verify_integration.py --platform ios`) enforces `#if DEBUG`, the real push observer (not NotificationCenter), init in a launch context, the NSE target with `OneSignalExtension` linked, and one App Group shared by the app and extension entitlements. Non-negotiable properties (SKILL.md Step 6):
+The Step-8 structural self-check (`verify_integration.py --platform ios`) enforces `#if DEBUG`, the real push observer (not NotificationCenter), init in a launch context, the NSE target with `OneSignalExtension` linked, one App Group shared by the app and extension entitlements, and, when `OneSignalLocation` is linked, a location usage description. Non-negotiable properties (SKILL.md Step 6):
 - Guard on `#if DEBUG` so it never ships.
 - `OneSignal.Notifications.requestPermission(..., fallbackToSettings: false)` at install — the ONLY permission prompt. `fallbackToSettings` stays `false`: the call runs at launch with no user gesture, and `true` would send a previously-denied user to the Settings app on every debug start.
 - Register the observer AND call `evaluate(OneSignal.User.pushSubscription.id)` immediately (race guard).

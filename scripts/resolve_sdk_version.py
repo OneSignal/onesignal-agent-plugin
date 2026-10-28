@@ -47,7 +47,8 @@ PLATFORMS = {
     # OneSignal-XCFramework, which publishes the same version tags, so the pin
     # applies to both. The app target takes OneSignalFramework and
     # OneSignalInAppMessages; the Notification Service Extension target takes
-    # OneSignalExtension; OneSignalLocation is added only on request.
+    # OneSignalExtension; OneSignalLocation is added to the app target only when
+    # the user opts in.
     "ios": {
         "feed": "iOS",
         "coordinate": "OneSignal-XCFramework (SPM) / OneSignal (CocoaPods)",
@@ -58,6 +59,7 @@ PLATFORMS = {
             "podfile": "pod 'OneSignal/OneSignal', '{v}' # onesignal:managed v1\n"
                        "pod 'OneSignal/OneSignalInAppMessages', '{v}' # onesignal:managed v1",
             "podfile-nse": "pod 'OneSignal/OneSignal', '{v}' # onesignal:managed v1",
+            "podfile-location": "pod 'OneSignal/OneSignalLocation', '{v}' # onesignal:managed v1",
         },
         "default_line": "spm",
         "note": "The feed lists OneSignal-iOS-SDK; OneSignal-XCFramework publishes the same "

@@ -290,7 +290,7 @@ Prefer the OneSignal MCP server's tools over raw curl for API reads if it is con
 
 ## Step 5 — Declare the allow-list, compute diffs, get ONE approval (safety contract §4–6)
 
-Open the platform reference file for the detected platform and follow its install steps. Before writing anything, **declare the complete file allow-list** for this platform — typically:
+Open the platform reference file for the detected platform and follow its install steps. If the reference asks a product question (native iOS asks about `OneSignalLocation`), ask it before you compute the diffs, so the one approval covers the final change set. Before writing anything, **declare the complete file allow-list** for this platform — typically:
 
 - the dependency manifest (package.json / Podfile / build.gradle(.kts) / pubspec.yaml / app.json)
 - the SDK init / lifecycle file (AppDelegate, Application subclass, `App.tsx`/`_layout.tsx`, `main.dart`, `<head>`/root layout for web)

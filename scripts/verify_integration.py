@@ -436,6 +436,25 @@ class Checks:
                  "" if ok else "the App Group differs between the app (%s) and the extension (%s); "
                  "both must name the same group" % (", ".join(sorted(app_groups)), ", ".join(sorted(nse_groups))))
 
+    def ios_location_usage_description(self):
+        # With OneSignalLocation linked, iOS shows no location prompt unless the
+        # app declares a usage description, so the module never gets a location.
+        manifests = [fp for fp in walk_files(self.root)
+                     if os.path.basename(fp) in ("project.pbxproj", "Podfile")]
+        blob = "\n".join(read(fp) for fp in manifests)
+        linked = re.search(r"productName\s*=\s*OneSignalLocation|pod\s+['\"]OneSignal/OneSignalLocation",
+                           blob) is not None
+        if not linked:
+            self.add("ios_location_usage_description", True, "warn",
+                     "OneSignalLocation not linked; no usage description required")
+            return
+        key = re.compile(r"NSLocation(WhenInUse|AlwaysAndWhenInUse|Always)UsageDescription")
+        declared = any(key.search(read(fp)) for fp in walk_files(self.root)
+                       if fp.endswith((".plist", "project.pbxproj")))
+        self.add("ios_location_usage_description", declared, "warn",
+                 "" if declared else "OneSignalLocation is linked but no NSLocationWhenInUseUsageDescription "
+                 "is in Info.plist or the build settings; iOS will not show the location prompt (ios.md)")
+
     # ---- expo / react-native (shared package: react-native-onesignal) ----
     def rn_package_present(self):
         pkgs = [fp for fp in walk_files(self.root) if os.path.basename(fp) == "package.json"]
@@ -648,7 +667,7 @@ class Checks:
             "unity": [],
             "ios": [self.ios_init_in_launch, self.ios_verification_debug_guarded,
                     self.ios_verification_uses_push_observer, self.ios_nse_present,
-                    self.ios_app_group_matches],
+                    self.ios_app_group_matches, self.ios_location_usage_description],
             "expo": [self.expo_plugin_registered, self.expo_plugin_first,
                      self.rn_package_present, self.rn_init_present, self.rn_verification_dev_guarded],
             "react-native": [self.rn_package_present, self.rn_init_present, self.rn_verification_dev_guarded],
