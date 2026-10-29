@@ -218,16 +218,22 @@ def fenced_code_lines(text):
     Only the parent-segment check skips these lines: a `../` inside a fence is
     content the agent writes into the user's project (a pbxproj `rpath`, for
     example), not a link the plugin resolves. Every other check still reads
-    fenced lines, because the `<plugin>/scripts/` calls live in them.
+    fenced lines, because the `<plugin>/scripts/` calls live in them. A fence
+    that never closes exempts nothing, so a stray fence cannot hide the rest of
+    the file from the check.
     """
     numbers = set()
-    in_fence = False
+    block = None
     for lineno, line in enumerate(text.splitlines(), 1):
         if line.lstrip().startswith("```"):
-            in_fence = not in_fence
+            if block is None:
+                block = []
+            else:
+                numbers.update(block)
+                block = None
             continue
-        if in_fence:
-            numbers.add(lineno)
+        if block is not None:
+            block.append(lineno)
     return numbers
 
 
@@ -674,6 +680,14 @@ def self_test(source):
         with open(os.path.join(bad, "skills", "setup", "SKILL.md"), "a", encoding="utf-8") as handle:
             handle.write("\nCopy the file from ../shared/template.swift.\n")
         ok = expect_failure("a ../ path in prose outside a code fence", bad, os.path.join(tmp, "bad-parent-path-in-prose-work"),
+                            "relative path leaves the skill folder") and ok
+
+        bad = os.path.join(tmp, "bad-parent-path-after-unclosed-fence")
+        copy_source_subset(source, bad)
+        with open(os.path.join(bad, "skills", "setup", "SKILL.md"), "a", encoding="utf-8") as handle:
+            handle.write("\n```text\nCopy the file from ../shared/template.swift.\n")
+        ok = expect_failure("a ../ path after a code fence that never closes", bad,
+                            os.path.join(tmp, "bad-parent-path-after-unclosed-fence-work"),
                             "relative path leaves the skill folder") and ok
 
         bad = os.path.join(tmp, "bad-missing-reference")
