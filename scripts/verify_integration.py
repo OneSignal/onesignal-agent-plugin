@@ -252,13 +252,18 @@ class Checks:
             ),
         )
 
-    def android_no_stray_google_services(self):
+    def android_google_services_plugin_without_file(self):
+        """The Gradle plugin without google-services.json fails the build.
+
+        The file alone is fine, and is recommended on SDK 5.11.0+, so its mere
+        presence is not a finding. Applying the plugin with no file to process
+        is, because the build fails with "File google-services.json is missing".
+        """
         gs = [fp for fp in walk_files(self.root) if os.path.basename(fp) == "google-services.json"]
-        firebase = grep(self.root, r"com\.google\.firebase")
-        # only a problem if google-services.json exists AND the app doesn't otherwise use Firebase
-        bad = bool(gs) and not firebase
-        self.add("android_no_stray_google_services", not bad, "warn",
-                 "" if not bad else "google-services.json present but no Firebase client usage — OneSignal does NOT require it")
+        plugin = grep(self.root, r"com\.google\.gms(\.|:)google-services")
+        bad = bool(plugin) and not gs
+        self.add("android_google_services_plugin_without_file", not bad, "error",
+                 "" if not bad else "com.google.gms.google-services is applied but no google-services.json was found \u2014 the build will fail. Add the file from the Firebase console, or remove the plugin.")
 
     def android_requestpermission_not_callback(self):
         # OneSignal.Notifications.requestPermission is `suspend fun(Boolean): Boolean`
@@ -589,7 +594,7 @@ class Checks:
         by_platform = {
             "android": [self.android_init_in_application, self.android_manifest_registers_app,
                         self.android_manifest_no_node_replace,
-                        self.android_no_stray_google_services, self.android_verification_debug_guarded,
+                        self.android_google_services_plugin_without_file, self.android_verification_debug_guarded,
                         self.android_requestpermission_not_callback, self.android_buildconfig_feature_enabled,
                         self.android_coroutines_on_classpath],
             # Unity ships via .unitypackage/UPM (a GUI step, no text manifest we can
