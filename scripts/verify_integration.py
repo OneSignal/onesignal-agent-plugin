@@ -111,6 +111,73 @@ def spm_range_hits(root, files=None):
     return hits
 
 
+NSE_TARGET = "OneSignalNotificationServiceExtension"
+# A pod line that links OneSignalExtension. The bare pod installs OneSignalComplete.
+_NSE_POD = re.compile(r"pod\s+['\"]OneSignal(?:XCFramework)?"
+                      r"(?:/(?:OneSignal|OneSignalExtension|OneSignalComplete))?['\"]")
+_PBX_OBJECT = re.compile(r"^\s*(\w+)\s*(?:/\*.*?\*/\s*)?=\s*\{", re.M)
+_RUBY_BLOCK_OPEN = re.compile(r"\bdo\b(\s*\|[^|]*\|)?\s*$|^\s*(if|unless|case|begin|while|until)\b")
+
+
+def podfile_target_block(text, name):
+    """Return the body of `target '<name>' do ... end` in a Podfile, or None."""
+    lines = text.splitlines()
+    start = re.compile(r"^\s*target\s+['\"]%s['\"]\s+do\b" % re.escape(name))
+    for i, line in enumerate(lines):
+        if not start.search(line):
+            continue
+        depth, body = 1, []
+        for inner in lines[i + 1:]:
+            code = inner.split("#", 1)[0]
+            if _RUBY_BLOCK_OPEN.search(code):
+                depth += 1
+            elif re.match(r"^\s*end\b", code):
+                depth -= 1
+                if depth == 0:
+                    break
+            body.append(inner)
+        return "\n".join(body)
+    return None
+
+
+def pbx_objects(text):
+    """Map each `ID = { ... }` entry in a project.pbxproj to the texts inside its
+    braces. A balanced-brace scan, no full plist parser. An ID can occur more than
+    once (PBXProject's TargetAttributes reuses each target ID as a key)."""
+    objects = {}
+    for m in _PBX_OBJECT.finditer(text):
+        depth, end = 0, m.end() - 1
+        for end in range(m.end() - 1, len(text)):
+            if text[end] == "{":
+                depth += 1
+            elif text[end] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+        objects.setdefault(m.group(1), []).append(text[m.end():end])
+    return objects
+
+
+def pbx_nse_links_extension(text):
+    """True when the NSE native target lists a package product dependency whose
+    productName is OneSignalExtension. A product on the app target does not count."""
+    objects = pbx_objects(text)
+    for body in (b for bodies in objects.values() for b in bodies):
+        # Read only the object's own keys: the `objects = { ... }` container
+        # holds every target, so nested braces must not count.
+        prev = None
+        while prev != body:
+            prev, body = body, re.sub(r"\{[^{}]*\}", "", body)
+        if not (re.search(r"isa\s*=\s*PBXNativeTarget\s*;", body)
+                and re.search(r"\bname\s*=\s*\"?%s\"?\s*;" % NSE_TARGET, body)):
+            continue
+        deps = re.search(r"packageProductDependencies\s*=\s*\(([^)]*)\)", body)
+        for ref in re.findall(r"(\w+)\s*/\*", deps.group(1)) if deps else []:
+            if any(re.search(r"productName\s*=\s*\"?OneSignalExtension\"?\s*;", b) for b in objects.get(ref, [])):
+                return True
+    return False
+
+
 _PBX_REPO_URL = re.compile(r"repositoryURL\s*=\s*\"?([^\";\n]+)")
 _PBX_REQ_KIND = re.compile(r"kind\s*=\s*(\w+)")
 
@@ -391,21 +458,24 @@ class Checks:
         # The Notification Service Extension is part of the default native install
         # (ios.md): without it, images, badges, and confirmed delivery fail silently
         # while plain pushes still arrive, so nothing else in this check catches it.
-        manifests = [fp for fp in walk_files(self.root)
-                     if os.path.basename(fp) in ("project.pbxproj", "Podfile")]
-        blob = "\n".join(read(fp) for fp in manifests)
-        target = "OneSignalNotificationServiceExtension" in blob
-        linked = re.search(r"productName\s*=\s*OneSignalExtension|pod\s+['\"]OneSignal", blob) is not None
+        pbx = [fp for fp in walk_files(self.root) if os.path.basename(fp) == "project.pbxproj"]
+        pods = [fp for fp in walk_files(self.root) if os.path.basename(fp) == "Podfile"]
+        target = any(NSE_TARGET in read(fp) for fp in pbx + pods)
+        linked = (any(pbx_nse_links_extension(read(fp)) for fp in pbx)
+                  or any(_NSE_POD.search(podfile_target_block(read(fp), NSE_TARGET) or "") for fp in pods))
         service = [fp for fp in walk_files(self.root)
                    if os.path.basename(fp) in ("NotificationService.swift", "NotificationService.m")
-                   and "OneSignalExtension" in read(fp)]
+                   and "OneSignalExtension" in read(fp)
+                   and "didReceiveNotificationExtensionRequest" in read(fp)]
         missing = []
         if not target:
             missing.append("no OneSignalNotificationServiceExtension target in project.pbxproj or Podfile")
         if not service:
-            missing.append("no NotificationService.swift/.m that forwards to OneSignalExtension")
+            missing.append("no NotificationService.swift/.m that calls "
+                           "OneSignalExtension.didReceiveNotificationExtensionRequest")
         if not linked:
-            missing.append("OneSignalExtension (SPM) or the OneSignal pod is not linked to the extension")
+            missing.append("the extension target does not link OneSignalExtension (SPM) or a OneSignal pod "
+                           "inside its Podfile target block")
         self.add("ios_nse_present", not missing, "warn",
                  "" if not missing else "; ".join(missing) + " (ios-nse.md)")
 
@@ -435,6 +505,19 @@ class Checks:
         self.add("ios_app_group_matches", ok, "error",
                  "" if ok else "the App Group differs between the app (%s) and the extension (%s); "
                  "both must name the same group" % (", ".join(sorted(app_groups)), ", ".join(sorted(nse_groups))))
+
+    def ios_in_app_messages_linked(self):
+        # The default install links OneSignalInAppMessages (ios.md); in-app
+        # messages sent from the dashboard render only when the module is linked.
+        manifests = [fp for fp in walk_files(self.root)
+                     if os.path.basename(fp) in ("project.pbxproj", "Podfile")]
+        blob = "\n".join(read(fp) for fp in manifests)
+        linked = re.search(r"productName\s*=\s*\"?OneSignalInAppMessages\"?\s*;"
+                           r"|pod\s+['\"]OneSignal(?:XCFramework)?(?:/(?:OneSignalInAppMessages|OneSignalComplete))?['\"]",
+                           blob) is not None
+        self.add("ios_in_app_messages_linked", linked, "warn",
+                 "" if linked else "OneSignalInAppMessages is not linked; in-app messages from the dashboard "
+                 "will not render (ios.md)")
 
     def ios_location_usage_description(self):
         # With OneSignalLocation linked, iOS shows no location prompt unless the
@@ -667,7 +750,8 @@ class Checks:
             "unity": [],
             "ios": [self.ios_init_in_launch, self.ios_verification_debug_guarded,
                     self.ios_verification_uses_push_observer, self.ios_nse_present,
-                    self.ios_app_group_matches, self.ios_location_usage_description],
+                    self.ios_app_group_matches, self.ios_in_app_messages_linked,
+                    self.ios_location_usage_description],
             "expo": [self.expo_plugin_registered, self.expo_plugin_first,
                      self.rn_package_present, self.rn_init_present, self.rn_verification_dev_guarded],
             "react-native": [self.rn_package_present, self.rn_init_present, self.rn_verification_dev_guarded],
