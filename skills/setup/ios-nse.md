@@ -6,7 +6,7 @@ Reference for the `setup` skill, loaded from [ios.md](ios.md). The Notification 
 
 - The `OneSignalNotificationServiceExtension` target exists and builds.
 - The NSE target links `OneSignalExtension` (SPM) or the `OneSignal/OneSignal` pod (CocoaPods).
-- The App Group `group.<MAIN_APP_BUNDLE_ID>.onesignal` is in the entitlements of **both** the main app target and the NSE target, with the same string.
+- The App Group `group.__MAIN_APP_BUNDLE_ID__.onesignal` is in the entitlements of **both** the main app target and the NSE target, with the same string.
 - The NSE deployment target equals the main app target's.
 - `NotificationService` forwards to `OneSignalExtension.didReceiveNotificationExtensionRequest`.
 - The main app embeds the `.appex` in an `Embed Foundation Extensions` build phase.
@@ -37,7 +37,7 @@ Add the same App Group to the **main app** `.entitlements`, next to `aps-environ
 ```xml
 <key>com.apple.security.application-groups</key>
 <array>
-	<string>group.MAIN_APP_BUNDLE_ID.onesignal</string>
+	<string>group.__MAIN_APP_BUNDLE_ID__.onesignal</string>
 </array>
 ```
 
@@ -45,7 +45,11 @@ Add the same App Group to the **main app** `.entitlements`, next to `aps-environ
 
 Prefer the text edit: the user's host usually has no Xcode UI, and the objects below are what File ▸ New ▸ Target writes. Preview them in the Step-5 diff like every other pbxproj edit (safety contract §5). If the pbxproj format does not match the shapes below, stop the edit and hand the target creation to the human (File ▸ New ▸ Target ▸ Notification Service Extension, named `OneSignalNotificationServiceExtension`); then still write the 3 files, the App Group, and the product link, and report `setup.platform_config fail capability_manual` ([ios.md](ios.md) → Checkpoint).
 
-Every object needs a unique 24-character hex ID. The placeholders `NSE0000000000000000000X` below stand for IDs you generate; check that none collides with an existing ID. Replace `MAIN_APP_BUNDLE_ID`, `<PROJECT_OBJECT_ID>`, and the deployment target with the project's values.
+Every object needs a unique 24-character hex ID. The placeholders `NSE0000000000000000000X` below stand for IDs you generate; check that none collides with an existing ID. Replace `__MAIN_APP_BUNDLE_ID__` (the main app target's Bundle ID, the same value as in the entitlements template), `<PROJECT_OBJECT_ID>`, and the deployment target with the project's values. No placeholder may remain in a written file.
+
+### 0. Check for an existing target first
+
+pbxproj objects cannot hold the `onesignal:managed v1` marker, so a second run cannot find its own objects by the marker. Before you add anything, search `project.pbxproj` for a `PBXNativeTarget` whose `name` is `OneSignalNotificationServiceExtension` (or any target with `productType = "com.apple.product-type.app-extension"` that already has a `NotificationService` class calling `OneSignalExtension`). If one exists, do not add the objects below (safety contract §2): repair the existing target instead. Compare it with the "Required outcomes" list, and put only the missing parts in the Step-5 diff (the product link, the App Group, the embed phase, or the 3 files).
 
 ### 1. Product reference
 
@@ -147,7 +151,7 @@ NSE00000000000000000010 /* Debug */ = {
 			"@executable_path/../../Frameworks",
 		);
 		MARKETING_VERSION = 1.0;
-		PRODUCT_BUNDLE_IDENTIFIER = MAIN_APP_BUNDLE_ID.OneSignalNotificationServiceExtension;
+		PRODUCT_BUNDLE_IDENTIFIER = __MAIN_APP_BUNDLE_ID__.OneSignalNotificationServiceExtension;
 		PRODUCT_NAME = "$(TARGET_NAME)";
 		SKIP_INSTALL = YES;
 		SWIFT_EMIT_LOC_STRINGS = YES;
@@ -223,7 +227,7 @@ end
 
 ### 7. Check the edit
 
-Run `xcodebuild -list -project <App>.xcodeproj`. A malformed pbxproj fails at once; a good one lists both targets. Then build with `-scmProvider system` ([ios.md](ios.md)): no `No such module 'OneSignalExtension'`, and the built app has `PlugIns/OneSignalNotificationServiceExtension.appex`. Keep code signing on: a build with signing disabled drops `aps-environment` and the App Group from the binary, and the SDK then reports the Push capability as missing.
+Run `xcodebuild -list -project <App>.xcodeproj`. A malformed pbxproj fails at once; a good one lists both targets. Then build with `-scmProvider system` ([ios.md](ios.md)); on a CocoaPods project, build the workspace that `pod install` writes (`-workspace <App>.xcworkspace -scheme <App>`), because a `-project` build does not link the pods: no `No such module 'OneSignalExtension'`, and the built app has `PlugIns/OneSignalNotificationServiceExtension.appex`. Keep code signing on: a build with signing disabled drops `aps-environment` and the App Group from the binary, and the SDK then reports the Push capability as missing.
 
 ## Troubleshooting
 

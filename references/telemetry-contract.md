@@ -76,9 +76,12 @@ verification helper both exist, because the prerequisites span both steps:
   `remote-notification`, the `aps-environment` entitlement, the pbxproj build settings,
   the `requestPermission` call in the verification helper, the
   `OneSignalNotificationServiceExtension` target with `OneSignalExtension` linked, and the
-  same App Group in both entitlements files. When the pbxproj format does not match and
-  the capability toggle or the NSE target creation goes to the human in Xcode, report
-  `fail capability_manual` at the hand-off and continue. Like `deferred` on the
+  same App Group in both entitlements files. `ok` needs the structural self-check
+  (`verify_integration.py --platform ios`) to pass `ios_nse_present` and
+  `ios_app_group_matches`, not only the agent's own reading of the edits. When the
+  pbxproj format does not match and the capability toggle or the NSE target creation
+  goes to the human in Xcode, or when one of those 2 rows still fails after a repair,
+  report `fail capability_manual` at the hand-off and continue. Like `deferred` on the
   credentials gate, this records a drop out of agent automation, not a skill stop.
 - `android` — the permission state: `INTERNET` present in the manifest, no manual
   `POST_NOTIFICATIONS` line (the SDK manifest-merges it), and the `requestPermission`
@@ -198,8 +201,9 @@ correct code that does not compile until the app module declares one more thing.
 
 `capability_manual`: the iOS pbxproj edits could not apply safely, so the Push
 Notifications and Background Modes toggles, or the creation of the Notification Service
-Extension target, went to the human in Xcode. The run cannot observe when the human
-completes them, so the milestone records the hand-off itself.
+Extension target, went to the human in Xcode. The same class covers an edit that applied
+but still fails the extension or App Group row of the self-check after a repair. The run
+cannot observe when the human completes them, so the milestone records the hand-off itself.
 
 `worker_scope_conflict`: the site already registers a service worker at the scope
 OneSignal needs. `setup.platform_config` reports the resolved conflict — the combine or

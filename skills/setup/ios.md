@@ -75,7 +75,7 @@ target 'OneSignalNotificationServiceExtension' do
   pod 'OneSignal/OneSignal', 'X.Y.Z' # onesignal:managed v1
 end
 ```
-The `OneSignal` pod vendors the same XCFrameworks as the SPM package, so CocoaPods needs no repository change. CocoaPods 1.16.2+ is required; on an Xcode 16 project, `Unable to find compatibility version string for object version '70'` means the `xcodeproj` gem is too old — the documented workaround is to set `objectVersion = 55;` in the pbxproj before `pod install`.
+The `OneSignal` pod vendors the same XCFrameworks as the SPM package, so CocoaPods needs no repository change. CocoaPods 1.16.2+ is required. Do not change `objectVersion` by default. Only when `pod install` fails with `Unable to find compatibility version string for object version '70'` (the `xcodeproj` gem is too old for an Xcode 16 project), the documented workaround is `objectVersion = 55;` in the pbxproj. That line downgrades the project file format, so it is a new edit: first suggest a CocoaPods update (`gem update cocoapods` or `bundle update cocoapods`). If the user cannot update, show the one-line change as its own diff, name the revert (set `objectVersion` back to `70`), and ask for approval before you write it and run `pod install` again.
 
 ## Initialize at launch
 
@@ -102,7 +102,7 @@ SwiftUI `@main` app with no AppDelegate: call the same two lines from the `App`'
    ```
 3. For Xcode 16+ file-system-synchronized projects (`PBXFileSystemSynchronizedRootGroup`), add a `PBXFileSystemSynchronizedBuildFileExceptionSet` excluding `Info.plist` from the resource copy phase to avoid "Multiple commands produce Info.plist". Skip step 3 for classic `PBXGroup`/`PBXFileReference` projects. The `PBXFileSystemSynchronizedBuildFileExceptionSet` shape is the one in [ios-nse.md](ios-nse.md) step 3, with the app target and `Info.plist` in place of the extension's values; pbxproj edits are fragile, so preview them precisely in the diff (safety contract §5) and if the format doesn't match, hand the capability toggle to the human via Xcode's Signing & Capabilities tab instead.
 
-Add `aps-environment` to the `.entitlements` file (`development`, or `production` for release), and the App Group `group.<MAIN_APP_BUNDLE_ID>.onesignal` next to it ([ios-nse.md](ios-nse.md) → "App Group rules"). If the target has no `CODE_SIGN_ENTITLEMENTS` setting yet, add it to the Debug and Release configurations, and on an Xcode 16+ synchronized project list the entitlements file in the same `membershipExceptions` as `Info.plist`. Deployment target iOS 12.0+; do not change it if already set.
+Add `aps-environment` to the `.entitlements` file (`development`, or `production` for release), and the App Group `group.__MAIN_APP_BUNDLE_ID__.onesignal` next to it ([ios-nse.md](ios-nse.md) → "App Group rules"). If the target has no `CODE_SIGN_ENTITLEMENTS` setting yet, add it to the Debug and Release configurations, and on an Xcode 16+ synchronized project list the entitlements file in the same `membershipExceptions` as `Info.plist`. Deployment target iOS 12.0+; do not change it if already set.
 
 ## Notification Service Extension + App Group
 
@@ -119,7 +119,7 @@ Use the verified template [assets/ios/OneSignalSetupVerification.swift.tmpl](ass
 - register with `OneSignal.User.pushSubscription.addObserver(self)`; also read `OneSignal.User.pushSubscription.id` immediately (race guard).
 - `requestPermission` on iOS DOES take a completion block: `OneSignal.Notifications.requestPermission({ accepted in ... }, fallbackToSettings: false)` (unlike Android's suspend form).
 
-The Step-8 structural self-check (`verify_integration.py --platform ios`) enforces `#if DEBUG`, the real push observer (not NotificationCenter), init in a launch context, the NSE target with `OneSignalExtension` linked, one App Group shared by the app and extension entitlements, and, when `OneSignalLocation` is linked, a location usage description. Non-negotiable properties (SKILL.md Step 6):
+The Step-8 structural self-check (`verify_integration.py --platform ios`) fails the run on a missing `#if DEBUG` guard, a NotificationCenter observer in place of the real push observer, or 2 different App Groups in the app and extension entitlements. It reports, as warnings only, init outside a launch context, a missing NSE target or `OneSignalExtension` link, a missing App Group, a missing `OneSignalInAppMessages` link, and, when `OneSignalLocation` is linked, a missing location usage description. Fix every warning the iOS install should have prevented. Properties the helper must have (SKILL.md Step 6):
 - Guard on `#if DEBUG` so it never ships.
 - `OneSignal.Notifications.requestPermission(..., fallbackToSettings: false)` at install — the ONLY permission prompt. `fallbackToSettings` stays `false`: the call runs at launch with no user gesture, and `true` would send a previously-denied user to the Settings app on every debug start.
 - Register the observer AND call `evaluate(OneSignal.User.pushSubscription.id)` immediately (race guard).
@@ -137,10 +137,14 @@ apply, consent included). Run exactly one of:
 - All 6 prerequisites are in place — `UIBackgroundModes` `remote-notification`, the
   `aps-environment` entitlement, the pbxproj build settings, the `requestPermission`
   call in the helper, the `OneSignalNotificationServiceExtension` target with
-  `OneSignalExtension` linked, and the same App Group in both entitlements files:
+  `OneSignalExtension` linked, and the same App Group in both entitlements files. Do not
+  decide the last 2 from your own reading: run the Step-8 self-check
+  (`verify_integration.py --platform ios`) first, and both `ios_nse_present` and
+  `ios_app_group_matches` must pass:
   `bash <plugin>/scripts/checkpoint.sh setup.platform_config ok`
 - The pbxproj format did not match and you handed the capability toggles or the NSE
-  target creation to the human in Xcode:
+  target creation to the human in Xcode, or one of those 2 rows still fails after you
+  repair it:
   `bash <plugin>/scripts/checkpoint.sh setup.platform_config fail capability_manual`
   — report it at the hand-off and continue; the fail row records the drop out of agent
   automation, not a skill stop.

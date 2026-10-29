@@ -43,12 +43,7 @@ PLATFORMS = {
         },
         "default_line": "gradle-kts",
     },
-    # The feed entry is the OneSignal-iOS-SDK repository. The SPM package lives in
-    # OneSignal-XCFramework, which publishes the same version tags, so the pin
-    # applies to both. The app target takes OneSignalFramework and
-    # OneSignalInAppMessages; the Notification Service Extension target takes
-    # OneSignalExtension; OneSignalLocation is added to the app target only when
-    # the user opts in.
+    # OneSignalLocation is opt-in, so only podfile-location names it.
     "ios": {
         "feed": "iOS",
         "coordinate": "OneSignal-XCFramework (SPM) / OneSignal (CocoaPods)",

@@ -303,7 +303,7 @@ Touching anything outside this list requires re-confirming with the user. Then c
 
 **Checkpoint:** after the change set is applied, `setup.install_applied ok`. If the user rejected the diff, `fail diff_rejected` and stop. If you had to change something outside the minimal integration to make it work, use `ok_after_fix` with the registered class: `minsdk_floor` (raised `minSdk`), `kotlin_stdlib_floor`, `agp_floor` (bumped AGP), `dependency_conflict`, `manifest_merger`, `buildconfig_disabled`. Classes come from the contract's list — never invent one at the call site.
 
-Match the repo's existing architecture, style, and package manager. No repo-wide reformatting, no import reordering, no unrelated dependency bumps (safety contract §7). Minimal integration only: SDK init in the correct lifecycle spot plus what the verification helper needs — **no** extra OneSignal features unless the user asked (safety contract §8).
+Match the repo's existing architecture, style, and package manager. No repo-wide reformatting, no import reordering, no unrelated dependency bumps (safety contract §7). Minimal integration only: SDK init in the correct lifecycle spot plus what the verification helper needs — **no** extra OneSignal features unless the user asked (safety contract §8). Native iOS is the exception that §8 names: its minimal integration also includes the Notification Service Extension, the App Group, and `OneSignalInAppMessages`, so put them in the diff ([ios.md](ios.md)).
 
 ### Centralized wrapper (all platforms)
 
