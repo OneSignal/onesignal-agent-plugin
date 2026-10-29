@@ -1,0 +1,83 @@
+// onesignal:managed v1
+// Centralized OneSignal wrapper: the ONLY place OneSignal SDK calls live
+// (except the debug-only verification helper). Place in your app's package and
+// set the package line to match.
+//
+// Placeholder: __PACKAGE__ (this file's package / module namespace).
+//
+// Use this variant ONLY when the pinned SDK is 5.11.0 or newer. Composite
+// login(externalId, profile) does not exist before 5.11.0; against an older pin
+// this file does not compile. Use OneSignalManager.kt.tmpl instead.
+//
+// `login` is a suspend fun, which needs only kotlin-stdlib, so this file adds no
+// kotlinx-coroutines requirement. Verified by compiling it with zero coroutines
+// jars on the classpath. The CALL SITE needs a scope (lifecycleScope /
+// viewModelScope), which activity-ktx and lifecycle-ktx already provide.
+package __PACKAGE__
+
+import android.content.Context
+import android.util.Log
+import com.onesignal.LoginData
+import com.onesignal.OneSignal
+import com.onesignal.OneSignalResult
+import com.onesignal.OneSignalUserProfile
+import com.onesignal.debug.LogLevel
+
+object OneSignalManager {
+    private const val TAG = "OneSignalManager"
+
+    private var initialized = false
+
+    fun initialize(context: Context, appId: String) {
+        if (initialized) return
+        OneSignal.Debug.logLevel = LogLevel.VERBOSE // remove for production
+        OneSignal.initWithContext(context.applicationContext, appId)
+        initialized = true
+    }
+
+    /**
+     * Identifies the user and sets email, SMS, and tags in one request.
+     *
+     * Pass only what the app actually knows. A null [email] or [smsE164] is
+     * omitted, and a null [emailSubscribed] / [smsSubscribed] sends no status,
+     * which leaves an address that already exists as it is. Only pass `true`
+     * where the user consented to that channel: it resubscribes an address that
+     * previously opted out.
+     *
+     * [smsE164] must be E.164 with the leading '+', e.g. "+15551234567".
+     */
+    suspend fun login(
+        externalId: String,
+        email: String? = null,
+        smsE164: String? = null,
+        tags: Map<String, String> = emptyMap(),
+        emailSubscribed: Boolean? = null,
+        smsSubscribed: Boolean? = null,
+    ): OneSignalResult<LoginData> {
+        val profile = OneSignalUserProfile.builder()
+            .setEmail(email)
+            .setSms(smsE164)
+            .setTags(tags)
+            .apply {
+                emailSubscribed?.let { setEmailEnabled(it) }
+                smsSubscribed?.let { setSmsEnabled(it) }
+            }
+            .build()
+
+        val result = OneSignal.login(externalId, profile)
+        if (!result.isSuccess) {
+            // The device is on the new external ID regardless, so report and move on.
+            Log.w(TAG, "login failed: ${result.error?.first?.code} ${result.error?.first?.message}")
+        }
+        return result
+    }
+
+    fun logout() = OneSignal.logout()
+
+    /** For an address the user supplies after sign-in. Always sends it subscribed. */
+    fun setEmail(email: String) = OneSignal.User.addEmail(email)
+
+    fun setSmsNumber(number: String) = OneSignal.User.addSms(number)
+
+    fun setTag(key: String, value: String) = OneSignal.User.addTag(key, value)
+}
