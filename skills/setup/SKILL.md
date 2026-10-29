@@ -290,12 +290,12 @@ Prefer the OneSignal MCP server's tools over raw curl for API reads if it is con
 
 ## Step 5 — Declare the allow-list, compute diffs, get ONE approval (safety contract §4–6)
 
-Open the platform reference file for the detected platform and follow its install steps. Before writing anything, **declare the complete file allow-list** for this platform — typically:
+Open the platform reference file for the detected platform and follow its install steps. If the reference asks a product question (native iOS asks about `OneSignalLocation`), ask it before you compute the diffs, so the one approval covers the final change set. Before writing anything, **declare the complete file allow-list** for this platform — typically:
 
 - the dependency manifest (package.json / Podfile / build.gradle(.kts) / pubspec.yaml / app.json)
 - the SDK init / lifecycle file (AppDelegate, Application subclass, `App.tsx`/`_layout.tsx`, `main.dart`, `<head>`/root layout for web)
 - ONE centralized wrapper module (see below)
-- platform config files strictly required by the matrix (AndroidManifest, Info.plist + pbxproj, entitlements, web service worker in `public/`)
+- platform config files strictly required by the matrix (AndroidManifest, Info.plist + pbxproj, entitlements, the iOS `OneSignalNotificationServiceExtension/` folder, web service worker in `public/`)
 - ONE debug-only verification helper file
 - `.gitignore` and, if needed, `.env` + `.env.example`
 
@@ -303,7 +303,7 @@ Touching anything outside this list requires re-confirming with the user. Then c
 
 **Checkpoint:** after the change set is applied, `setup.install_applied ok`. If the user rejected the diff, `fail diff_rejected` and stop. If you had to change something outside the minimal integration to make it work, use `ok_after_fix` with the registered class: `minsdk_floor` (raised `minSdk`), `kotlin_stdlib_floor`, `agp_floor` (bumped AGP), `dependency_conflict`, `manifest_merger`, `buildconfig_disabled`. Classes come from the contract's list — never invent one at the call site.
 
-Match the repo's existing architecture, style, and package manager. No repo-wide reformatting, no import reordering, no unrelated dependency bumps (safety contract §7). Minimal integration only: SDK init in the correct lifecycle spot plus what the verification helper needs — **no** extra OneSignal features unless the user asked (safety contract §8).
+Match the repo's existing architecture, style, and package manager. No repo-wide reformatting, no import reordering, no unrelated dependency bumps (safety contract §7). Minimal integration only: SDK init in the correct lifecycle spot plus what the verification helper needs — **no** extra OneSignal features unless the user asked (safety contract §8). Native iOS is the exception that §8 names: its minimal integration also includes the Notification Service Extension, the App Group, and `OneSignalInAppMessages`, so put them in the diff ([ios.md](ios.md)).
 
 ### Centralized wrapper (all platforms)
 
