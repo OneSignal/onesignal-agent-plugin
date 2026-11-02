@@ -67,12 +67,34 @@ public enum OneSignal {
 }
 SW
 
+# --- Faithful OneSignalExtension stub (validated against OneSignalExtension.h) ---
+# The header has no nullability region, so Swift imports the ObjC class methods
+# with optional parameters and an optional return; the return is discardable.
+cat > "$WORK/OneSignalExtension.swift" <<'SW'
+import Foundation
+import UserNotifications
+public class OneSignalExtension: NSObject {
+    @discardableResult
+    public class func didReceiveNotificationExtensionRequest(
+        _ request: UNNotificationRequest, with replacementContent: UNMutableNotificationContent?,
+        withContentHandler contentHandler: ((UNNotificationContent) -> Void)?
+    ) -> UNMutableNotificationContent? { nil }
+    @discardableResult
+    public class func serviceExtensionTimeWillExpireRequest(
+        _ request: UNNotificationRequest, with replacementContent: UNMutableNotificationContent?
+    ) -> UNMutableNotificationContent? { nil }
+}
+SW
+
 sc() { xcrun --sdk iphonesimulator swiftc -target "$TARGET" "$@"; }
 
-echo "building OneSignal stub module..."
+echo "building OneSignal stub modules..."
 sc -emit-module -module-name OneSignalFramework \
    -emit-module-path "$WORK/out/OneSignalFramework.swiftmodule" \
    -parse-as-library "$WORK/OneSignalFramework.swift"
+sc -emit-module -module-name OneSignalExtension \
+   -emit-module-path "$WORK/out/OneSignalExtension.swiftmodule" \
+   -parse-as-library "$WORK/OneSignalExtension.swift"
 
 fail=0
 
@@ -90,6 +112,19 @@ if sc -typecheck -I "$WORK/out" "$WORK/manager.swift"; then
 else
     echo "✗ OneSignalManager.swift.tmpl FAILED to compile"; fail=1
 fi
+cp "$ASSETS/NotificationService.swift.tmpl" "$WORK/nse.swift"
+if sc -typecheck -I "$WORK/out" "$WORK/nse.swift"; then
+    echo "✓ NotificationService.swift.tmpl compiles"
+else
+    echo "✗ NotificationService.swift.tmpl FAILED to compile"; fail=1
+fi
+for plist in OneSignalNotificationServiceExtension-Info.plist.tmpl OneSignalNotificationServiceExtension.entitlements.tmpl; do
+    if sed 's/__MAIN_APP_BUNDLE_ID__/com.example.app/' "$ASSETS/$plist" | plutil -lint - >/dev/null; then
+        echo "✓ $plist is a valid plist"
+    else
+        echo "✗ $plist is NOT a valid plist"; fail=1
+    fi
+done
 
 # --- negative controls: fabricated call shapes MUST NOT compile ---
 cat > "$WORK/bad_web.swift" <<'SW'
@@ -100,7 +135,14 @@ cat > "$WORK/bad_suspend.swift" <<'SW'
 import OneSignalFramework
 func x() async { _ = await OneSignal.Notifications.requestPermission(true) }
 SW
-for bad in bad_web bad_suspend; do
+cat > "$WORK/bad_nse_label.swift" <<'SW'
+import UserNotifications
+import OneSignalExtension
+func x(_ r: UNNotificationRequest, _ c: UNMutableNotificationContent, _ h: @escaping (UNNotificationContent) -> Void) {
+    OneSignalExtension.didReceiveNotificationExtensionRequest(r, withMutableNotificationContent: c, withContentHandler: h)
+}
+SW
+for bad in bad_web bad_suspend bad_nse_label; do
     if sc -typecheck -I "$WORK/out" "$WORK/$bad.swift" 2>/dev/null; then
         echo "✗ negative control $bad UNEXPECTEDLY compiled — stub is a rubber stamp"; fail=1
     else

@@ -43,14 +43,22 @@ PLATFORMS = {
         },
         "default_line": "gradle-kts",
     },
+    # OneSignalLocation is opt-in, so only podfile-location names it.
     "ios": {
         "feed": "iOS",
-        "coordinate": "OneSignal-iOS-SDK / OneSignalXCFramework",
+        "coordinate": "OneSignal-XCFramework (SPM) / OneSignal (CocoaPods)",
         "lines": {
-            "spm": 'https://github.com/OneSignal/OneSignal-iOS-SDK — "Exact Version" {v} (product: OneSignalFramework)',
-            "podfile": "pod 'OneSignal/OneSignal', '{v}' # onesignal:managed v1",
+            "spm": 'https://github.com/OneSignal/OneSignal-XCFramework — "Exact Version" {v}; '
+                   'app target: OneSignalFramework, OneSignalInAppMessages; '
+                   'OneSignalNotificationServiceExtension target: OneSignalExtension',
+            "podfile": "pod 'OneSignal/OneSignal', '{v}' # onesignal:managed v1\n"
+                       "pod 'OneSignal/OneSignalInAppMessages', '{v}' # onesignal:managed v1",
+            "podfile-nse": "pod 'OneSignal/OneSignal', '{v}' # onesignal:managed v1",
+            "podfile-location": "pod 'OneSignal/OneSignalLocation', '{v}' # onesignal:managed v1",
         },
         "default_line": "spm",
+        "note": "The feed lists OneSignal-iOS-SDK; OneSignal-XCFramework publishes the same "
+                "version tags, so this pin is the SPM package version too.",
     },
     "react-native": {
         "feed": "ReactNative",
@@ -215,6 +223,8 @@ def main():
             f"Web pins to the fixed CDN major {spec['web_fixed_major']}; "
             f"feed build number is {version} (metadata only)."
         )
+    if spec.get("note"):
+        out["note"] = spec["note"]
     if track_used != args.track:
         fallback = f"Requested track '{args.track}' had no release; used '{track_used}'."
         out["note"] = (out.get("note", "") + " " + fallback).strip()
