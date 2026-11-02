@@ -2,9 +2,18 @@
 
 Reference for the `setup` skill. Follow [SKILL.md](SKILL.md) Steps 0–8; this file is the Android install detail. `<plugin>` in the commands below is the directory SKILL.md defines: walk up from this file's directory to the first directory that contains a `scripts/` folder. Mirrors the proven flow in `sdk-ai-prompts/docs/android/integrate.md` with ONE correction from the matrix (below). Do not contradict [../../references/platform-matrix.md](../../references/platform-matrix.md).
 
-## google-services.json is NOT required (matrix correction)
+## google-services.json: not required, but recommended
 
-The upstream Android prompt tells you to add `google-services.json` + the Google Services Gradle plugin. **That is a known bug.** OneSignal delivers push via server-side **FCM v1 credentials** (a service-account JSON the human uploads to the OneSignal app, handled by the **credentials** skill). Do NOT add `google-services.json`, the `com.google.gms:google-services` classpath, or `apply plugin: 'com.google.gms.google-services'` — **unless the app itself already uses Firebase client SDKs** (grep for `com.google.firebase` deps / an existing `google-services.json`). If it does, leave the existing Firebase setup alone; still don't add it for OneSignal's sake.
+Push delivery does not depend on it. OneSignal sends via server-side **FCM v1 credentials** (a service-account JSON the human uploads to the OneSignal app, handled by the **credentials** skill), so the integration works without `google-services.json`.
+
+It is nonetheless **recommended for new integrations**. On OneSignal Android SDK **5.11.0+**, when the app has its own default `FirebaseApp`, push registers through the customer's Firebase project instead of OneSignal's shared one.
+
+**Agent behavior:**
+
+- Do NOT add or remove `google-services.json`, and do NOT add the `com.google.gms:google-services` classpath or `apply plugin:` line on your own. You cannot produce the file — it comes from the customer's Firebase console — and applying the plugin without the file fails the build with `File google-services.json is missing`.
+- If the app already has the file and the plugin, leave both in place.
+- If it has neither, continue. Tell the user that adding their own `google-services.json` plus the plugin is recommended, and that they download it from their Firebase console. See [Android Firebase credentials](https://documentation.onesignal.com/docs/en/android-firebase-credentials#add-your-firebase-configuration-file).
+- If `firebase_messaging_installation_id_enabled` is `true` in the **merged** manifest — a dependency such as Braze 43.0.0+ can set it through manifest merging — then `google-services.json`, the Gradle plugin, and `firebase-messaging` 25.1.2+ are **required**. Stop and tell the user; without them, push registration fails with subscription status `-32`. See [Firebase Installation ID registration](https://documentation.onesignal.com/docs/en/android-firebase-installation-id).
 
 `POST_NOTIFICATIONS` (Android 13+) is manifest-merged by the SDK — do not add it. Only `INTERNET` needs to be present (it usually already is).
 

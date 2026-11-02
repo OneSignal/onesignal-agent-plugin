@@ -198,7 +198,7 @@ Full portal detail (enable-FCM-v1 detour, required service-account permissions, 
 3. **Generate the key:** Project settings → **Service accounts** → **Generate new private key** → confirm → a `.json` downloads. This file is a secret.
 4. **Human tells you the file path** to the downloaded JSON.
 5. **You (agent):** confirm the JSON is gitignored / outside the repo, ask the consent question ([The API-upload mechanism](#the-api-upload-mechanism-shared-by-apple-p8-and-firebase)), then upload: the MCP tool with the Base64 string as **`fcm_v1_service_account_json`** (the only required Android param per the reference page), or `onesignal_api.py provision <APP_ID> --fcm-json <path>` on the direct path. Validate the response.
-6. **`google-services.json` is NOT a OneSignal credential.** OneSignal authenticates to FCM entirely server-side with the service-account JSON. Do not ask for `google-services.json` and do not upload it. It is only relevant if the app *itself* uses Firebase client SDKs — that's the app's own concern, not OneSignal's. (The upstream ai-prompt that requires it is a known bug; see platform-matrix Android notes.)
+6. **`google-services.json` is not a OneSignal credential.** OneSignal authenticates to FCM entirely server-side with the service-account JSON. Never ask the user to upload `google-services.json` to OneSignal, and never upload it yourself. It is Firebase *client* configuration that ships inside the app — recommended on Android SDK 5.11.0+, and set up in the **setup** skill, not here. Both files must come from the same Firebase project; a mismatch produces subscription status `-6`. See platform-matrix Android notes.
 
 ## Credential validation loop
 
