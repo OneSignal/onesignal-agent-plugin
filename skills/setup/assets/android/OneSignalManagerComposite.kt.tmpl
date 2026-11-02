@@ -66,8 +66,10 @@ object OneSignalManager {
 
         val result = OneSignal.login(externalId, profile)
         if (!result.isSuccess) {
-            // The device is on the new external ID regardless, so report and move on.
-            Log.w(TAG, "login failed: ${result.error?.first?.code} ${result.error?.first?.message}")
+            // One request can fail for several reasons, so log them all: dropping any
+            // hides the second problem from whoever is debugging the integration.
+            val reasons = result.error?.details?.joinToString("; ") { "${it.code} ${it.message}" }
+            Log.w(TAG, "login failed: $reasons")
         }
         return result
     }
