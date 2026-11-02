@@ -77,13 +77,18 @@ If an `android:name` Application class already exists, add the init call to its 
 
 ## Centralized wrapper (Kotlin, no-DI default)
 
-Signatures verified against api-reference "SDK data surface". Tag values are strings only. `login()` before tags/email/sms (ordering rule).
+Signatures verified against api-reference "SDK data surface". Tag values are strings only.
 
-Start from the bundled templates rather than retyping — they carry the verified signatures and the `onesignal:managed` marker:
-- Wrapper: [assets/android/OneSignalManager.kt.tmpl](assets/android/OneSignalManager.kt.tmpl) — substitute `__PACKAGE__`.
-- Application subclass: [assets/android/Application.kt.tmpl](assets/android/Application.kt.tmpl) — substitute `__PACKAGE__`, `__APP_CLASS__`, and `__APP_ID__` (the real App ID from Step 2).
+**Pick the wrapper by the version Step 4 resolved.** Composite `login(externalId, profile)` does not exist before **5.11.0**, and a wrapper that calls it against an older pin does not compile. Read the version from the resolver's own output; do not assume, and do not change the track to get the newer API (that is the user's call, not yours).
 
-The wrapper's shape:
+| Resolved version | Wrapper template | Identity surface |
+| --- | --- | --- |
+| **≥ 5.11.0** | [assets/android/OneSignalManagerComposite.kt.tmpl](assets/android/OneSignalManagerComposite.kt.tmpl) | `login(externalId, profile)`, preferred |
+| **< 5.11.0** | [assets/android/OneSignalManager.kt.tmpl](assets/android/OneSignalManager.kt.tmpl) | `login(externalId)` + `addEmail`/`addSms` |
+
+The default `--track stable` has historically trailed 5.11.0 (it was 5.9.2 as of May 2026), so expect the second row unless the user asked for `--track current` or stable has since moved. Both templates carry the verified signatures and the `onesignal:managed` marker; substitute `__PACKAGE__` in either. The Application subclass is the same for both: [assets/android/Application.kt.tmpl](assets/android/Application.kt.tmpl). Substitute `__PACKAGE__`, `__APP_CLASS__`, and `__APP_ID__` (the real App ID from Step 2).
+
+The pre-5.11.0 wrapper's shape, where `login()` must come before tags/email/sms or that data strands on the anonymous user:
 ```kotlin
 object OneSignalManager { // onesignal:managed v1
     private var initialized = false
@@ -100,6 +105,19 @@ object OneSignalManager { // onesignal:managed v1
     fun setTag(key: String, value: String) = OneSignal.User.addTag(key, value)
 }
 ```
+
+### On 5.11.0+, prefer composite login
+
+`login(externalId, profile)` sends the external ID with the user's email, SMS, tags, and aliases as one Create User request and returns `OneSignalResult<LoginData>`, so a failure is visible instead of silent. It also removes the ordering rule for everything in the profile, because the profile ships inside the login request. The granular methods still need `login()` first.
+
+Facts that decide whether the generated code is correct:
+- It is a `suspend fun`. From Kotlin call it in a coroutine; from Java pass `Continue.with` (API 24+, and the callback is not on the main thread). The suspend-ness is why the composite wrapper exposes a `suspend fun` rather than the plain `fun` the older wrapper uses.
+- `setSms()` needs **E.164 with the leading `+`**. A malformed number returns `INVALID_ARGUMENT` and sends nothing. A number missing only the `+` passes the SDK check and is then rejected by the backend with HTTP 400.
+- `setEmailEnabled`/`setSmsEnabled` set that address's subscription status: `true` subscribes, `false` unsubscribes, **unset sends no status**. Only set one when the app actually knows the user's intent. Guessing `true` on an address the user never consented to is a re-subscribe. This is the only SDK path to an email/SMS status, since `addEmail`/`addSms` always send subscribed.
+- Do not feed it an address the user typed unverified: an address already owned by another user moves to whoever logs in. Note this to the user if you wire the profile to a text field.
+
+**The wrapper adds no coroutines dependency.** A `suspend fun` is backed by `kotlin.coroutines.Continuation` in **kotlin-stdlib**, not by `kotlinx-coroutines`, so declaring one and awaiting another suspend function needs nothing extra. Verified by compiling the composite template with zero coroutines jars on the classpath. Do not add `kotlinx-coroutines-android` on this file's account, because an unrequested dependency bump is a safety-contract §7 change. The verification helper is different: it calls `launch`, so it does need the dependency, and that is what `android_coroutines_on_classpath` is checking. The call site needs a scope (`lifecycleScope`, `viewModelScope`), which `activity-ktx` and `lifecycle-ktx` already supply on any modern template.
+
 A Hilt `@Singleton` variant and a Java variant are in the upstream android/integrate.md; use them only to match an existing pattern. No direct OneSignal calls outside this wrapper (except the verification helper).
 
 ## Debug-only verification helper (`OneSignalSetupVerification.kt`)
