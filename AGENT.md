@@ -192,11 +192,9 @@ The plugin version lives in 3 places. Bump all 3 together — they must never di
 - `PLUGIN_VERSION` in `scripts/checkpoint.sh` — every checkpoint reports this value as
   `skill_version`.
 
-Keep the version current: when a change set affects plugin behavior (skills, scripts,
-references, templates, or manifests), bump the version in that same change set. Do not
-leave the version stale. One bump per release is enough: if an unreleased change set on
-`main` already moved the version past the last release, later change sets in the same
-release do not bump it again.
+Do not bump the version in a feature or fix change set. The release process below writes
+the new version into the 3 places, so a change set that affects plugin behavior leaves
+the version at the last release.
 
 Each release ships 2 artifacts: the tagged tree (Claude Code and the Codex marketplace
 install from it) and `onesignal-skills-<version>.zip` (the OpenAI directory upload). The
@@ -210,7 +208,7 @@ The workflows in `.github/workflows/` reuse `OneSignal/sdk-shared`:
    merged PR titles since the latest stable version tag and picks the bump (`feat:` →
    minor, `fix:`/`perf:` → patch, `!:` → major), or takes a version override. It creates or
    rebases `rel/<version>`, writes the version into the 3 files, commits
-   `chore: Release <version>` (an empty commit when a change set already bumped the tree),
+   `chore: Release <version>` (an empty commit when the tree already has that version),
    and opens the `chore: Release <version>` PR with release notes built from the PR titles.
 2. Before merge, the release PR records 3 results, each with its session IDs or command:
    - The behavior evals against the repository tree in Claude Code (check 7 in "How to

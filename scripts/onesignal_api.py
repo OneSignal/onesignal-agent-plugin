@@ -9,8 +9,9 @@ This encodes the fiddly, verified details that models keep getting wrong:
     404 = feature flag off (fall back to dashboard), 401 = wrong app key
   - delivery stat `failed` counts UNSUBSCRIBED targets, not errors
   - the view-app read decides credential presence from the non-secret fields
-    (apns_env, apns_key_id, apns_team_id, fcm_sender_id, chrome_web_origin),
-    never from the plaintext credential fields the server plans to remove
+    (apns_env, apns_key_id, apns_team_id, apns_bundle_id, fcm_sender_id,
+    chrome_web_origin), never from the plaintext credential fields the server
+    plans to remove
   - the write-once credential upload echoes the stored credential fields back
     in its 2xx body; `provision` drops that body and prints a verdict, so the
     secret never reaches the agent transcript
@@ -220,8 +221,9 @@ def cmd_app(args):
            "platforms": platforms,
            "cross_check": cross_check,
            "note": "Presence only, from non-secret fields (apns_env, apns_key_id, apns_team_id, "
-                   "fcm_sender_id, chrome_web_origin). Not a validity check: the test send in "
-                   "the verify skill proves the credential works."}
+                   "apns_bundle_id, fcm_sender_id, chrome_web_origin). Not a validity check: the "
+                   "test send in the verify skill proves the credential works. On iOS, compare "
+                   "platforms.apns.bundle_id with the project's Bundle ID."}
     print(json.dumps(out, indent=2))
 
 
@@ -253,8 +255,13 @@ def _presence(data):
                        "apns_listed": apns_listed, "fcm_listed": gcm_listed,
                        "mismatch": (apns_listed != apns_configured) or (gcm_listed != fcm_configured)}
 
+    # The stored Bundle ID is the APNs topic the server sends with each push.
+    # It is not a secret, and a push to a device whose app has a different
+    # Bundle ID is rejected by APNs, so the caller compares it with the project.
+    bundle_id = data.get("apns_bundle_id")
     platforms = {
-        "apns": {"configured": apns_configured, "auth_type": apns_auth},
+        "apns": {"configured": apns_configured, "auth_type": apns_auth,
+                 "bundle_id": bundle_id if _present(bundle_id) else None},
         "fcm": {"configured": fcm_configured},
         "web": {"configured": web_configured},
     }
