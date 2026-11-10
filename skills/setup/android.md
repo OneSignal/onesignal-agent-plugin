@@ -1,19 +1,38 @@
 # Android native integration (OneSignal Android SDK 5.x)
 
-Reference for the `setup` skill. Follow [SKILL.md](SKILL.md) Steps 0–8; this file is the Android install detail. `<plugin>` in the commands below is the directory SKILL.md defines: walk up from this file's directory to the first directory that contains a `scripts/` folder. Mirrors the proven flow in `sdk-ai-prompts/docs/android/integrate.md` with ONE correction from the matrix (below). Do not contradict [../../references/platform-matrix.md](../../references/platform-matrix.md).
+Reference for the `setup` skill. Follow [SKILL.md](SKILL.md) Steps 0–8; this file is the Android install detail. `<plugin>` in the commands below is the directory SKILL.md defines: walk up from this file's directory to the first directory that contains a `scripts/` folder. Mirrors the proven flow in `sdk-ai-prompts/docs/android/integrate.md`, with one exception: that file still says `google-services.json` is not required and must not be added, which predates Android SDK 5.11.0. Follow the Firebase section below instead, and do not contradict [../../references/platform-matrix.md](../../references/platform-matrix.md).
 
 ## google-services.json: not required, but recommended
 
 Push delivery does not depend on it. OneSignal sends via server-side **FCM v1 credentials** (a service-account JSON the human uploads to the OneSignal app, handled by the **credentials** skill), so the integration works without `google-services.json`.
 
-It is nonetheless **recommended for new integrations**. On OneSignal Android SDK **5.11.0+**, when the app has its own default `FirebaseApp`, push registers through the customer's Firebase project instead of OneSignal's shared one.
+It is nonetheless **recommended for new integrations on 5.11.0+**: from that version, when the app has its own default `FirebaseApp`, push registers through the customer's Firebase project instead of OneSignal's shared one. Check the version you actually resolved before raising this — the Stable track trails Current, so a default run pins below 5.11.0 and gains nothing from the file. Do not recommend it against a Stable pin that is older than 5.11.0.
 
 **Agent behavior:**
 
 - Do NOT add or remove `google-services.json`, and do NOT add the `com.google.gms:google-services` classpath or `apply plugin:` line on your own. You cannot produce the file — it comes from the customer's Firebase console — and applying the plugin without the file fails the build with `File google-services.json is missing`.
 - If the app already has the file and the plugin, leave both in place.
+- If the app applies the plugin but has no `google-services.json`, its build was already failing before you touched it (`android_google_services_plugin_without_file` in the Step-8 self-check). This is the one error-level check you cannot repair yourself: do NOT delete the user's plugin line to make it pass. Stop, say the build fails without the file, and ask them to add it from their Firebase console.
 - If it has neither, continue. Tell the user that adding their own `google-services.json` plus the plugin is recommended, and that they download it from their Firebase console. See [Android Firebase credentials](https://documentation.onesignal.com/docs/en/android-firebase-credentials#add-your-firebase-configuration-file).
-- If `firebase_messaging_installation_id_enabled` is `true` in the **merged** manifest — a dependency such as Braze 43.0.0+ can set it through manifest merging — then `google-services.json`, the Gradle plugin, and `firebase-messaging` 25.1.2+ are **required**. Stop and tell the user; without them, push registration fails with subscription status `-32`. See [Firebase Installation ID registration](https://documentation.onesignal.com/docs/en/android-firebase-installation-id).
+- If `firebase_messaging_installation_id_enabled` is `true` in the **merged** manifest — a dependency such as Braze 43.0.0+ can set it through manifest merging — FID registration needs `google-services.json`, the Gradle plugin, and `firebase-messaging` 25.1.2+, or push registration fails with subscription status `-32`. There are two ways out, and unlike the console trip the first is one **you** can perform. Offer both:
+  - **Opt back out of FID.** When a dependency turned the flag on and the user never asked for FID, override it in the app manifest to restore the legacy token API:
+
+    ```xml
+    <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+        xmlns:tools="http://schemas.android.com/tools">
+        <application>
+            <meta-data
+                android:name="firebase_messaging_installation_id_enabled"
+                android:value="false"
+                tools:replace="android:value" />
+        </application>
+    </manifest>
+    ```
+
+    `tools:replace` is required — without it the merger fails on the conflicting value. Android Studio's merged-manifest view names the dependency that contributed it.
+  - **Opt in (needs the human).** Keep FID and have the user supply `google-services.json` from a Firebase project configured with the same sender ID as the OneSignal app.
+
+  **Check which route the app took before offering the override.** The `-32` message embeds `firebase_messaging_installation_id_enabled=<value>`. If that reads `true`, the flag is what enabled FID and the override works. If it reads `false` or `not set`, FID was entered because Firebase itself disabled the legacy token API — the override is a no-op there and only the Firebase console path fixes it. See [Firebase Installation ID registration](https://documentation.onesignal.com/docs/en/android-firebase-installation-id).
 
 `POST_NOTIFICATIONS` (Android 13+) is manifest-merged by the SDK — do not add it. Only `INTERNET` needs to be present (it usually already is).
 

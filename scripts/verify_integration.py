@@ -12,6 +12,7 @@ severity. `error` failures set a nonzero exit; `warn` are advisory.
 
 Usage:
     verify_integration.py <project_dir> --platform android|ios|web|expo|react-native|flutter|cordova|capacitor|unity [--app-id UUID]
+    verify_integration.py --self-test   # check the google-services apply-site detection
 
 Exit: 0 all error-level checks pass; 1 an error-level check failed; 2 usage.
 """
@@ -20,6 +21,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 
 EXCLUDE = {"node_modules", "build", ".gradle", "Pods", ".git", "dist", "DerivedData",
            "__pycache__", ".dart_tool", "out"}
@@ -259,11 +261,31 @@ class Checks:
         presence is not a finding. Applying the plugin with no file to process
         is, because the build fails with "File google-services.json is missing".
         """
+        # Match apply-sites only. The coordinate also appears in forms that do NOT
+        # apply the plugin -- a root-project `classpath`, a `plugins {}` entry marked
+        # `apply false`, and a version-catalog declaration (`id = "..."`) -- and those
+        # projects build fine. A catalog `alias(libs.plugins.x)` carries no coordinate
+        # and is not detectable here; missing one is safer than failing a good build.
+        apply_site = re.compile(
+            r"apply\s+plugin\s*:\s*['\"]com\.google\.gms\.google-services['\"]"       # Groovy apply
+            r"|apply\s*\(\s*plugin\s*=\s*['\"]com\.google\.gms\.google-services['\"]"  # Kotlin apply
+            r"|\bid\s*\(\s*['\"]com\.google\.gms\.google-services['\"]"                # plugins {} Kotlin
+            r"|\bid\s+['\"]com\.google\.gms\.google-services['\"]"                     # plugins {} Groovy
+        )
+        applied = []
+        for fp in walk_files(self.root):
+            for i, line in enumerate(read(fp).splitlines(), 1):
+                stripped = line.lstrip()
+                if stripped.startswith("//") or stripped.startswith("*"):
+                    continue  # a commented-out plugin line is not applied
+                if apply_site.search(line) and not re.search(r"\bapply\s+false\b", line):
+                    applied.append((os.path.relpath(fp, self.root), i))
         gs = [fp for fp in walk_files(self.root) if os.path.basename(fp) == "google-services.json"]
-        plugin = grep(self.root, r"com\.google\.gms(\.|:)google-services")
-        bad = bool(plugin) and not gs
+        bad = bool(applied) and not gs
         self.add("android_google_services_plugin_without_file", not bad, "error",
-                 "" if not bad else "com.google.gms.google-services is applied but no google-services.json was found \u2014 the build will fail. Add the file from the Firebase console, or remove the plugin.")
+                 "" if not bad else f"com.google.gms.google-services applied at {applied[:3]} but no "
+                 "google-services.json was found \u2014 the build will fail. The file comes from the "
+                 "customer's Firebase console; ask for it rather than removing their plugin line.")
 
     def android_requestpermission_not_callback(self):
         # OneSignal.Notifications.requestPermission is `suspend fun(Boolean): Boolean`
@@ -619,13 +641,70 @@ class Checks:
         return self.results
 
 
+# Each case is (label, {relpath: contents}, expected_passed). The google-services
+# coordinate appears in several Gradle forms that do NOT apply the plugin; matching
+# the bare coordinate failed projects that build fine, and the agent is forbidden
+# from repairing it (see skills/setup/android.md), so setup deadlocked.
+_GOOGLE_SERVICES_CASES = [
+    ("root classpath only",
+     {"build.gradle": "    classpath 'com.google.gms:google-services:4.4.2'"}, True),
+    ("plugins {} with apply false",
+     {"build.gradle": '    id("com.google.gms.google-services") version "4.4.2" apply false'}, True),
+    ("commented-out apply site",
+     {"app/build.gradle": '// id("com.google.gms.google-services")'}, True),
+    ("block-comment apply site",
+     {"app/build.gradle": ' * id("com.google.gms.google-services")'}, True),
+    ("version-catalog declaration",
+     {"gradle/libs.versions.toml":
+      'google-services = { id = "com.google.gms.google-services", version = "4.4.2" }'}, True),
+    ("Groovy apply plugin, no file",
+     {"app/build.gradle": "apply plugin: 'com.google.gms.google-services'"}, False),
+    ("Kotlin apply(plugin =), no file",
+     {"app/build.gradle.kts": 'apply(plugin = "com.google.gms.google-services")'}, False),
+    ("plugins {} id(), no file",
+     {"app/build.gradle.kts": '    id("com.google.gms.google-services")'}, False),
+    ("apply plugin with the file present",
+     {"app/build.gradle": "apply plugin: 'com.google.gms.google-services'",
+      "app/google-services.json": "{}"}, True),
+]
+
+
+def self_test():
+    """Run android_google_services_plugin_without_file against each Gradle form."""
+    ok = True
+    for label, tree, expect_passed in _GOOGLE_SERVICES_CASES:
+        with tempfile.TemporaryDirectory() as tmp:
+            for rel, body in tree.items():
+                path = os.path.join(tmp, rel)
+                directory = os.path.dirname(path)
+                if directory and not os.path.isdir(directory):
+                    os.makedirs(directory)
+                with open(path, "w", encoding="utf-8") as handle:
+                    handle.write(body + "\n")
+            checks = Checks(tmp, "android", None)
+            checks.android_google_services_plugin_without_file()
+            passed = checks.results[0]["passed"]
+        if passed == expect_passed:
+            print("self-test: %s -> %s as expected" % (label, "passes" if passed else "fails"))
+        else:
+            print("self-test: %s -> %s, expected the opposite" % (label, "passed" if passed else "failed"))
+            ok = False
+    return ok
+
+
 def main():
     ap = argparse.ArgumentParser(description="Deterministic structural verification of a OneSignal integration.")
-    ap.add_argument("project_dir")
-    ap.add_argument("--platform", required=True,
+    ap.add_argument("project_dir", nargs="?")
+    ap.add_argument("--platform",
                     choices=["android", "ios", "web", "expo", "react-native", "flutter", "cordova", "capacitor", "unity"])
     ap.add_argument("--app-id")
+    ap.add_argument("--self-test", action="store_true",
+                    help="check the google-services apply-site detection against known Gradle forms")
     args = ap.parse_args()
+    if args.self_test:
+        sys.exit(0 if self_test() else 1)
+    if not args.project_dir or not args.platform:
+        ap.error("project_dir and --platform are required")
     if not os.path.isdir(args.project_dir):
         sys.stderr.write(f"ERROR: not a directory: {args.project_dir}\n"); sys.exit(2)
 

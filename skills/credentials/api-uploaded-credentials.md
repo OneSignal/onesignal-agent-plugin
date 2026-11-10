@@ -92,7 +92,7 @@ OneSignal authenticates to FCM entirely server-side using the service-account JS
 - Do not upload it.
 - It only matters if the app *itself* embeds Firebase client SDKs (Analytics, Firestore, etc.) — that's the app's own setup, unrelated to OneSignal push.
 
-`google-services.json` is never uploaded to OneSignal — it is client configuration handled by the **setup** skill, not a credential (see [../../references/platform-matrix.md](../../references/platform-matrix.md) Android notes). It must come from the same Firebase project as the service account uploaded here, or Android subscriptions show status `-6`.
+`google-services.json` is never uploaded to OneSignal — it is client configuration handled by the **setup** skill, not a credential (see [../../references/platform-matrix.md](../../references/platform-matrix.md) Android notes). It should come from the same Firebase project as the service account uploaded here. A mismatch is silent on the default legacy path — the SDK falls back to OneSignal's Firebase project and logs that it did — and only surfaces as subscription status `-6` under FID registration (see [SKILL.md](SKILL.md) step 6).
 
 ### FCM failure modes → what to tell the user (surface the raw error first)
 | Symptom | Likely cause | Fix |
