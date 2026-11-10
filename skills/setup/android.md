@@ -55,15 +55,15 @@ python3 <plugin>/scripts/resolve_sdk_version.py android --format line --line-for
 The script emits an exact pin and cannot emit a range. Drop the output inside the module's `dependencies { }` block unchanged. Example of the shape it returns (the version will be the current Stable, not necessarily this one):
 ```kotlin
 dependencies {
-    implementation("com.onesignal:OneSignal:5.9.1") // onesignal:managed v1
+    implementation("com.onesignal:OneSignal:<exact version from the resolver>") // onesignal:managed v1
 }
 ```
 
 ### Kotlin floor (check it deterministically — don't guess, don't half-bump)
 
-The OneSignal SDK transitively pulls in a **newer `kotlin-stdlib` than its own POM admits** — 5.9.1's POM declares 1.9.25, but its OpenTelemetry submodule (`com.onesignal:otel`) drags the resolved graph up to `kotlin-stdlib 2.2.20`. Gradle's highest-wins resolution then pins the whole app there, so the app must be compiled by a Kotlin toolchain that can **read 2.2 metadata**. A host on Kotlin 1.9 fails; a host bumped to an intermediate 2.0 **still fails** (the 2.0 compiler reads metadata only up to 2.1) — an eval trial did exactly this, mutating the customer's build for nothing.
+The OneSignal SDK transitively pulls in a **newer `kotlin-stdlib` than its own POM admits**. On 5.9.2 the POM declares 1.9.25, but the resolved graph lands on `kotlin-stdlib 2.2.20`, five hops down: `core` → `otel` → `opentelemetry-exporter-otlp` → `opentelemetry-exporter-sender-okhttp` → `okhttp-jvm 5.2.1`, which declares 2.2.20. Gradle's highest-wins resolution then pins the whole app there, so the app must be compiled by a Kotlin toolchain that can **read 2.2 metadata**. A host on Kotlin 1.9 fails; a host bumped to an intermediate 2.0 **still fails** (the 2.0 compiler reads metadata only up to 2.1) — an eval trial did exactly this, mutating the customer's build for nothing.
 
-The exact floor is NOT fetchable from Maven metadata (it lives deep in OpenTelemetry's graph), so read it from the resolved project and let the script decide:
+Do not take the floor from this page. It is set by whichever okhttp OpenTelemetry currently ships (okhttp 5.1.0 declared 2.2.0, 5.2.1 declares 2.2.20), so it moves without any OneSignal release. Read it from the resolved project and let the script decide:
 
 ```bash
 ./gradlew -q :app:dependencies --configuration debugRuntimeClasspath \
