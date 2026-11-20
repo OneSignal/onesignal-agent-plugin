@@ -57,7 +57,7 @@ SwiftUI `@main` app with no AppDelegate: call the same two lines from the `App`'
    ```
 3. For Xcode 16+ file-system-synchronized projects (`PBXFileSystemSynchronizedRootGroup`), add a `PBXFileSystemSynchronizedBuildFileExceptionSet` excluding `Info.plist` from the resource copy phase to avoid "Multiple commands produce Info.plist". Skip step 3 for classic `PBXGroup`/`PBXFileReference` projects. The exact pbxproj snippets are in the upstream ios/integrate.md — reproduce them; pbxproj edits are fragile, so preview them precisely in the diff (safety contract §5) and if the format doesn't match, hand the capability toggle to the human via Xcode's Signing & Capabilities tab instead.
 
-Add `aps-environment` to the `.entitlements` file (`development`, or `production` for release). Deployment target iOS 12.0+; do not change it if already set.
+Add `aps-environment` to the `.entitlements` file (`development`, or `production` for release). Deployment target iOS 15.0+ (OneSignal iOS SDK 5.7.0+ requires it); keep an existing higher target. If the existing target is lower, include the raise to 15.0 in the diff.
 
 ## Centralized wrapper (Swift)
 
