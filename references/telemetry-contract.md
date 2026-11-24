@@ -170,7 +170,7 @@ the call site. Current set:
 `dirty_tree`, `runtime_missing`, `prior_install`, `platform_ambiguous`, `no_app_id`,
 `invalid_app_id`, `credentials_missing`, `uploaded_during_run`, `deferred`, `releases_unreachable`,
 `diff_rejected`, `network_blocked`, `kotlin_stdlib_floor`, `minsdk_floor`, `agp_floor`,
-`dependency_conflict`, `buildconfig_disabled`, `coroutines_missing`, `manifest_merger`,
+`ios_target_floor`, `dependency_conflict`, `buildconfig_disabled`, `coroutines_missing`, `manifest_merger`,
 `already_configured`, `endpoint_flag_off`, `apns_propagation`, `apns_ids_swapped`,
 `apns_wrong_file`, `wrong_firebase_project`, `capability_manual`,
 `worker_scope_conflict`, `unknown`.
