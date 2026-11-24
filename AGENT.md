@@ -192,11 +192,9 @@ The plugin version lives in 3 places. Bump all 3 together — they must never di
 - `PLUGIN_VERSION` in `scripts/checkpoint.sh` — every checkpoint reports this value as
   `skill_version`.
 
-Keep the version current: when a change set affects plugin behavior (skills, scripts,
-references, templates, or manifests), bump the version in that same change set. Do not
-leave the version stale. One bump per release is enough: if an unreleased change set on
-`main` already moved the version past the last release, later change sets in the same
-release do not bump it again.
+Do not change the version in a feature or fix PR. The **Create Release PR** workflow writes
+the new version into all 3 places in the `chore: Release <version>` PR (see "The release
+process" below).
 
 Each release ships 2 artifacts: the tagged tree (Claude Code and the Codex marketplace
 install from it) and `onesignal-skills-<version>.zip` (the OpenAI directory upload). The
